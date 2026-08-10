@@ -462,7 +462,10 @@ class WS_CRUD {
     /* ---------------- Trabajadores ---------------- */
 
     public static function get_workers() {
-        $roles = array( 'ws_owner', 'ws_storekeeper', 'ws_seller' );
+        // Los dueños del negocio NO son trabajadores: se gestionan en el
+        // registro/negocio y no deben aparecer en la tabla de trabajadores
+        // ni poder editarse desde aquí. Solo cuentan almaceneros y vendedores.
+        $roles = array( 'ws_storekeeper', 'ws_seller' );
         $biz   = ws_current_business_id();
         $out   = array();
 

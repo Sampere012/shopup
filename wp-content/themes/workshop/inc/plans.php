@@ -685,7 +685,10 @@ function ws_plan_limit_status( $type, $biz = null ) {
 }
 
 function ws_biz_users_count( $biz ) {
-    $roles  = array( 'ws_owner', 'ws_storekeeper', 'ws_seller' );
+    // Solo cuentan los trabajadores (almaceneros y vendedores). El dueño del
+    // negocio NO se incluye en el límite de usuarios del plan: no es un
+    // trabajador, sino quien administra el negocio.
+    $roles  = array( 'ws_storekeeper', 'ws_seller' );
     $ids    = array();
     if ( WS_Business::is_default( $biz ) ) {
         foreach ( get_users( array( 'role__in' => $roles, 'fields' => 'ID', 'meta_key' => 'ws_business_id', 'meta_compare' => 'NOT EXISTS' ) ) as $uid ) {

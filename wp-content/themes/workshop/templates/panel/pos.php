@@ -766,14 +766,14 @@ document.addEventListener('alpine:init', () => {
                 transfer_amount: isBoth ? (Number(this.transferAmount) || 0) : (isTrans ? this.total : 0),
                 transfer_number: needsTransfer ? this.transferNumber : '',
                 status: 'completed',
-                items: this.cart.map(item => ({
+                items: JSON.stringify(this.cart.map(item => ({
                     product_id: item.product_id,
                     product_name: item.product_name,
                     qty: item.qty,
                     price: item.price,
                     discount: 0,
                     subtotal: item.qty * item.price
-                }))
+                })))
             };
 
             try {

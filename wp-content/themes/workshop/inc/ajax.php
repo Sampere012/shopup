@@ -1683,9 +1683,10 @@ function ws_ajax_pos_sale_save() {
         'cash_amount'     => (float) ( $_POST['cash_amount'] ?? 0 ),
         'transfer_amount' => (float) ( $_POST['transfer_amount'] ?? 0 ),
         'transfer_number' => sanitize_text_field( $_POST['transfer_number'] ?? '' ),
-        'status'          => sanitize_text_field( $_POST['status'] ?? 'completed' ),
+        // Venta directa de POS: siempre queda completada, nunca pendiente.
+        'status'          => 'completed',
         'register_id'     => (int) ( $_POST['register_id'] ?? 0 ),
-        'items'           => $_POST['items'] ?? array(),
+        'items'           => isset( $_POST['items'] ) ? (array) json_decode( wp_unslash( $_POST['items'] ), true ) : array(),
     );
 
     if ( ! $data['location_id'] || ! $data['seller_id'] ) {

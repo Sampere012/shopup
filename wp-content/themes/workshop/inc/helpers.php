@@ -262,6 +262,47 @@ function ws_whatsapp_number( $location_id = 0 ) {
 }
 
 /**
+ * Número de WhatsApp del administrador de WordPress, el que recibe las
+ * solicitudes de plan (upgrade) que envían los negocios.
+ *
+ * Se configura en wp-admin → Usuarios → Tu perfil (campo «Número de
+ * WhatsApp»), guardado en user meta `ws_whatsapp`. Orden de prioridad:
+ *  1. WhatsApp del admin principal (opción admin_email).
+ *  2. WhatsApp de cualquier administrador (manage_options) que lo tenga.
+ *  3. Opción global Ajustes → WhatsApp (ws_whatsapp), retrocompatibilidad.
+ */
+function ws_admin_whatsapp_number() {
+    $number = '';
+
+    $admin_email = get_option( 'admin_email' );
+    $admin       = $admin_email ? get_user_by( 'email', $admin_email ) : null;
+    if ( $admin ) {
+        $number = (string) get_user_meta( $admin->ID, 'ws_whatsapp', true );
+    }
+
+    if ( '' === $number ) {
+        $admins = get_users( array(
+            'capability' => 'manage_options',
+            'number'     => 50,
+            'fields'     => 'ID',
+        ) );
+        foreach ( (array) $admins as $uid ) {
+            $n = (string) get_user_meta( (int) $uid, 'ws_whatsapp', true );
+            if ( '' !== $n ) {
+                $number = $n;
+                break;
+            }
+        }
+    }
+
+    if ( '' === $number ) {
+        $number = (string) ws_biz_option( 'ws_whatsapp', '' );
+    }
+
+    return preg_replace( '/[^0-9]/', '', $number );
+}
+
+/**
  * Total de un pedido en transferencia: aplica el % de transferencia
  * de cada producto (precio * (1 + pct/100)) + domicilio.
  */
@@ -325,10 +366,11 @@ function ws_whatsapp_order_url( $order, $location, $number_override = '' ) {
 /**
  * URL wa.me hacia el WhatsApp del administrador con el detalle de una
  * solicitud de plan (upgrade). Devuelve '' si no hay número configurado.
- * El número usado es el global (Ajustes -> WhatsApp), que es el del admin.
+ * El número usado es el configurado por el admin en wp-admin → Usuarios →
+ * Tu perfil (campo WhatsApp); si no, el global de Ajustes (ws_whatsapp).
  */
 function ws_plan_request_wa_url( $plan, $biz = null ) {
-    $number = ws_whatsapp_number( 0 );
+    $number = ws_admin_whatsapp_number();
     if ( ! $number || ! $plan ) {
         return '';
     }

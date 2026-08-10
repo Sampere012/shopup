@@ -11,6 +11,42 @@
 
 defined( 'ABSPATH' ) || exit;
 
+/* -------------------------------------------------------------------------
+ * Perfil de usuario: número de WhatsApp del administrador (planes/soporte)
+ * ---------------------------------------------------------------------- */
+
+add_action( 'show_user_profile', 'ws_user_whatsapp_profile_field' );
+add_action( 'edit_user_profile', 'ws_user_whatsapp_profile_field' );
+function ws_user_whatsapp_profile_field( $user ) {
+    // Solo para administradores del sitio: su número recibe las solicitudes
+    // de plan que envían los negocios por WhatsApp.
+    if ( ! user_can( $user, 'manage_options' ) ) {
+        return;
+    }
+    $value = get_user_meta( $user->ID, 'ws_whatsapp', true );
+    ?>
+    <h2><?php esc_html_e( 'WhatsApp (ShopUp)', 'workshop' ); ?></h2>
+    <table class="form-table" role="presentation">
+        <tr>
+            <th scope="row"><label for="ws_whatsapp"><?php esc_html_e( 'Número de WhatsApp', 'workshop' ); ?></label></th>
+            <td>
+                <input type="text" id="ws_whatsapp" name="ws_whatsapp" class="regular-text" value="<?php echo esc_attr( $value ); ?>" placeholder="+58 412 123 4567">
+                <p class="description"><?php esc_html_e( 'Aquí recibirás por WhatsApp las solicitudes de cambio de plan que envían los negocios (botón «Confirmar por WhatsApp» del panel). Si lo dejas vacío se usará el número de Ajustes → WhatsApp del negocio por defecto.', 'workshop' ); ?></p>
+            </td>
+        </tr>
+    </table>
+    <?php
+}
+
+add_action( 'personal_options_update', 'ws_user_whatsapp_profile_save' );
+add_action( 'edit_user_profile_update', 'ws_user_whatsapp_profile_save' );
+function ws_user_whatsapp_profile_save( $user_id ) {
+    if ( ! current_user_can( 'edit_user', $user_id ) ) {
+        return;
+    }
+    update_user_meta( (int) $user_id, 'ws_whatsapp', sanitize_text_field( $_POST['ws_whatsapp'] ?? '' ) );
+}
+
 add_action( 'admin_menu', 'ws_users_admin_menu', 20 );
 function ws_users_admin_menu() {
     add_submenu_page(
