@@ -16,71 +16,177 @@ $ws_map    = array( 'ayuda' => 'help', 'contacto' => 'contact', 'acerca' => 'abo
 $ws_key    = isset( $ws_map[ $ws_page ] ) ? $ws_map[ $ws_page ] : 'help';
 $ws_cur    = $ws_pages[ $ws_key ];
 
+$ws_icons   = array( 'help' => 'fa-circle-question', 'contact' => 'fa-envelope', 'about' => 'fa-users' );
+$ws_icon    = $ws_icons[ $ws_key ];
+$ws_badge   = '' !== trim( (string) ( $ws_cur['badge'] ?? '' ) ) ? $ws_cur['badge'] : $ws_cur['title'];
+$ws_sub     = (string) ( $ws_cur['subtitle'] ?? '' );
+$ws_content = (string) ( $ws_cur['content'] ?? '' );
+
+// Vías de contacto disponibles para la página de contacto y el panel lateral.
+$ws_email    = trim( (string) ( $ws_cur['email'] ?? '' ) );
+$ws_phone    = trim( (string) ( $ws_cur['phone'] ?? '' ) );
+$ws_whatsapp = trim( (string) ( $ws_cur['whatsapp'] ?? '' ) );
+$ws_address  = trim( (string) ( $ws_cur['address'] ?? '' ) );
+$ws_hours    = trim( (string) ( $ws_cur['hours'] ?? '' ) );
+
 get_header();
 ?>
 <div class="ws-landing ws-static-page">
     <section class="ws-static-hero<?php echo ws_site_hero_has_bg() ? ' ws-has-bg' : ''; ?>" style="<?php echo esc_attr( ws_site_hero_bg_style() ); ?>">
-        <div class="ws-container ws-static-hero-inner">
-            <span class="ws-hero-badge"><i class="fa-solid <?php echo 'contact' === $ws_key ? 'fa-envelope' : ( 'about' === $ws_key ? 'fa-users' : 'fa-circle-question' ); ?>"></i>
-                <?php echo esc_html( $ws_cur['title'] ); ?>
-            </span>
-            <?php if ( 'contact' === $ws_key ) : ?>
-                <h1><?php echo esc_html( $ws_cur['title'] ); ?></h1>
-            <?php else : ?>
-                <h1><?php echo esc_html( $ws_cur['title'] ); ?></h1>
+        <div class="ws-container">
+            <nav class="ws-breadcrumbs" aria-label="<?php esc_attr_e( 'Migas de pan', 'workshop' ); ?>">
+                <a href="<?php echo esc_url( home_url( '/' ) ); ?>"><i class="fa-solid fa-house"></i> <?php esc_html_e( 'Inicio', 'workshop' ); ?></a>
+                <span class="ws-breadcrumb-sep"><i class="fa-solid fa-chevron-right"></i></span>
+                <span aria-current="page"><?php echo esc_html( $ws_cur['title'] ); ?></span>
+            </nav>
+            <span class="ws-hero-badge"><i class="fa-solid <?php echo esc_attr( $ws_icon ); ?>"></i> <?php echo esc_html( $ws_badge ); ?></span>
+            <h1><?php echo esc_html( $ws_cur['title'] ); ?></h1>
+            <?php if ( '' !== $ws_sub ) : ?>
+                <p class="ws-static-hero-sub"><?php echo esc_html( $ws_sub ); ?></p>
             <?php endif; ?>
         </div>
     </section>
 
-    <main class="ws-container">
-        <div class="ws-static-body">
+    <main class="ws-container ws-static-layout">
+        <div class="ws-static-main">
+
             <?php if ( 'contact' === $ws_key ) : ?>
-                <div class="ws-static-content">
-                    <?php if ( '' !== trim( $ws_cur['content'] ) ) : ?>
-                        <?php echo wp_kses_post( $ws_cur['content'] ); ?>
+                <div class="ws-static-card">
+                    <?php if ( '' !== trim( $ws_content ) ) : ?>
+                        <div class="ws-static-content">
+                            <?php echo wp_kses_post( $ws_content ); ?>
+                        </div>
                     <?php else : ?>
-                        <p><?php esc_html_e( '¿Tienes dudas o quieres ponerte en contacto con nosotros? Usa cualquiera de estas vías y te responderemos lo antes posible.', 'workshop' ); ?></p>
+                        <div class="ws-static-content">
+                            <p><?php esc_html_e( '¿Tienes dudas o quieres ponerte en contacto con nosotros? Usa cualquiera de estas vías y te responderemos lo antes posible.', 'workshop' ); ?></p>
+                        </div>
+                    <?php endif; ?>
+
+                    <?php if ( $ws_email || $ws_phone || $ws_whatsapp || $ws_address || $ws_hours ) : ?>
+                        <div class="ws-contact-grid">
+                            <?php if ( $ws_email ) : ?>
+                                <div class="ws-contact-card">
+                                    <span class="ws-contact-ico"><i class="fa-solid fa-envelope"></i></span>
+                                    <h3><?php esc_html_e( 'Correo', 'workshop' ); ?></h3>
+                                    <a href="mailto:<?php echo esc_attr( $ws_email ); ?>"><?php echo esc_html( $ws_email ); ?></a>
+                                    <span class="ws-contact-hint"><?php esc_html_e( 'Te respondemos en menos de 24 h', 'workshop' ); ?></span>
+                                </div>
+                            <?php endif; ?>
+                            <?php if ( $ws_phone ) : ?>
+                                <div class="ws-contact-card">
+                                    <span class="ws-contact-ico"><i class="fa-solid fa-phone"></i></span>
+                                    <h3><?php esc_html_e( 'Teléfono', 'workshop' ); ?></h3>
+                                    <a href="tel:<?php echo esc_attr( preg_replace( '/[^0-9+]/', '', $ws_phone ) ); ?>"><?php echo esc_html( $ws_phone ); ?></a>
+                                    <span class="ws-contact-hint"><?php esc_html_e( 'Horario comercial', 'workshop' ); ?></span>
+                                </div>
+                            <?php endif; ?>
+                            <?php if ( $ws_whatsapp ) : ?>
+                                <div class="ws-contact-card">
+                                    <span class="ws-contact-ico ws-contact-ico-wa"><i class="fa-brands fa-whatsapp"></i></span>
+                                    <h3><?php esc_html_e( 'WhatsApp', 'workshop' ); ?></h3>
+                                    <a href="https://wa.me/<?php echo esc_attr( preg_replace( '/[^0-9]/', '', $ws_whatsapp ) ); ?>" target="_blank" rel="noopener"><?php echo esc_html( $ws_whatsapp ); ?></a>
+                                    <span class="ws-contact-hint"><?php esc_html_e( 'Escrúbenos y te atendemos', 'workshop' ); ?></span>
+                                </div>
+                            <?php endif; ?>
+                            <?php if ( $ws_address ) : ?>
+                                <div class="ws-contact-card">
+                                    <span class="ws-contact-ico"><i class="fa-solid fa-location-dot"></i></span>
+                                    <h3><?php esc_html_e( 'Dirección', 'workshop' ); ?></h3>
+                                    <span class="ws-contact-value"><?php echo esc_html( $ws_address ); ?></span>
+                                </div>
+                            <?php endif; ?>
+                            <?php if ( $ws_hours ) : ?>
+                                <div class="ws-contact-card">
+                                    <span class="ws-contact-ico"><i class="fa-solid fa-clock"></i></span>
+                                    <h3><?php esc_html_e( 'Horario', 'workshop' ); ?></h3>
+                                    <span class="ws-contact-value"><?php echo esc_html( $ws_hours ); ?></span>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    <?php endif; ?>
+
+                    <?php if ( ! empty( $ws_pages['socials'] ) ) : ?>
+                        <div class="ws-static-socials">
+                            <span class="ws-static-socials-label"><?php esc_html_e( 'También puedes seguirnos', 'workshop' ); ?></span>
+                            <div class="ws-static-socials-list">
+                                <?php foreach ( $ws_pages['socials'] as $ws_social ) : ?>
+                                    <a class="ws-static-social" href="<?php echo esc_url( $ws_social['url'] ); ?>" target="_blank" rel="noopener">
+                                        <i class="fa-brands fa-<?php echo esc_attr( sanitize_title( strtolower( $ws_social['label'] ) ) ); ?>"></i>
+                                        <?php echo esc_html( $ws_social['label'] ); ?>
+                                    </a>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
                     <?php endif; ?>
                 </div>
-                <?php if ( '' !== trim( $ws_cur['email'] ) || '' !== trim( $ws_cur['phone'] ) || '' !== trim( $ws_cur['address'] ) ) : ?>
-                    <div class="ws-contact-cards">
-                        <?php if ( '' !== trim( $ws_cur['email'] ) ) : ?>
-                            <div class="ws-contact-card">
-                                <span class="ws-contact-ico"><i class="fa-solid fa-envelope"></i></span>
-                                <h3><?php esc_html_e( 'Correo', 'workshop' ); ?></h3>
-                                <a href="mailto:<?php echo esc_attr( $ws_cur['email'] ); ?>"><?php echo esc_html( $ws_cur['email'] ); ?></a>
-                            </div>
-                        <?php endif; ?>
-                        <?php if ( '' !== trim( $ws_cur['phone'] ) ) : ?>
-                            <div class="ws-contact-card">
-                                <span class="ws-contact-ico"><i class="fa-solid fa-phone"></i></span>
-                                <h3><?php esc_html_e( 'Teléfono', 'workshop' ); ?></h3>
-                                <a href="tel:<?php echo esc_attr( preg_replace( '/[^0-9+]/', '', $ws_cur['phone'] ) ); ?>"><?php echo esc_html( $ws_cur['phone'] ); ?></a>
-                            </div>
-                        <?php endif; ?>
-                        <?php if ( '' !== trim( $ws_cur['address'] ) ) : ?>
-                            <div class="ws-contact-card">
-                                <span class="ws-contact-ico"><i class="fa-solid fa-location-dot"></i></span>
-                                <h3><?php esc_html_e( 'Dirección', 'workshop' ); ?></h3>
-                                <span><?php echo esc_html( $ws_cur['address'] ); ?></span>
-                            </div>
+            <?php else : ?>
+                <div class="ws-static-card ws-static-card-content">
+                    <div class="ws-static-content">
+                        <?php if ( '' !== trim( $ws_content ) ) : ?>
+                            <?php echo wp_kses_post( $ws_content ); ?>
+                        <?php else : ?>
+                            <?php if ( 'help' === $ws_key ) : ?>
+                                <p><?php esc_html_e( 'En esta sección podrás resolver tus dudas sobre cómo comprar, ver tu pedido, devoluciones y más.', 'workshop' ); ?></p>
+                            <?php else : ?>
+                                <p><?php esc_html_e( 'Descubre quiénes somos, qué hacemos y cómo este mercado conecta negocios y clientes.', 'workshop' ); ?></p>
+                            <?php endif; ?>
                         <?php endif; ?>
                     </div>
-                <?php endif; ?>
+                </div>
+            <?php endif; ?>
+
+        </div>
+
+        <aside class="ws-static-side">
+            <?php if ( 'about' === $ws_key ) : ?>
+                <div class="ws-static-side-card ws-static-side-cta">
+                    <span class="ws-static-side-ico"><i class="fa-solid fa-store"></i></span>
+                    <h3><?php esc_html_e( '¿Tienes un negocio?', 'workshop' ); ?></h3>
+                    <p><?php esc_html_e( 'Crea tu cuenta gratis, personaliza tu tienda y empieza a vender hoy mismo.', 'workshop' ); ?></p>
+                    <a class="ws-btn ws-btn-primary ws-btn-block" href="<?php echo esc_url( ws_register_url() ); ?>"><?php esc_html_e( 'Crear mi tienda', 'workshop' ); ?> <i class="fa-solid fa-arrow-right"></i></a>
+                </div>
             <?php else : ?>
-                <div class="ws-static-content">
-                    <?php if ( '' !== trim( $ws_cur['content'] ) ) : ?>
-                        <?php echo wp_kses_post( $ws_cur['content'] ); ?>
+                <div class="ws-static-side-card ws-static-side-contact">
+                    <span class="ws-static-side-ico"><i class="fa-solid fa-headset"></i></span>
+                    <?php if ( 'help' === $ws_key ) : ?>
+                        <h3><?php esc_html_e( '¿No encuentras tu respuesta?', 'workshop' ); ?></h3>
+                        <p><?php esc_html_e( 'Escríbenos y te ayudaremos a resolver cualquier duda.', 'workshop' ); ?></p>
+                        <a class="ws-btn ws-btn-primary ws-btn-block" href="<?php echo esc_url( home_url( '/contacto/' ) ); ?>"><?php esc_html_e( 'Ir a Contacto', 'workshop' ); ?></a>
                     <?php else : ?>
-                        <?php if ( 'help' === $ws_key ) : ?>
-                            <p><?php esc_html_e( 'En esta sección podrás resolver tus dudas sobre cómo comprar, ver tu pedido, devoluciones y más.', 'workshop' ); ?></p>
-                        <?php else : ?>
-                            <p><?php esc_html_e( 'Descubre quiénes somos, qué hacemos y cómo este mercado conecta negocios y clientes.', 'workshop' ); ?></p>
+                        <h3><?php esc_html_e( 'Preferimos escucharte', 'workshop' ); ?></h3>
+                        <p><?php esc_html_e( 'Tus dudas, sugerencias y comentarios nos ayudan a mejorar cada día.', 'workshop' ); ?></p>
+                        <?php if ( $ws_whatsapp ) : ?>
+                            <a class="ws-btn ws-btn-wa ws-btn-block" href="https://wa.me/<?php echo esc_attr( preg_replace( '/[^0-9]/', '', $ws_whatsapp ) ); ?>" target="_blank" rel="noopener"><i class="fa-brands fa-whatsapp"></i> <?php esc_html_e( 'Escribir por WhatsApp', 'workshop' ); ?></a>
                         <?php endif; ?>
                     <?php endif; ?>
                 </div>
             <?php endif; ?>
-        </div>
+
+            <div class="ws-static-side-card ws-static-side-trust">
+                <h3><i class="fa-solid fa-shield-halved"></i> <?php esc_html_e( 'Compra con confianza', 'workshop' ); ?></h3>
+                <ul>
+                    <li><i class="fa-solid fa-circle-check"></i> <?php esc_html_e( 'Pedidos directos con la tienda', 'workshop' ); ?></li>
+                    <li><i class="fa-solid fa-circle-check"></i> <?php esc_html_e( 'Confirmación y seguimiento por WhatsApp', 'workshop' ); ?></li>
+                    <li><i class="fa-solid fa-circle-check"></i> <?php esc_html_e( 'Apoyas el comercio local', 'workshop' ); ?></li>
+                </ul>
+            </div>
+        </aside>
     </main>
+
+    <?php if ( ! empty( $ws_pages['trust'] ) ) : ?>
+        <section class="ws-container">
+            <div class="ws-trust-bar">
+                <?php foreach ( $ws_pages['trust'] as $ws_tr ) : ?>
+                    <div class="ws-trust-item">
+                        <span class="ws-trust-ico"><i class="fa-solid <?php echo esc_attr( $ws_tr['icon'] ); ?>"></i></span>
+                        <div>
+                            <strong><?php echo esc_html( $ws_tr['title'] ); ?></strong>
+                            <p><?php echo esc_html( $ws_tr['text'] ); ?></p>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+        </section>
+    <?php endif; ?>
 </div>
 <?php get_footer(); ?>

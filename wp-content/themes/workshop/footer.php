@@ -18,6 +18,32 @@ if ( ! $ws_hide_footer ) :
 ?>
 <footer class="ws-footer">
     <div class="ws-container">
+        <?php
+        $ws_sp_pages = ws_site_pages();
+        $ws_contact  = $ws_sp_pages['contact'];
+        $ws_c_email  = trim( (string) ( $ws_contact['email'] ?? '' ) );
+        $ws_c_phone  = trim( (string) ( $ws_contact['phone'] ?? '' ) );
+        $ws_c_wa     = trim( (string) ( $ws_contact['whatsapp'] ?? '' ) );
+        if ( $ws_c_email || $ws_c_phone || $ws_c_wa ) :
+        ?>
+        <div class="ws-footer-help">
+            <div class="ws-footer-help-text">
+                <strong><i class="fa-solid fa-headset"></i> <?php esc_html_e( '¿Necesitas ayuda?', 'workshop' ); ?></strong>
+                <span><?php esc_html_e( 'Nuestro equipo está listo para resolver tus dudas.', 'workshop' ); ?></span>
+            </div>
+            <div class="ws-footer-help-actions">
+                <?php if ( $ws_c_wa ) : ?>
+                    <a class="ws-btn ws-btn-wa ws-btn-sm" href="https://wa.me/<?php echo esc_attr( preg_replace( '/[^0-9]/', '', $ws_c_wa ) ); ?>" target="_blank" rel="noopener"><i class="fa-brands fa-whatsapp"></i> <?php esc_html_e( 'WhatsApp', 'workshop' ); ?></a>
+                <?php endif; ?>
+                <?php if ( $ws_c_email ) : ?>
+                    <a class="ws-btn ws-btn-light ws-btn-sm" href="mailto:<?php echo esc_attr( $ws_c_email ); ?>"><i class="fa-solid fa-envelope"></i> <?php esc_html_e( 'Correo', 'workshop' ); ?></a>
+                <?php endif; ?>
+                <?php if ( $ws_c_phone ) : ?>
+                    <a class="ws-btn ws-btn-light ws-btn-sm" href="tel:<?php echo esc_attr( preg_replace( '/[^0-9+]/', '', $ws_c_phone ) ); ?>"><i class="fa-solid fa-phone"></i> <?php esc_html_e( 'Teléfono', 'workshop' ); ?></a>
+                <?php endif; ?>
+            </div>
+        </div>
+        <?php endif; ?>
         <div class="ws-footer-grid">
             <div class="ws-footer-col">
                 <a class="ws-brand" href="<?php echo esc_url( ws_business_home() ); ?>">
@@ -29,7 +55,6 @@ if ( ! $ws_hide_footer ) :
                 <p class="ws-footer-desc"><?php echo esc_html( ws_site_footer_text() ); ?></p>
             </div>
             <?php
-            $ws_sp_pages = ws_site_pages();
             $ws_footer_cols = $ws_sp_pages['columns'];
             ?>
             <?php foreach ( $ws_footer_cols as $ws_fc ) : ?>

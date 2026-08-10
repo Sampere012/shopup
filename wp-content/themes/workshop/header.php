@@ -37,6 +37,12 @@ $ws_hide_topbar = in_array( $ws_public, array( 'login', 'register' ), true );
             <i class="fa-solid fa-store ws-brand-icon" style="<?php echo $ws_logo ? 'display:none' : ''; ?>"></i>
             <span class="ws-brand-name"><?php echo esc_html( ws_site_name() ); ?></span>
         </a>
+        <nav class="ws-topbar-nav" aria-label="<?php esc_attr_e( 'Enlaces útiles', 'workshop' ); ?>">
+            <a href="<?php echo esc_url( home_url( '/marketplace/' ) ); ?>"><?php esc_html_e( 'Tiendas', 'workshop' ); ?></a>
+            <a href="<?php echo esc_url( home_url( '/ayuda/' ) ); ?>"><?php esc_html_e( 'Ayuda', 'workshop' ); ?></a>
+            <a href="<?php echo esc_url( home_url( '/contacto/' ) ); ?>"><?php esc_html_e( 'Contacto', 'workshop' ); ?></a>
+            <a href="<?php echo esc_url( home_url( '/acerca/' ) ); ?>"><?php esc_html_e( 'Acerca de nosotros', 'workshop' ); ?></a>
+        </nav>
         <?php if ( 'stores' === (string) get_query_var( 'ws_public' ) ) : ?>
             <div class="ws-topbar-search">
                 <i class="fa-solid fa-magnifying-glass"></i>

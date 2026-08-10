@@ -142,7 +142,12 @@ if ( ! empty( $sub_data['is_trial'] ) && $sub_data['trial_days_left'] > 0 && $su
                         </div>
                         <div class="ws-item-qty">
                             <button @click="updateQty(item.product_id, item.qty - 1)">-</button>
-                            <span x-text="item.qty"></span>
+                            <input type="number" min="1" step="1" class="ws-qty-input"
+                                   :max="item.stock"
+                                   x-model.number="item.qty"
+                                   @change="clampQty(item.product_id)"
+                                   @keydown.enter.prevent="$event.target.blur()"
+                                   @focus="$event.target.select()">
                             <button @click="updateQty(item.product_id, item.qty + 1)">+</button>
                         </div>
                         <div class="ws-item-total" x-text="formatPrice(item.qty * item.price)"></div>
@@ -655,6 +660,17 @@ document.addEventListener('alpine:init', () => {
                     item.qty = qty;
                 }
             }
+        },
+
+        clampQty(productId) {
+            const item = this.cart.find(i => i.product_id === productId);
+            if (!item) return;
+            let qty = Math.floor(Number(item.qty));
+            if (isNaN(qty) || qty <= 0) {
+                this.removeFromCart(productId);
+                return;
+            }
+            item.qty = Math.min(qty, item.stock);
         },
 
         removeFromCart(productId) {

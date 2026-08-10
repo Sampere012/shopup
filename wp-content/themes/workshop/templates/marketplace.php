@@ -139,6 +139,7 @@ get_header();
     <main class="ws-container">
 
         <!-- ============ TOP TIENDAS (carrusel) ============ -->
+        <?php if ( ! empty( $businesses ) ) : ?>
         <section class="ws-mp-section-block ws-mp-top-block" id="ws-negocios">
             <div class="ws-section-head">
                 <div>
@@ -215,6 +216,7 @@ get_header();
                 </div>
             <?php endif; ?>
         </section>
+        <?php endif; ?>
 
         <!-- ============ QUÉ SOLUCIONA / POR QUÉ REGISTRARSE ============ -->
         <section class="ws-mp-section-block ws-mp-value" id="ws-por-que">
