@@ -123,6 +123,15 @@ function ws_generate_notifications( $user_id = 0 ) {
         ws_subscription_notify( $user_id );
     }
     global $wpdb;
+    // Tablas por negocio: el prefijo fijo (wp_ws_) solo existe para el negocio
+    // por defecto; los demás usan wp_ws_{slug}_ws_*.
+    $t_stock       = ws_table_name( 'stock' );
+    $t_products    = ws_table_name( 'products' );
+    $t_locations   = ws_table_name( 'locations' );
+    $t_orders      = ws_table_name( 'orders' );
+    $t_movements   = ws_table_name( 'movements' );
+    $t_order_items = ws_table_name( 'order_items' );
+    $t_suppliers   = ws_table_name( 'suppliers' );
     $loc_ids = array_map( fn( $l ) => (int) $l->id, ws_user_locations( $user_id ) );
     if ( empty( $loc_ids ) ) {
         return;
@@ -138,9 +147,9 @@ function ws_generate_notifications( $user_id = 0 ) {
             "SELECT s.location_id, l.name AS loc_name,
                     SUM( CASE WHEN s.qty <= p.min_stock AND s.qty > 0 THEN 1 ELSE 0 END ) AS low_qty,
                     SUM( CASE WHEN s.qty <= 0 THEN 1 ELSE 0 END ) AS out_qty
-             FROM {$wpdb->prefix}ws_stock s
-             INNER JOIN {$wpdb->prefix}ws_products p ON p.id = s.product_id
-             LEFT JOIN {$wpdb->prefix}ws_locations l ON l.id = s.location_id
+             FROM {$t_stock} s
+             INNER JOIN {$t_products} p ON p.id = s.product_id
+             LEFT JOIN {$t_locations} l ON l.id = s.location_id
              WHERE s.location_id IN ({$ph})
              GROUP BY s.location_id, l.name",
             ...$loc_ids
@@ -188,7 +197,7 @@ function ws_generate_notifications( $user_id = 0 ) {
     // --- Pedidos pendientes (orders_view) ---
     if ( WS_Capabilities::can( 'orders_view', $user_id ) ) {
         $pending = (int) $wpdb->get_var( $wpdb->prepare(
-            "SELECT COUNT(*) FROM {$wpdb->prefix}ws_orders WHERE location_id IN ({$ph}) AND status='pending'",
+            "SELECT COUNT(*) FROM {$t_orders} WHERE location_id IN ({$ph}) AND status='pending'",
             ...$loc_ids
         ) );
         ws_notification_sync(
@@ -207,12 +216,12 @@ function ws_generate_notifications( $user_id = 0 ) {
 
         // Ventas del día: pedidos aceptados (completados o aceptados) de hoy.
         $sales_today = (float) $wpdb->get_var( $wpdb->prepare(
-            "SELECT COALESCE(SUM(total), 0) FROM {$wpdb->prefix}ws_orders
+            "SELECT COALESCE(SUM(total), 0) FROM {$t_orders}
              WHERE location_id IN ({$ph}) AND status IN ('accepted','completed') AND DATE(created_at) = CURDATE()",
             ...$loc_ids
         ) );
         $orders_today = (int) $wpdb->get_var( $wpdb->prepare(
-            "SELECT COUNT(*) FROM {$wpdb->prefix}ws_orders
+            "SELECT COUNT(*) FROM {$t_orders}
              WHERE location_id IN ({$ph}) AND status IN ('accepted','completed') AND DATE(created_at) = CURDATE()",
             ...$loc_ids
         ) );
@@ -227,7 +236,7 @@ function ws_generate_notifications( $user_id = 0 ) {
 
         // Movimientos de stock en las últimas 24 h.
         $moves_24h = (int) $wpdb->get_var( $wpdb->prepare(
-            "SELECT COUNT(*) FROM {$wpdb->prefix}ws_movements
+            "SELECT COUNT(*) FROM {$t_movements}
              WHERE location_id IN ({$ph}) AND created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)",
             ...$loc_ids
         ) );
@@ -253,8 +262,8 @@ function ws_generate_notifications( $user_id = 0 ) {
         // aceptados/completados en las ubicaciones del usuario).
         $top_product = $wpdb->get_row( $wpdb->prepare(
             "SELECT oi.product_name, SUM(oi.qty) AS units
-             FROM {$wpdb->prefix}ws_order_items oi
-             INNER JOIN {$wpdb->prefix}ws_orders o ON o.id = oi.order_id
+             FROM {$t_order_items} oi
+             INNER JOIN {$t_orders} o ON o.id = oi.order_id
              WHERE o.location_id IN ({$ph}) AND o.status IN ('accepted','completed')
                AND o.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
              GROUP BY oi.product_id, oi.product_name
@@ -278,10 +287,10 @@ function ws_generate_notifications( $user_id = 0 ) {
         // Proveedor con más unidades vendidas esta semana.
         $top_supplier = $wpdb->get_row( $wpdb->prepare(
             "SELECT s.name AS supplier_name, SUM(oi.qty) AS units
-             FROM {$wpdb->prefix}ws_order_items oi
-             INNER JOIN {$wpdb->prefix}ws_orders o ON o.id = oi.order_id
-             INNER JOIN {$wpdb->prefix}ws_products p ON p.id = oi.product_id
-             INNER JOIN {$wpdb->prefix}ws_suppliers s ON s.id = p.supplier_id
+             FROM {$t_order_items} oi
+             INNER JOIN {$t_orders} o ON o.id = oi.order_id
+             INNER JOIN {$t_products} p ON p.id = oi.product_id
+             INNER JOIN {$t_suppliers} s ON s.id = p.supplier_id
              WHERE o.location_id IN ({$ph}) AND o.status IN ('accepted','completed')
                AND o.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
              GROUP BY s.id, s.name

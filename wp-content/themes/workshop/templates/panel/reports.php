@@ -14,12 +14,18 @@ global $wpdb;
 $ph   = $loc_ids ? implode( ',', array_fill( 0, count( $loc_ids ), '%d' ) ) : '0';
 $args = $loc_ids ? $loc_ids : array( 0 );
 
+// IMPORTANTE: tablas por negocio (ws_table_name); el prefijo fijo (wp_ws_)
+// apuntaría al negocio por defecto y los reportes saldrían vacíos.
+$orders_table      = ws_table_name( 'orders' );
+$movements_table   = ws_table_name( 'movements' );
+$order_items_table = ws_table_name( 'order_items' );
+
 // Ventas por día (últimos 14 días).
 $sales = array();
 if ( $loc_ids ) {
     $sales = $wpdb->get_results( $wpdb->prepare(
         "SELECT DATE(created_at) AS d, SUM(total) AS total, COUNT(*) AS n
-         FROM {$wpdb->prefix}ws_orders
+         FROM {$orders_table}
          WHERE location_id IN ({$ph}) AND status IN ('accepted','completed')
            AND created_at >= DATE_SUB(CURDATE(), INTERVAL 13 DAY)
          GROUP BY DATE(created_at) ORDER BY d ASC",
@@ -32,7 +38,7 @@ $by_type = array();
 if ( $loc_ids ) {
     $by_type = $wpdb->get_results( $wpdb->prepare(
         "SELECT type, COUNT(*) AS n, COALESCE(SUM(qty),0) AS qty
-         FROM {$wpdb->prefix}ws_movements
+         FROM {$movements_table}
          WHERE location_id IN ({$ph})
          GROUP BY type",
         ...$args
@@ -44,8 +50,8 @@ $top = array();
 if ( $loc_ids ) {
     $top = $wpdb->get_results( $wpdb->prepare(
         "SELECT oi.product_name, SUM(oi.qty) AS qty, SUM(oi.price * oi.qty) AS total
-         FROM {$wpdb->prefix}ws_order_items oi
-         INNER JOIN {$wpdb->prefix}ws_orders o ON o.id = oi.order_id
+         FROM {$order_items_table} oi
+         INNER JOIN {$orders_table} o ON o.id = oi.order_id
          WHERE o.location_id IN ({$ph}) AND o.status IN ('accepted','completed')
          GROUP BY oi.product_id, oi.product_name
          ORDER BY qty DESC LIMIT 10",

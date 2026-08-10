@@ -16,13 +16,21 @@ global $wpdb;
 $loc_placeholders = $loc_ids ? implode( ',', array_fill( 0, count( $loc_ids ), '%d' ) ) : '0';
 $args = $loc_ids ? $loc_ids : array( 0 );
 
-$products_total = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}ws_products WHERE active=1" );
+// IMPORTANTE: las tablas del tema están separadas por negocio
+// (ws_table_name). Consultarlas con el prefijo fijo (wp_ws_) apuntaría a
+// las tablas del negocio por defecto y devolvería 0 para el resto.
+$products_table = ws_table_name( 'products' );
+$stock_table    = ws_table_name( 'stock' );
+$orders_table   = ws_table_name( 'orders' );
+$pos_table      = ws_table_name( 'pos_sales' );
+
+$products_total = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$products_table} WHERE active=1" );
 
 $low_stock = 0;
 if ( $loc_ids ) {
     $low_stock = (int) $wpdb->get_var( $wpdb->prepare(
-        "SELECT COUNT(*) FROM {$wpdb->prefix}ws_stock s
-         INNER JOIN {$wpdb->prefix}ws_products p ON p.id = s.product_id
+        "SELECT COUNT(*) FROM {$stock_table} s
+         INNER JOIN {$products_table} p ON p.id = s.product_id
          WHERE s.location_id IN ({$loc_placeholders}) AND s.qty <= p.min_stock",
         ...$args
     ) );
@@ -31,16 +39,23 @@ if ( $loc_ids ) {
 $pending_orders = 0;
 if ( $loc_ids ) {
     $pending_orders = (int) $wpdb->get_var( $wpdb->prepare(
-        "SELECT COUNT(*) FROM {$wpdb->prefix}ws_orders WHERE location_id IN ({$loc_placeholders}) AND status='pending'",
+        "SELECT COUNT(*) FROM {$orders_table} WHERE location_id IN ({$loc_placeholders}) AND status='pending'",
         ...$args
     ) );
 }
 
+// Ventas de hoy: pedidos aceptados/completados + ventas POS completadas
+// (el POS guarda sus ventas en ws_pos_sales, no en ws_orders).
 $sales_today = 0.0;
 if ( $loc_ids ) {
-    $sales_today = (float) $wpdb->get_var( $wpdb->prepare(
-        "SELECT COALESCE(SUM(total),0) FROM {$wpdb->prefix}ws_orders
-         WHERE location_id IN ({$loc_placeholders}) AND status='accepted' AND DATE(created_at)=CURDATE()",
+    $sales_today += (float) $wpdb->get_var( $wpdb->prepare(
+        "SELECT COALESCE(SUM(total),0) FROM {$orders_table}
+         WHERE location_id IN ({$loc_placeholders}) AND status IN ('accepted','completed') AND DATE(created_at)=CURDATE()",
+        ...$args
+    ) );
+    $sales_today += (float) $wpdb->get_var( $wpdb->prepare(
+        "SELECT COALESCE(SUM(total),0) FROM {$pos_table}
+         WHERE location_id IN ({$loc_placeholders}) AND status='completed' AND DATE(created_at)=CURDATE()",
         ...$args
     ) );
 }
