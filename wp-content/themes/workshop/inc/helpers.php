@@ -323,6 +323,29 @@ function ws_whatsapp_order_url( $order, $location, $number_override = '' ) {
 }
 
 /**
+ * URL wa.me hacia el WhatsApp del administrador con el detalle de una
+ * solicitud de plan (upgrade). Devuelve '' si no hay número configurado.
+ * El número usado es el global (Ajustes -> WhatsApp), que es el del admin.
+ */
+function ws_plan_request_wa_url( $plan, $biz = null ) {
+    $number = ws_whatsapp_number( 0 );
+    if ( ! $number || ! $plan ) {
+        return '';
+    }
+    if ( ! $biz ) {
+        $biz = ws_current_business();
+    }
+    $name = $biz && ! empty( $biz->name ) ? $biz->name : ( $biz ? '#' . $biz->id : '' );
+    $msg  = sprintf(
+        __( "Hola, soy %s. Acabo de solicitar el plan %s (%s). Quedo a la espera de su confirmación.", 'workshop' ),
+        $name,
+        $plan->name,
+        WS_Plans::format_price( $plan )
+    );
+    return 'https://wa.me/' . $number . '?text=' . rawurlencode( $msg );
+}
+
+/**
  * HTML de un select de ubicaciones con el valor seleccionado.
  */
 function ws_locations_select( $name, $selected = 0, $attr = '' ) {

@@ -23,6 +23,11 @@ if ( 'ok=requested' === $msg ) {
 } elseif ( 0 === strpos( $msg, 'error=' ) ) {
     $plan_msg = array( 'error', urldecode( substr( $msg, 6 ) ) );
 }
+
+// Enlace wa.me hacia el WhatsApp del administrador con el detalle del plan
+// solicitado (si el admin tiene WhatsApp configurado en Ajustes).
+$wa_plan  = ! empty( $data['upgrade_plan'] ) ? $data['upgrade_plan'] : null;
+$wa_url   = ws_plan_request_wa_url( $wa_plan );
 ?>
 <div class="ws-plan-page">
     <div class="ws-toolbar">
@@ -33,7 +38,12 @@ if ( 'ok=requested' === $msg ) {
     </div>
 
     <?php if ( $plan_msg ) : ?>
-        <div class="ws-alert ws-alert-<?php echo 'error' === $plan_msg[0] ? 'error' : 'success'; ?>"><?php echo esc_html( $plan_msg[1] ); ?></div>
+        <div class="ws-alert ws-alert-<?php echo 'error' === $plan_msg[0] ? 'error' : 'success'; ?>">
+            <?php echo esc_html( $plan_msg[1] ); ?>
+            <?php if ( 'success' === $plan_msg[0] && $wa_url ) : ?>
+                <br><a class="ws-btn ws-btn-whatsapp ws-btn-sm" style="margin-top:10px" href="<?php echo esc_url( $wa_url ); ?>" target="_blank" rel="noopener"><i class="fa-brands fa-whatsapp"></i> <?php esc_html_e( 'Confirmar por WhatsApp', 'workshop' ); ?></a>
+            <?php endif; ?>
+        </div>
     <?php endif; ?>
 
     <?php if ( ! empty( $data['lock'] ) ) : ?>
@@ -49,6 +59,9 @@ if ( 'ok=requested' === $msg ) {
                 __( 'Tienes una solicitud pendiente para el plan %s. El administrador la revisará y habilitará tu negocio cuando la apruebe.', 'workshop' ),
                 $data['upgrade_plan']->name
             ) ); ?>
+            <?php if ( $wa_url ) : ?>
+                <br><a class="ws-btn ws-btn-whatsapp ws-btn-sm" style="margin-top:10px" href="<?php echo esc_url( $wa_url ); ?>" target="_blank" rel="noopener"><i class="fa-brands fa-whatsapp"></i> <?php esc_html_e( 'Confirmar por WhatsApp', 'workshop' ); ?></a>
+            <?php endif; ?>
             <form method="post" style="display:inline">
                 <?php wp_nonce_field( 'ws_plan_request', 'ws_nonce' ); ?>
                 <input type="hidden" name="ws_plan_request" value="cancel">

@@ -1,0 +1,22 @@
+# ============================================================
+# .htaccess de PRODUCCION (se despliega en /htdocs raiz)
+# NO contiene rutas /workshop (solo usa la raiz del dominio).
+# Este archivo se sube automaticamente como .htaccess remoto
+# en cada deploy (deploy.yml -> lftp put).
+# ============================================================
+
+ErrorDocument 403 /errors/403.html
+ErrorDocument 404 /errors/404.html
+ErrorDocument 500 /errors/500.html
+
+# BEGIN WordPress
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+RewriteBase /
+RewriteRule ^index\.php$ - [L]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . /index.php [L]
+</IfModule>
+# END WordPress
