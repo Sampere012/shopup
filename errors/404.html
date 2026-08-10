@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>404 - Página no encontrada</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background:
+      radial-gradient(1000px 500px at 100% 0%, rgba(129, 140, 248, .4), transparent 55%),
+      linear-gradient(150deg, #171b3a, #262b58);
+  }
+  .card {
+    background: #fff;
+    border-radius: 18px;
+    padding: 44px 36px;
+    max-width: 460px;
+    width: 100%;
+    text-align: center;
+    box-shadow: 0 12px 32px rgba(17, 24, 39, .28);
+  }
+  .code {
+    font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+    font-size: 72px;
+    font-weight: 800;
+    line-height: 1;
+    margin-bottom: 10px;
+    background: linear-gradient(135deg, #4f46e5, #818cf8);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  h1 { font-size: 24px; font-weight: 700; margin: 0 0 8px; color: #111827; letter-spacing: -.02em; }
+  .msg { font-size: 15px; color: #6b7280; margin-bottom: 26px; line-height: 1.6; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    background: linear-gradient(135deg, #4f46e5, #4338ca); color: #fff; text-decoration: none;
+    padding: 11px 22px; border-radius: 10px; font-size: 14px; font-weight: 600;
+    box-shadow: 0 4px 14px rgba(79, 70, 229, .28); transition: transform .12s, box-shadow .15s, background .15s;
+  }
+  .btn:hover { transform: translateY(-1px); background: linear-gradient(135deg, #4338ca, #3730a3); box-shadow: 0 6px 20px rgba(79, 70, 229, .34); }
+  .back { display: block; margin-top: 18px; color: #6b7280; font-size: 13px; text-decoration: none; }
+  .back:hover { color: #4f46e5; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="code">404</div>
+    <h1>Página no encontrada</h1>
+    <p class="msg">Lo sentimos, la página que buscas no existe o fue movida.<br>Verifica la dirección o vuelve al inicio.</p>
+    <a class="btn" href="/">Ir al inicio</a>
+    <a class="back" href="mailto:contacto@tudominio.com">¿Necesitas ayuda? Contáctanos</a>
+  </div>
+</body>
+</html>

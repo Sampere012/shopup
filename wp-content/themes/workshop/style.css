@@ -1,0 +1,19 @@
+/*
+Theme Name: Workshop MultiTienda
+Theme URI: https://workshop.local
+Author: Workshop
+Description: Tienda virtual multiubicación con 4 roles (Admin, Dueño del negocio, Almacenero, Vendedor/PV). Paneles por rol, gestión de productos, proveedores, ubicaciones, stock con movimientos, pedidos en tiempo real, turnos y permisos.
+Version: 0.1.0
+Requires at least: 6.5
+Requires PHP: 8.0
+License: GNU General Public License v2 or later
+Text Domain: workshop
+*/
+
+body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: #f1f5f9;
+    color: #0f172a;
+    -webkit-font-smoothing: antialiased;
+}

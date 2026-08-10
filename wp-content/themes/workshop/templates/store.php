@@ -1,0 +1,411 @@
+<?php
+/**
+ * Tienda pública de un PV.
+ *
+ * @package Workshop
+ */
+
+defined( 'ABSPATH' ) || exit;
+
+$location = get_query_var( 'ws_location' );
+$products = WS_Stock::stock_rows( array( 'location_id' => $location->id ) );
+$payments = ws_payment_methods( $location->id );
+$rate_badge = ws_rate_badge();
+
+// Datos de monedas/tasas/WhatsApp para la tienda.
+$store_currency = $location->currency ? $location->currency : ws_currency_symbol();
+$ws_store_rates = ws_exchange_rates();
+$ws_store_base  = ws_currency_symbol();
+$ws_store_currs = ws_currencies();
+$ws_store_was   = ws_whatsapp_numbers( $location->id );
+
+// Fondo del hero de la tienda: la foto del PV (comprimida) si está definida.
+$ws_store_has_bg = ! empty( $location->photo );
+$ws_store_hero_bg = $ws_store_has_bg
+    ? "background-image:url('" . ws_image_url( $location->photo ) . "');background-size:cover;background-position:center;"
+    : '';
+
+get_header();
+?>
+<div class="ws-store"
+     x-data="wsStore({
+        locationId: <?php echo (int) $location->id; ?>,
+        deliveryCost: <?php echo (float) $location->delivery_cost; ?>,
+        currency: '<?php echo esc_js( $store_currency ); ?>',
+        slug: '<?php echo esc_js( $location->slug ); ?>'
+     })">
+    <header class="ws-store-head<?php echo $ws_store_has_bg ? ' ws-has-bg' : ''; ?>" style="<?php echo esc_attr( $ws_store_hero_bg ); ?>">
+        <div class="ws-container ws-store-head-inner">
+            <div>
+                <a class="ws-store-back" href="<?php echo esc_url( ws_business_home() ); ?>"><i class="fa-solid fa-arrow-left"></i></a>
+                <h1><?php echo esc_html( $location->name ); ?></h1>
+                <p><i class="fa-solid fa-location-dot"></i> <?php echo esc_html( $location->address ); ?></p>
+                <div class="ws-store-head-row">
+                    <?php if ( (float) $location->delivery_cost > 0 ) : ?>
+                        <span class="ws-store-meta"><i class="fa-solid fa-truck-fast"></i> <?php echo esc_html( __( 'Domicilio', 'workshop' ) . ': ' . ws_money( $location->delivery_cost, $location->currency ) ); ?></span>
+                    <?php else : ?>
+                        <span class="ws-store-meta"><i class="fa-solid fa-truck-fast"></i> <?php esc_html_e( 'Recogida gratis', 'workshop' ); ?></span>
+                    <?php endif; ?>
+                    <?php if ( $payments ) : ?>
+                        <span class="ws-store-meta"><i class="fa-solid fa-credit-card"></i> <?php echo esc_html( implode( ' · ', array_slice( $payments, 0, 3 ) ) ); ?></span>
+                    <?php endif; ?>
+                    <?php if ( $rate_badge ) : ?>
+                        <span class="ws-store-meta ws-store-rate"><i class="fa-solid fa-arrow-right-arrow-left"></i> <?php echo esc_html( $rate_badge ); ?></span>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <div class="ws-cart-btn-wrap">
+                <button class="ws-sound-toggle" type="button" @click="toggleSound()" :aria-pressed="soundOn" :title="soundOn ? '<?php echo esc_js( __( 'Sonido activado', 'workshop' ) ); ?>' : '<?php echo esc_js( __( 'Sonido desactivado', 'workshop' ) ); ?>'" aria-label="<?php esc_attr_e( 'Sonido al añadir', 'workshop' ); ?>">
+                    <i class="fa-solid" :class="soundOn ? 'fa-volume-high' : 'fa-volume-xmark'"></i>
+                </button>
+                <button class="ws-btn ws-cart-toggle" @click="openCart()">
+                    <i class="fa-solid fa-cart-shopping"></i>
+                    <span class="ws-hide-sm"><?php esc_html_e( 'Pedido', 'workshop' ); ?></span>
+                    <span class="ws-cart-count" x-show="cartCount > 0" x-text="cartCount"></span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <div class="ws-container ws-store-layout">
+        <main class="ws-store-products">
+            <div class="ws-store-breadcrumb">
+                <a href="<?php echo esc_url( ws_business_home() ); ?>"><?php esc_html_e( 'Tiendas', 'workshop' ); ?></a>
+                <i class="fa-solid fa-chevron-right"></i>
+                <span><?php echo esc_html( $location->name ); ?></span>
+            </div>
+
+            <div class="ws-search">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input type="search" placeholder="<?php esc_attr_e( 'Buscar producto…', 'workshop' ); ?>" x-model="search">
+            </div>
+
+            <?php if ( empty( $products ) ) : ?>
+                <p class="ws-empty"><?php esc_html_e( 'Esta tienda aún no tiene productos disponibles.', 'workshop' ); ?></p>
+            <?php endif; ?>
+
+            <div class="ws-product-grid">
+                <template x-for="p in filtered" :key="p.id">
+                    <div class="ws-product-card" :data-pid="p.id" :class="inCart(p.id) > 0 ? 'is-in-cart' : ''" @click="openProduct(p)" role="button" :aria-label="'Ver ' + p.name">
+                        <span class="ws-product-out" x-show="p.qty <= 0"><?php esc_html_e( 'Agotado', 'workshop' ); ?></span>
+                        <span class="ws-product-incart" x-show="inCart(p.id) > 0"><i class="fa-solid fa-check"></i> <span x-text="'En pedido: ' + inCart(p.id)"></span></span>
+                        <div class="ws-product-img">
+                            <img x-show="p.image" :src="p.image" :alt="p.name" loading="lazy">
+                            <i x-show="!p.image" class="fa-solid fa-box-open"></i>
+                        </div>
+                        <div class="ws-product-info">
+                            <h3 x-text="p.name"></h3>
+                            <div class="ws-product-row">
+                                <span class="ws-price" x-text="priceInfo(p).main"></span>
+                                <span class="ws-price-equiv" x-show="priceInfo(p).equiv" x-text="priceInfo(p).equiv"></span>
+                                <span class="ws-price-transfer" x-show="p.transfer_pct > 0" x-text="'Transf.: ' + moneyOf(p.price * (1 + p.transfer_pct / 100), p.currency)"></span>
+                                <span class="ws-stock-badge" :class="p.qty > 0 ? 'ws-text-success' : 'ws-text-danger'" x-text="stockLabel(p)"></span>
+                            </div>
+                            <div class="ws-product-actions">
+                                <button class="ws-btn ws-btn-ghost ws-btn-sm ws-btn-block" @click.stop="openProduct(p)">
+                                    <i class="fa-solid fa-eye"></i> <?php esc_html_e( 'Ver', 'workshop' ); ?>
+                                </button>
+                                <button class="ws-btn ws-btn-sm ws-btn-block"
+                                        :class="inCart(p.id) > 0 ? 'ws-btn-success' : 'ws-btn-primary'"
+                                        :disabled="p.qty <= 0"
+                                        @click.stop="add(p)">
+                                    <i class="fa-solid" :class="inCart(p.id) > 0 ? 'fa-circle-check' : 'fa-cart-plus'"></i>
+                                    <span x-text="inCart(p.id) > 0 ? 'Añadido ✓' : 'Añadir'"></span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+
+            <!-- Consultar estado de pedido -->
+            <div class="ws-track-card ws-card">
+                <button class="ws-track-toggle" @click="toggleTrack()">
+                    <i class="fa-solid fa-magnifying-glass-location"></i>
+                    <span>
+                        <strong><?php esc_html_e( '¿Dónde está mi pedido?', 'workshop' ); ?></strong>
+                        <small><?php esc_html_e( 'Consulta el estado con tu número de pedido y teléfono.', 'workshop' ); ?></small>
+                    </span>
+                    <i class="fa-solid fa-chevron-down" :class="trackOpen ? 'ws-rotated' : ''"></i>
+                </button>
+                <div class="ws-track-body" x-show="trackOpen" x-collapse>
+                    <div class="ws-track-form">
+                        <label class="ws-field">
+                            <span><?php esc_html_e( 'Número de pedido', 'workshop' ); ?></span>
+                            <input type="text" x-model="trackNumber" placeholder="WS-XXXXXXX" @keyup.enter="trackStatus()">
+                        </label>
+                        <label class="ws-field">
+                            <span><?php esc_html_e( 'Teléfono', 'workshop' ); ?></span>
+                            <input type="tel" x-model="trackPhone" placeholder="+58 412 123 4567" @keyup.enter="trackStatus()">
+                        </label>
+                        <button class="ws-btn ws-btn-primary" @click="trackStatus()" :disabled="trackBusy">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                            <span x-text="trackBusy ? 'Consultando…' : 'Consultar'"></span>
+                        </button>
+                    </div>
+                    <p class="ws-track-error" x-show="trackError" x-text="trackError"></p>
+                    <div class="ws-track-result" x-show="trackResult" x-cloak>
+                        <template x-if="trackResult">
+                            <div>
+                                <div class="ws-track-result-head">
+                                    <span x-text="trackResult.number"></span>
+                                    <span class="ws-badge" :class="'ws-badge-' + trackResult.status" x-text="trackResult.status_label"></span>
+                                </div>
+                                <p class="ws-muted" x-text="'Fecha: ' + trackResult.date"></p>
+                                <table class="ws-table">
+                                    <thead><tr><th><?php esc_html_e( 'Producto', 'workshop' ); ?></th><th>Cant.</th><th><?php esc_html_e( 'Precio', 'workshop' ); ?></th></tr></thead>
+                                    <tbody>
+                                        <template x-for="it in trackResult.items" :key="it.product_name">
+                                            <tr><td x-text="it.product_name"></td><td x-text="it.qty"></td><td x-text="price(it.price * it.qty)"></td></tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                                <div class="ws-summary-total">
+                                    <div class="ws-total"><span><?php esc_html_e( 'Total', 'workshop' ); ?></span><strong x-text="price(trackResult.total)"></strong></div>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- FAB carrito: anclado abajo a la derecha al hacer scroll -->
+    <button class="ws-cart-fab" @click="openCart()" x-show="fabVisible" x-transition.opacity.duration.200ms aria-label="<?php esc_attr_e( 'Abrir pedido', 'workshop' ); ?>">
+        <i class="fa-solid fa-cart-shopping"></i>
+        <span class="ws-cart-fab-count" x-show="cartCount > 0" x-text="cartCount"></span>
+    </button>
+
+    <!-- Carrito: modal fijo centrado -->
+    <div class="ws-cart-overlay" x-show="cartOpen" @click.self="cartOpen = false" x-cloak>
+        <div class="ws-cart" x-show="cartOpen" x-transition.scale.origin.top @keydown.escape.window="cartOpen = false">
+
+            <!-- Paso 1: revisar carrito -->
+            <div x-show="step === 'cart'" class="ws-cart-step">
+                <div class="ws-cart-head">
+                    <h3><i class="fa-solid fa-cart-shopping"></i> <?php esc_html_e( 'Tu pedido', 'workshop' ); ?></h3>
+                    <button class="ws-cart-close" @click="cartOpen = false"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+
+                <div class="ws-cart-body">
+                    <template x-if="cartItems.length === 0">
+                        <p class="ws-empty"><?php esc_html_e( 'Tu carrito está vacío.', 'workshop' ); ?></p>
+                    </template>
+                    <template x-for="item in cartItems" :key="item.product_id">
+                        <div class="ws-cart-item">
+                            <div>
+                                <strong x-text="item.name"></strong>
+                                <div class="ws-qty">
+                                    <button @click="changeQty(item, -1)"><i class="fa-solid fa-minus"></i></button>
+                                    <input type="number" min="1" :max="stockOf(item.product_id)" class="ws-qty-input"
+                                           :value="item.qty" @change="setQty(item, $event.target.value)">
+                                    <button @click="changeQty(item, 1)"><i class="fa-solid fa-plus"></i></button>
+                                </div>
+                            </div>
+                            <div class="ws-cart-item-right">
+                                <span x-text="moneyOf(item.price * item.qty, item.currency)"></span>
+                                <button class="ws-cart-remove" @click="removeItem(item.product_id)"><i class="fa-solid fa-trash-can"></i></button>
+                            </div>
+                        </div>
+                    </template>
+                </div>                <div class="ws-cart-foot">
+                    <div class="ws-cart-totals">
+                        <div><span><?php esc_html_e( 'Subtotal', 'workshop' ); ?></span><strong x-text="price(subtotal)"></strong></div>
+                        <div><span><?php esc_html_e( 'Domicilio', 'workshop' ); ?></span><strong x-text="price(delivery)"></strong></div>
+                        <div class="ws-total"><span><?php esc_html_e( 'Total en efectivo', 'workshop' ); ?></span><strong x-text="price(total)"></strong></div>
+                        <div class="ws-total ws-total-transfer"><span><?php esc_html_e( 'Total en transferencia', 'workshop' ); ?></span><strong x-text="price(totalTransfer)"></strong></div>
+                    </div>
+                    <button class="ws-btn ws-btn-primary ws-btn-block ws-cart-next" @click="goCheckout()" :disabled="cartItems.length === 0">
+                        <i class="fa-solid fa-circle-check"></i> <?php esc_html_e( 'Realizar pedido', 'workshop' ); ?>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Paso 2: datos del cliente -->
+            <div x-show="step === 'data'" class="ws-cart-step">
+                <div class="ws-cart-head">
+                    <h3><i class="fa-solid fa-user"></i> <?php esc_html_e( 'Tus datos', 'workshop' ); ?></h3>
+                    <button class="ws-cart-close" @click="cartOpen = false"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+
+                <div class="ws-cart-body">
+                    <div class="ws-cart-summary">
+                        <template x-for="item in cartItems" :key="item.product_id">
+                            <div class="ws-cart-summary-row">
+                                <span x-text="item.name"></span>
+                                <span class="ws-cart-summary-meta"><strong x-text="item.qty + ' × ' + moneyOf(item.price, item.currency)"></strong></span>
+                            </div>
+                        </template>
+                        <div class="ws-cart-totals">
+                            <div><span><?php esc_html_e( 'Subtotal', 'workshop' ); ?></span><strong x-text="price(subtotal)"></strong></div>
+                            <div><span><?php esc_html_e( 'Domicilio', 'workshop' ); ?></span><strong x-text="price(delivery)"></strong></div>
+                            <div class="ws-total"><span><?php esc_html_e( 'Total en efectivo', 'workshop' ); ?></span><strong x-text="price(total)"></strong></div>
+                            <div class="ws-total ws-total-transfer"><span><?php esc_html_e( 'Total en transferencia', 'workshop' ); ?></span><strong x-text="price(totalTransfer)"></strong></div>
+                        </div>
+                    </div>
+
+                    <form @submit.prevent="checkout" class="ws-checkout-form">
+                        <label class="ws-field">
+                            <span><?php esc_html_e( 'Nombre', 'workshop' ); ?></span>
+                            <input type="text" x-model="customer.name" required>
+                        </label>
+                        <label class="ws-field">
+                            <span><?php esc_html_e( 'Teléfono', 'workshop' ); ?></span>
+                            <input type="tel" x-model="customer.phone" required>
+                        </label>
+                        <label class="ws-field">
+                            <span><?php esc_html_e( 'Dirección', 'workshop' ); ?></span>
+                            <input type="text" x-model="customer.address">
+                        </label>
+                        <label class="ws-field" x-show="whatsappNumbers.length > 1">
+                            <span><?php esc_html_e( 'Número que atiende tu pedido', 'workshop' ); ?></span>
+                            <select x-model="customer.number">
+                                <option value="">— <?php esc_html_e( 'Seleccionar', 'workshop' ); ?> —</option>
+                                <template x-for="n in whatsappNumbers" :key="n"><option :value="n" x-text="n"></option></template>
+                            </select>
+                        </label>
+
+                        <button class="ws-btn ws-btn-success ws-btn-block" type="submit" :disabled="busy">
+                            <i class="fa-solid fa-circle-check"></i> <span x-text="busy ? 'Enviando…' : 'Confirmar pedido'"></span>
+                        </button>
+                        <button type="button" class="ws-btn ws-btn-ghost ws-btn-block" @click="backToCart()" :disabled="busy">
+                            <i class="fa-solid fa-arrow-left"></i> <?php esc_html_e( 'Volver al carrito', 'workshop' ); ?>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de producto: fuera del overlay del carrito para que se pueda
+         abrir desde la tarjeta sin abrir el carrito. -->
+    <div class="ws-modal ws-store-modal" x-show="productOpen" x-cloak @click.self="closeProduct()" @keydown.escape.window="closeProduct()">
+        <div class="ws-modal-backdrop" @click="closeProduct()"></div>
+        <div class="ws-modal-box">
+            <div class="ws-modal-head">
+                <h3 x-text="activeProduct ? activeProduct.name : ''"></h3>
+                <button class="ws-cart-close" @click="closeProduct()"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <template x-if="activeProduct">
+                <div class="ws-store-modal-body">
+                    <div class="ws-store-modal-img">
+                        <img x-show="activeProduct.image" :src="activeProduct.image" :alt="activeProduct.name">
+                        <i x-show="!activeProduct.image" class="fa-solid fa-box-open"></i>
+                    </div>
+                    <div class="ws-store-modal-info">
+                        <p class="ws-product-barcode" x-text="activeProduct.barcode"></p>
+                        <p class="ws-product-desc" x-show="activeProduct.description" x-text="activeProduct.description"></p>
+                        <div class="ws-product-row">
+                            <span class="ws-price ws-price-lg" x-text="priceInfo(activeProduct).main"></span>
+                            <span class="ws-price-equiv" x-show="priceInfo(activeProduct).equiv" x-text="priceInfo(activeProduct).equiv"></span>
+                            <span class="ws-price-transfer" x-show="activeProduct.transfer_pct > 0" x-text="'Transf.: ' + moneyOf(activeProduct.price * (1 + activeProduct.transfer_pct / 100), activeProduct.currency)"></span>
+                        </div>
+                        <p class="ws-stock-badge" :class="activeProduct.qty > 0 ? 'ws-text-success' : 'ws-text-danger'" x-text="stockLabel(activeProduct)"></p>
+                        <div class="ws-store-modal-qty">
+                            <span><?php esc_html_e( 'Cantidad', 'workshop' ); ?></span>
+                            <div class="ws-qty">
+                                <button @click="setModalQty(modalQty - 1)"><i class="fa-solid fa-minus"></i></button>
+                                <input type="number" min="1" :max="activeProduct.qty || 1" class="ws-qty-input" x-model.number="modalQty" @change="setModalQty($event.target.value)">
+                                <button @click="setModalQty(modalQty + 1)"><i class="fa-solid fa-plus"></i></button>
+                            </div>
+                        </div>
+                        <button class="ws-btn ws-btn-primary ws-btn-block" :disabled="activeProduct.qty <= 0" @click="addFromModal()">
+                            <i class="fa-solid fa-cart-plus"></i> <?php esc_html_e( 'Añadir al pedido', 'workshop' ); ?>
+                        </button>
+                        
+                        <!-- Sección de valoraciones -->
+                        <div class="ws-store-reviews">
+                            <h4><?php esc_html_e( 'Valoraciones', 'workshop' ); ?></h4>
+                            <div class="ws-reviews-summary">
+                                <div class="ws-rating-stars">
+                                    <template x-for="i in 5" :key="i">
+                                        <i class="fa-solid fa-star" :class="i <= productRating ? 'ws-star-filled' : 'ws-star-empty'"></i>
+                                    </template>
+                                </div>
+                                <span x-text="'(' + productReviews.length + ' reseñas)'"></span>
+                            </div>
+                            <div class="ws-reviews-list">
+                                <template x-for="review in productReviews.slice(0, 3)" :key="review.id">
+                                    <div class="ws-review-item">
+                                        <div class="ws-review-rating">
+                                            <template x-for="i in 5" :key="i">
+                                                <i class="fa-solid fa-star" :class="i <= review.rating ? 'ws-star-filled' : 'ws-star-empty'"></i>
+                                            </template>
+                                        </div>
+                                        <p x-text="review.comment"></p>
+                                        <small x-text="review.customer_name"></small>
+                                    </div>
+                                </template>
+                            </div>
+                            <button class="ws-btn ws-btn-ghost ws-btn-sm" @click="showReviewForm = true" x-show="!showReviewForm">
+                                <i class="fa-solid fa-pen"></i> <?php esc_html_e( 'Escribir reseña', 'workshop' ); ?>
+                            </button>
+                            
+                            <!-- Formulario de reseña -->
+                            <div class="ws-review-form" x-show="showReviewForm">
+                                <div class="ws-field">
+                                    <label><?php esc_html_e( 'Tu nombre', 'workshop' ); ?></label>
+                                    <input type="text" x-model="reviewForm.customer_name" placeholder="<?php esc_attr_e( 'Nombre', 'workshop' ); ?>">
+                                </div>
+                                <div class="ws-field">
+                                    <label><?php esc_html_e( 'Valoración', 'workshop' ); ?></label>
+                                    <div class="ws-rating-input">
+                                        <template x-for="i in 5" :key="i">
+                                            <i class="fa-solid fa-star" 
+                                               :class="i <= reviewForm.rating ? 'ws-star-filled' : 'ws-star-empty'"
+                                               @click="reviewForm.rating = i"
+                                               style="cursor: pointer;"></i>
+                                        </template>
+                                    </div>
+                                </div>
+                                <div class="ws-field">
+                                    <label><?php esc_html_e( 'Comentario', 'workshop' ); ?></label>
+                                    <textarea x-model="reviewForm.comment" rows="3" placeholder="<?php esc_attr_e( 'Comparte tu experiencia...', 'workshop' ); ?>"></textarea>
+                                </div>
+                                <button class="ws-btn ws-btn-primary ws-btn-sm" @click="submitReview()">
+                                    <?php esc_html_e( 'Enviar reseña', 'workshop' ); ?>
+                                </button>
+                                <button class="ws-btn ws-btn-ghost ws-btn-sm" @click="showReviewForm = false">
+                                    <?php esc_html_e( 'Cancelar', 'workshop' ); ?>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+</div>
+
+<?php
+// Datos iniciales del store para Alpine.
+?>
+<script>
+window.WS_STORE_DATA = <?php echo wp_json_encode( array(
+    'location' => array(
+        'id'     => (int) $location->id,
+        'name'   => $location->name,
+        'currency' => $store_currency,
+    ),
+    'rates'        => $ws_store_rates,
+    'baseCurrency' => $ws_store_base,
+    'currencies'   => $ws_store_currs,
+    'whatsappNumbers' => $ws_store_was,
+    'products' => array_map( function ( $r ) {
+        return array(
+            'id'           => (int) $r->product_id,
+            'name'         => $r->name,
+            'barcode'      => $r->barcode,
+            'image'        => $r->image ? ws_image_url( $r->image ) : '',
+            'description'  => $r->description ?? '',
+            'price'        => (float) $r->sale_price,
+            'transfer_pct' => (float) $r->transfer_pct,
+            'currency'     => $r->currency,
+            'show_equiv'   => (int) ( $r->show_equiv ?? 1 ),
+            'qty'          => (float) $r->qty,
+        );
+    }, $products ),
+) ); ?>;
+</script>
+<?php get_footer(); ?>

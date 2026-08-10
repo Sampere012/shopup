@@ -1,0 +1,75 @@
+<?php
+/**
+ * Login/logout front-end.
+ *
+ * @package Workshop
+ */
+
+defined( 'ABSPATH' ) || exit;
+
+// Registrar el último acceso del usuario.
+add_action( 'wp_login', 'ws_track_last_login', 10, 2 );
+function ws_track_last_login( $user_login, $user ) {
+    if ( $user instanceof WP_User ) {
+        update_user_meta( $user->ID, 'ws_last_login', current_time( 'mysql' ) );
+    }
+}
+
+// Tras cualquier login (también vía wp-login.php) redirigir según rol.
+add_filter( 'login_redirect', 'ws_login_redirect', 10, 3 );
+function ws_login_redirect( $redirect_to, $requested_redirect_to, $user ) {
+    if ( is_wp_error( $user ) || ! $user ) {
+        return $redirect_to;
+    }
+    $role = ws_user_role( $user->ID );
+    if ( $role ) {
+        return ws_panel_url( $role );
+    }
+    return user_can( $user->ID, 'manage_options' ) ? admin_url() : $redirect_to;
+}
+
+// Redirigir el login de WordPress al login de la plantilla.
+add_action( 'init', 'ws_redirect_wp_login', 5 );
+function ws_redirect_wp_login() {
+    if ( wp_doing_ajax() || ! isset( $_SERVER['SCRIPT_NAME'] ) || 'GET' !== ( $_SERVER['REQUEST_METHOD'] ?? '' ) ) {
+        return;
+    }
+    if ( 'wp-login.php' === basename( $_SERVER['SCRIPT_NAME'] ) && empty( $_GET['action'] ) ) {
+        $redirect = ! empty( $_GET['redirect_to'] ) ? wp_unslash( $_GET['redirect_to'] ) : '';
+        $url      = home_url( '/login/' );
+        if ( $redirect ) {
+            $url = add_query_arg( 'redirect_to', urlencode( $redirect ), $url );
+        }
+        wp_safe_redirect( $url );
+        exit;
+    }
+}
+
+add_action( 'init', 'ws_handle_login_post' );
+function ws_handle_login_post() {
+    if ( empty( $_POST['ws_login'] ) || ! wp_verify_nonce( $_POST['ws_nonce'], 'ws_login' ) ) {
+        return;
+    }
+    $creds = array(
+        'user_login'    => sanitize_text_field( $_POST['ws_user'] ?? '' ),
+        'user_password' => (string) ( $_POST['ws_pass'] ?? '' ),
+        'remember'      => ! empty( $_POST['ws_remember'] ),
+    );
+    $user = wp_signon( $creds, false );
+    if ( is_wp_error( $user ) ) {
+        $url = add_query_arg( 'ws_login_error', '1', home_url( '/login/' ) );
+        wp_safe_redirect( $url );
+        exit;
+    } else {
+        $role = ws_user_role( $user->ID );
+        wp_set_current_user( $user->ID );
+        if ( $role ) {
+            wp_safe_redirect( ws_panel_url( $role ) );
+        } elseif ( user_can( $user->ID, 'manage_options' ) ) {
+            wp_safe_redirect( admin_url() );
+        } else {
+            wp_safe_redirect( ws_business_home() );
+        }
+        exit;
+    }
+}

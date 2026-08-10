@@ -1,0 +1,50 @@
+# ------------------------------------------------------------
+# WordPress
+# ------------------------------------------------------------
+wp-config.php
+wp-content/advanced-cache.php
+wp-content/backup-db/
+wp-content/upgrade/
+wp-content/wp-cache-config.php
+wp-content/cache/
+wp-content/uploads/ws-img-cache/
+
+# ------------------------------------------------------------
+# Desarrollo local (Node / Playwright / tests)
+# ------------------------------------------------------------
+node_modules/
+tests/
+test-results/
+.playwright-mcp/
+playwright.config.js
+package.json
+package-lock.json
+full-run.log
+
+# ------------------------------------------------------------
+# Scripts temporales / de depuración (no van a producción)
+# ------------------------------------------------------------
+ws-*.php
+flush-rules.php
+local-xdebuginfo.php
+
+# ------------------------------------------------------------
+# Archivos basura generados por errores de PHP/CLI
+# ------------------------------------------------------------
+NOW()
+users}
+
+# ------------------------------------------------------------
+# Paquetes generados
+# ------------------------------------------------------------
+*.zip
+workshop-infinityfree.zip
+
+# ------------------------------------------------------------
+# Sistema / IDE
+# ------------------------------------------------------------
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/
