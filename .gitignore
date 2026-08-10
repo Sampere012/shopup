@@ -24,9 +24,9 @@ full-run.log
 # ------------------------------------------------------------
 # Scripts temporales / de depuración (no van a producción)
 # ------------------------------------------------------------
-ws-*.php
-flush-rules.php
-local-xdebuginfo.php
+/ws-*.php
+/flush-rules.php
+/local-xdebuginfo.php
 
 # ------------------------------------------------------------
 # Archivos basura generados por errores de PHP/CLI

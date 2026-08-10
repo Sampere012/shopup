@@ -22,3 +22,7 @@ jobs:
           local-dir: ./wp-content/
           server-dir: ${{ secrets.FTP_REMOTE_DIR }}/
           dangerous-clean-slate: false
+
+      - name: Trigger URL migration on production
+        run: |
+          curl -sS -o /dev/null -w "HTTP %{http_code}\n" --max-time 60 "http://shopup.site.je/" || true
