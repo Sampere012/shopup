@@ -351,6 +351,91 @@ class WS_Stock {
     }
 
     /**
+     * Convierte 1 unidad del producto padre en unidades del hijo fraccionado
+     * (1 padre = $factor hijos) en la misma ubicación, de forma atómica.
+     *
+     * Se usa al enlazar un fraccionamiento (crear/editar un hijo): el stock
+     * debe quedar completo (padre -1, hijo +factor) para que el hijo pueda
+     * venderse o comprarse sin romper el inventario. Si el padre tiene menos
+     * de 1 unidad en total, se convierte todo lo disponible: el padre queda
+     * en 0 y el hijo recibe solo el remanente (stock restante * factor).
+     *
+     * Devuelve array con el resumen de conversión por ubicación, o WP_Error.
+     */
+    public static function convert_fraction( $parent_id, $child_id, $factor ) {
+        global $wpdb;
+        $parent_id = (int) $parent_id;
+        $child_id  = (int) $child_id;
+        $factor    = (float) $factor;
+        if ( ! $parent_id || ! $child_id || $factor <= 0 ) {
+            return new WP_Error( 'invalid', __( 'Datos de fraccionamiento inválidos.', 'workshop' ) );
+        }
+
+        $stock_table = self::table( 'stock' );
+        $loc_table   = self::table( 'locations' );
+
+        // Ubicaciones con stock del padre (mayor stock primero).
+        $locs = $wpdb->get_results( $wpdb->prepare(
+            "SELECT s.location_id, s.qty, l.name AS location_name
+             FROM {$stock_table} s
+             LEFT JOIN {$loc_table} l ON l.id = s.location_id
+             WHERE s.product_id = %d AND s.qty > 0
+             ORDER BY s.qty DESC",
+            $parent_id
+        ) );
+        if ( ! $locs ) {
+            return array( 'attempted' => true, 'converted' => 0, 'locations' => array() );
+        }
+
+        $wpdb->query( 'START TRANSACTION' );
+        $converted = array();
+        $remaining = 1.0; // 1 unidad del padre (o el remanente si hay menos).
+        $ok        = true;
+        foreach ( $locs as $loc ) {
+            if ( $remaining <= 0.0001 ) {
+                break;
+            }
+            $loc_id = (int) $loc->location_id;
+            $take   = min( $remaining, (float) $loc->qty );
+            if ( $take <= 0.0001 ) {
+                continue;
+            }
+            // UPDATE atómico con condición anti-negativo (misma técnica que
+            // _decrease_locked): evita doble descuento ante concurrencia.
+            $take_sql = number_format( $take, 4, '.', '' );
+            $updated  = $wpdb->query( $wpdb->prepare(
+                "UPDATE {$stock_table} SET qty = qty - %s WHERE product_id = %d AND location_id = %d AND qty >= %s",
+                $take_sql, $parent_id, $loc_id, $take_sql
+            ) );
+            if ( ! $updated ) {
+                $ok = false;
+                break;
+            }
+            $child_qty = round( $take * $factor, 4 );
+            if ( $child_qty > 0 ) {
+                self::_upsert_stock( $child_id, $loc_id, $child_qty, '+', null );
+            }
+            self::_log( 'salida', $parent_id, $loc_id, 0, $take, 'Fraccionamiento', 'Conversión a producto fraccionado', get_current_user_id() );
+            if ( $child_qty > 0 ) {
+                self::_log( 'entrada', $child_id, $loc_id, 0, $child_qty, 'Fraccionamiento', 'Unidades generadas del producto madre', get_current_user_id() );
+            }
+            $converted[] = array(
+                'location_id'   => $loc_id,
+                'location_name' => $loc->location_name ?? '',
+                'parent_qty'    => $take,
+                'child_qty'     => $child_qty,
+            );
+            $remaining -= $take;
+        }
+        if ( ! $ok ) {
+            $wpdb->query( 'ROLLBACK' );
+            return new WP_Error( 'concurrent', __( 'No se pudo convertir el stock. Inténtalo de nuevo.', 'workshop' ) );
+        }
+        $wpdb->query( 'COMMIT' );
+        return array( 'attempted' => true, 'converted' => count( $converted ), 'locations' => $converted );
+    }
+
+    /**
      * Stock actual de un producto en una ubicación.
      */
     public static function qty( $product_id, $location_id ) {

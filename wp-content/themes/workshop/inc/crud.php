@@ -9,6 +9,21 @@ defined( 'ABSPATH' ) || exit;
 
 class WS_CRUD {
 
+    /**
+     * Resultado de la última conversión de fraccionamiento (para la UI).
+     *
+     * @var array|null
+     */
+    protected static $last_fraction = null;
+
+    /**
+     * Devuelve el resultado de la última conversión de fraccionamiento
+     * (o null si el último guardado no enlazó un fraccionamiento).
+     */
+    public static function last_fraction_conversion() {
+        return self::$last_fraction;
+    }
+
     protected static function table( $t ) {
         return ws_table_name( $t );
     }
@@ -136,17 +151,38 @@ class WS_CRUD {
             if ( (int) $parent->fraction_parent ) {
                 return new WP_Error( 'fraction', __( 'El producto madre no puede ser a su vez una fracción.', 'workshop' ) );
             }
+            if ( (float) $fields['fraction_qty'] <= 0 ) {
+                return new WP_Error( 'fraction', __( 'Indica cuántos hijos equivalen a 1 unidad del producto madre.', 'workshop' ) );
+            }
         }
         global $wpdb;
+        $old = $id ? self::get_product( $id ) : null;
         if ( $id ) {
             // Guarda el estado anterior para la trazabilidad de precios.
-            $old = self::get_product( $id );
             $wpdb->update( self::table( 'products' ), $fields, array( 'id' => $id ) );
             self::record_price_change( $old, $fields );
         } else {
             $wpdb->insert( self::table( 'products' ), $fields );
             $id = $wpdb->insert_id;
         }
+
+        // Fraccionamiento recién enlazado: convierte 1 unidad del padre en
+        // unidades del hijo (1 padre = N hijos) para que el stock quede
+        // completo y el hijo pueda venderse o comprarse sin romper el
+        // inventario. Si el padre tiene menos de 1 unidad en total, queda en
+        // 0 y el hijo recibe solo el remanente (lo que quede * factor).
+        self::$last_fraction = null;
+        if ( $fields['fraction_parent'] && (float) $fields['fraction_qty'] > 0 ) {
+            $old_parent = $old ? (int) ( $old->fraction_parent ?? 0 ) : 0;
+            if ( $old_parent !== (int) $fields['fraction_parent'] ) {
+                self::$last_fraction = WS_Stock::convert_fraction(
+                    (int) $fields['fraction_parent'],
+                    (int) $id,
+                    (float) $fields['fraction_qty']
+                );
+            }
+        }
+
         return (int) $id;
     }
 

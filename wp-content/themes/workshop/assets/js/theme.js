@@ -706,6 +706,16 @@
                     .then(res => {
                         if (res.success) {
                             toast('success', 'Guardado');
+                            // Fraccionamiento: muestra la conversión de stock
+                            // realizada (1 unidad del padre -> N del hijo).
+                            const f = res.data && res.data.fraction;
+                            if (f && f.converted > 0 && f.locations && f.locations.length) {
+                                const num = v => Number(v).toLocaleString('es-ES', { maximumFractionDigits: 4 });
+                                const parts = f.locations.map(l => (l.location_name || 'Ubicación') + ': -' + num(l.parent_qty) + ' → +' + num(l.child_qty));
+                                toast('info', 'Fraccionamiento', 'Stock convertido del producto madre: ' + parts.join(' · '));
+                            } else if (f && f.attempted) {
+                                toast('warning', 'Fraccionamiento', f.error || 'El producto madre no tiene stock para convertir. El hijo queda sin stock hasta que se dé entrada.');
+                            }
                             this.formOpen = false;
                             this.reload();
                             if (this.historyLoaded) this.loadHistory();

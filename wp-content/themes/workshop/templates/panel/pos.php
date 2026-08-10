@@ -797,6 +797,9 @@ document.addEventListener('alpine:init', () => {
                 if (response.success) {
                     this.clearCart();
                     this.cartOpen = false;
+                    // Refresca el stock de los productos de la ubicación para
+                    // que el descuento del inventario se vea de inmediato.
+                    this.loadProducts();
                     Swal.fire({
                         icon: 'success',
                         title: '<?php esc_html_e( 'Venta completada', 'workshop' ); ?>',

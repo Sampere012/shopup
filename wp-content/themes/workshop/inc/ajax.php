@@ -229,7 +229,22 @@ function ws_ajax_save_product() {
         wp_send_json_error( array( 'msg' => $result->get_error_message() ) );
     }
     ws_log_audit( $id ? 'product_update' : 'product_create', 'product', $result, array( 'name' => $_POST['name'] ?? '' ) );
-    wp_send_json_success( array( 'id' => $result ) );
+    // Incluye el resultado de la conversión de stock del fraccionamiento
+    // (padre -1 → hijo +factor) para mostrarlo en el panel.
+    $response = array( 'id' => $result );
+    $fraction = WS_CRUD::last_fraction_conversion();
+    if ( is_array( $fraction ) ) {
+        $response['fraction'] = $fraction;
+    } elseif ( is_wp_error( $fraction ) ) {
+        // Fallo raro (p. ej. concurrencia): avisar sin bloquear el guardado.
+        $response['fraction'] = array(
+            'attempted' => true,
+            'converted' => 0,
+            'locations' => array(),
+            'error'     => $fraction->get_error_message(),
+        );
+    }
+    wp_send_json_success( $response );
 }
 
 add_action( 'wp_ajax_ws_delete_product', 'ws_ajax_delete_product' );
@@ -1742,7 +1757,7 @@ function ws_ajax_pos_sale_save() {
     }
 
     ws_log_audit( 'pos_sale_create', 'pos_sale', $sale_id, array( 'location' => $data['location_id'], 'total' => $data['total'] ) );
-    wp_send_json_success( array( 'data' => array( 'sale_id' => $sale_id ) ) );
+    wp_send_json_success( array( 'sale_id' => $sale_id ) );
 }
 
 add_action( 'wp_ajax_ws_products_get', 'ws_ajax_products_get' );
