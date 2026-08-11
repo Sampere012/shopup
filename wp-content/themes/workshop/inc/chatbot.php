@@ -1969,7 +1969,19 @@ function ws_ajax_chatbot_search() {
         wp_send_json_error( array( 'msg' => __( 'Sesión expirada.', 'workshop' ) ) );
     }
     $q = sanitize_text_field( $_POST['q'] ?? '' );
-    if ( mb_strlen( $q ) < 2 ) {
+
+    // Filtros opcionales del chat: categoría, rango de precio, solo con stock
+    // y tienda/ubicación (slug). Se aplican en ambas ramas (negocio y visitante).
+    $category  = sanitize_text_field( $_POST['category'] ?? '' );
+    $min_price = ( isset( $_POST['min_price'] ) && '' !== (string) $_POST['min_price'] ) ? (float) $_POST['min_price'] : null;
+    $max_price = ( isset( $_POST['max_price'] ) && '' !== (string) $_POST['max_price'] ) ? (float) $_POST['max_price'] : null;
+    $in_stock  = ! empty( $_POST['in_stock'] ) && '0' !== (string) $_POST['in_stock'];
+    $loc_slug  = sanitize_title( $_POST['loc'] ?? '' );
+
+    // La búsqueda exige 2 letras SOLO si no hay filtros: filtrar por categoría
+    // o precio sin término busca todo el catálogo con ese filtro aplicado.
+    $has_filter = '' !== $category || null !== $min_price || null !== $max_price || $in_stock;
+    if ( mb_strlen( $q ) < 2 && ! $has_filter ) {
         wp_send_json_error( array( 'msg' => __( 'Escribe al menos 2 letras para buscar.', 'workshop' ) ) );
     }
 
@@ -1981,8 +1993,28 @@ function ws_ajax_chatbot_search() {
     if ( $role ) {
         // Usuario de negocio: busca en sus ubicaciones (con o sin stock).
         $panel_url = ws_panel_url( $role, 'products', $biz );
-        foreach ( array_slice( ws_user_location_ids(), 0, 5 ) as $lid ) {
-            foreach ( WS_Stock::stock_rows( array( 'location_id' => $lid, 'search' => $q, 'limit' => 4 ) ) as $r ) {
+        // Filtro por tienda: si llega un slug de ubicación, solo se busca ahí.
+        $user_locs = ws_user_locations();
+        $loc_ids   = ws_user_location_ids();
+        if ( '' !== $loc_slug ) {
+            $loc_ids = array();
+            foreach ( $user_locs as $ul ) {
+                if ( (string) ( $ul->slug ?? '' ) === $loc_slug ) {
+                    $loc_ids = array( (int) $ul->id );
+                    break;
+                }
+            }
+        }
+        foreach ( array_slice( $loc_ids, 0, 5 ) as $lid ) {
+            foreach ( WS_Stock::stock_rows( array(
+                'location_id' => $lid,
+                'search'      => $q,
+                'category'    => $category,
+                'min_price'   => $min_price,
+                'max_price'   => $max_price,
+                'in_stock'    => $in_stock ? 1 : 0,
+                'limit'       => 4,
+            ) ) as $r ) {
                 $out[] = array(
                     'id'          => (int) $r->product_id,
                     'location_id' => (int) $r->location_id,
@@ -2005,7 +2037,6 @@ function ws_ajax_chatbot_search() {
         // (biz + loc), porque la petición AJAX no conserva los query vars y
         // así la búsqueda funciona también en negocios con slug propio.
         $biz_slug = sanitize_title( $_POST['biz'] ?? '' );
-        $loc_slug = sanitize_text_field( $_POST['loc'] ?? '' );
         $target   = $biz_slug ? WS_Business::get_by_slug( $biz_slug ) : $biz;
         $suffix   = $target ? ws_biz_table_suffix( $target ) : '';
         $loc_t    = ws_table_for( $suffix, 'locations' );
@@ -2023,11 +2054,23 @@ function ws_ajax_chatbot_search() {
             $locs = $wpdb->get_results( "SELECT * FROM {$loc_t} WHERE type='pv' ORDER BY name ASC LIMIT 6" );
         }
         $like = '%' . $wpdb->esc_like( $q ) . '%';
+        // Filtros opcionales (categoría y rango de precio) sobre la consulta.
+        $filters = array();
+        if ( '' !== $category ) {
+            $filters[] = $wpdb->prepare( 'p.category = %s', $category );
+        }
+        if ( null !== $min_price ) {
+            $filters[] = $wpdb->prepare( 'p.sale_price >= %f', $min_price );
+        }
+        if ( null !== $max_price ) {
+            $filters[] = $wpdb->prepare( 'p.sale_price <= %f', $max_price );
+        }
+        $filters_sql = $filters ? ' AND ' . implode( ' AND ', $filters ) : '';
         foreach ( $locs as $loc ) {
             $rows = $wpdb->get_results( $wpdb->prepare(
                 "SELECT s.qty, p.name, p.sale_price, p.currency, p.image FROM {$stock_t} s
                  INNER JOIN {$prod_t} p ON p.id = s.product_id
-                 WHERE s.location_id=%d AND p.name LIKE %s AND s.qty>0
+                 WHERE s.location_id=%d AND p.name LIKE %s AND s.qty>0{$filters_sql}
                  ORDER BY p.name ASC LIMIT 3",
                 (int) $loc->id, $like
             ) );
@@ -2075,7 +2118,112 @@ function ws_ajax_chatbot_search() {
             }
         }
     }
-    wp_send_json_success( array( 'products' => $out, 'stores' => $stores ?? array(), 'q' => $q ) );
+
+    // Categorías disponibles (con stock) del catálogo visible: las usa el bot
+    // para sugerir chips de filtro tras una búsqueda.
+    $categories = array();
+    if ( $role ) {
+        $pt = ws_table_name( 'products' );
+        $st = ws_table_name( 'stock' );
+        if ( ! empty( $loc_ids ) ) {
+            $ph  = implode( ',', array_fill( 0, count( $loc_ids ), '%d' ) );
+            $categories = $wpdb->get_col( $wpdb->prepare(
+                "SELECT DISTINCT p.category FROM {$pt} p INNER JOIN {$st} s ON s.product_id=p.id
+                 WHERE p.category<>'' AND s.location_id IN ({$ph}) AND s.qty>0
+                 ORDER BY p.category ASC LIMIT 12",
+                ...array_map( 'intval', $loc_ids )
+            ) );
+        }
+    } elseif ( ! empty( $locs ) ) {
+        $ids = array_map( fn( $l ) => (int) $l->id, $locs );
+        $ph  = implode( ',', array_fill( 0, count( $ids ), '%d' ) );
+        $categories = $wpdb->get_col( $wpdb->prepare(
+            "SELECT DISTINCT p.category FROM {$prod_t} p INNER JOIN {$stock_t} s ON s.product_id=p.id
+             WHERE p.category<>'' AND s.location_id IN ({$ph}) AND s.qty>0
+             ORDER BY p.category ASC LIMIT 12",
+            ...$ids
+        ) );
+    }
+    wp_send_json_success( array(
+        'products'   => $out,
+        'stores'     => $stores ?? array(),
+        'categories' => array_values( array_filter( array_map( 'strval', $categories ) ) ),
+        'q'          => $q,
+    ) );
+}
+
+add_action( 'wp_ajax_ws_chatbot_filters', 'ws_ajax_chatbot_filters' );
+add_action( 'wp_ajax_nopriv_ws_chatbot_filters', 'ws_ajax_chatbot_filters' );
+function ws_ajax_chatbot_filters() {
+    global $wpdb;
+    if ( ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Sesión expirada.', 'workshop' ) ) );
+    }
+    // Opciones de filtro disponibles del catálogo visible (negocio logueado o
+    // tienda pública): categorías con stock y puntos de venta.
+    $role = ws_user_role();
+    $categories = array();
+    $locations  = array();
+    if ( $role ) {
+        $loc_ids = ws_user_location_ids();
+        $pt = ws_table_name( 'products' );
+        $st = ws_table_name( 'stock' );
+        if ( ! empty( $loc_ids ) ) {
+            $ph  = implode( ',', array_fill( 0, count( $loc_ids ), '%d' ) );
+            $categories = $wpdb->get_col( $wpdb->prepare(
+                "SELECT DISTINCT p.category FROM {$pt} p INNER JOIN {$st} s ON s.product_id=p.id
+                 WHERE p.category<>'' AND s.location_id IN ({$ph}) AND s.qty>0
+                 ORDER BY p.category ASC LIMIT 12",
+                ...array_map( 'intval', $loc_ids )
+            ) );
+        }
+        foreach ( ws_user_locations() as $l ) {
+            $locations[] = array(
+                'id'   => (int) $l->id,
+                'name' => (string) $l->name,
+                'slug' => (string) ( $l->slug ?? '' ),
+            );
+        }
+    } else {
+        $biz_slug = sanitize_title( $_POST['biz'] ?? '' );
+        $loc_slug = sanitize_title( $_POST['loc'] ?? '' );
+        $target   = $biz_slug ? WS_Business::get_by_slug( $biz_slug ) : ws_current_business();
+        $suffix   = $target ? ws_biz_table_suffix( $target ) : '';
+        $loc_t    = ws_table_for( $suffix, 'locations' );
+        $prod_t   = ws_table_for( $suffix, 'products' );
+        $stock_t  = ws_table_for( $suffix, 'stock' );
+        $locs = array();
+        if ( '' !== $loc_slug ) {
+            $row = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$loc_t} WHERE slug=%s LIMIT 1", $loc_slug ) );
+            if ( $row ) {
+                $locs[] = $row;
+            }
+        }
+        if ( empty( $locs ) ) {
+            $locs = $wpdb->get_results( "SELECT * FROM {$loc_t} WHERE type='pv' ORDER BY name ASC LIMIT 6" );
+        }
+        foreach ( $locs as $l ) {
+            $locations[] = array(
+                'id'   => (int) $l->id,
+                'name' => (string) $l->name,
+                'slug' => (string) ( $l->slug ?? '' ),
+            );
+        }
+        if ( $locs ) {
+            $ids = array_map( fn( $l ) => (int) $l->id, $locs );
+            $ph  = implode( ',', array_fill( 0, count( $ids ), '%d' ) );
+            $categories = $wpdb->get_col( $wpdb->prepare(
+                "SELECT DISTINCT p.category FROM {$prod_t} p INNER JOIN {$stock_t} s ON s.product_id=p.id
+                 WHERE p.category<>'' AND s.location_id IN ({$ph}) AND s.qty>0
+                 ORDER BY p.category ASC LIMIT 12",
+                ...$ids
+            ) );
+        }
+    }
+    wp_send_json_success( array(
+        'categories' => array_values( array_filter( array_map( 'strval', $categories ) ) ),
+        'locations'  => $locations,
+    ) );
 }
 
 add_action( 'wp_ajax_ws_chatbot_summary', 'ws_ajax_chatbot_summary' );

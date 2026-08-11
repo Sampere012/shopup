@@ -30,7 +30,7 @@
         'reviews_get', 'reviews_stats',
         'shifts_list', 'stock_list', 'store_products', 'suppliers_list',
         // Consultas del asistente (chatbot) en el panel: son lecturas.
-        'ws_chatbot_search', 'ws_chatbot_summary',
+        'ws_chatbot_search', 'ws_chatbot_summary', 'ws_chatbot_filters',
         'ws_chatbot_meta', 'ws_chatbot_top', 'ws_chatbot_llm', 'ws_notifications_list'
     ];
 

@@ -61,6 +61,7 @@ function ws_db_tables() {
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
             name VARCHAR(255) NOT NULL,
             barcode VARCHAR(100) NOT NULL DEFAULT '',
+            category VARCHAR(100) NOT NULL DEFAULT '',
             description TEXT NULL,
             image VARCHAR(255) NOT NULL DEFAULT '',
             cost_price DECIMAL(12,2) NOT NULL DEFAULT 0,
@@ -435,6 +436,10 @@ function ws_db_migrate() {
     if ( ! in_array( 'show_equiv', $cols, true ) ) {
         $wpdb->query( "ALTER TABLE {$table} ADD COLUMN show_equiv TINYINT(1) NOT NULL DEFAULT 1 AFTER currency" );
     }
+    // Columna de categoría en productos: filtros del catálogo y del chatbot.
+    if ( ! in_array( 'category', $cols, true ) ) {
+        $wpdb->query( "ALTER TABLE {$table} ADD COLUMN category VARCHAR(100) NOT NULL DEFAULT '' AFTER barcode" );
+    }
     // Columna de moderación en reseñas: estado (pending/approved/rejected).
     $rt = $wpdb->prefix . WS_TABLE_PREFIX . 'reviews';
     if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $rt ) ) === $rt ) {
@@ -576,6 +581,7 @@ function ws_db_migrate() {
             foreach ( array(
                 'fraction_parent' => "ALTER TABLE {$pt} ADD COLUMN fraction_parent BIGINT(20) UNSIGNED NOT NULL DEFAULT 0 AFTER min_stock",
                 'fraction_qty'    => "ALTER TABLE {$pt} ADD COLUMN fraction_qty DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER fraction_parent",
+                'category'        => "ALTER TABLE {$pt} ADD COLUMN category VARCHAR(100) NOT NULL DEFAULT '' AFTER barcode",
             ) as $col => $sql ) {
                 if ( ! in_array( $col, $p_cols, true ) ) {
                     $wpdb->query( $sql );

@@ -16,6 +16,12 @@ $can_bulk   = ws_can( 'products_bulk' );
 $currency   = ws_currency_symbol();
 $currencies = ws_currencies();
 $can_fraction = ws_can( 'products_fraction' );
+// Categorías ya usadas: autocompletado en el formulario (texto libre).
+$categories = array_values( array_unique( array_filter( array_map(
+    fn( $p ) => (string) ( $p->category ?? '' ),
+    $products
+) ) ) );
+sort( $categories, SORT_STRING );
 
 // Estado del plan: límite de productos palpable en la pantalla de creación.
 $plan_status = ws_plan_limit_status( 'products' );
@@ -30,12 +36,13 @@ if ( ! empty( $sub_data['plan'] ) ) {
 $upgrade_url = ws_panel_url( 'owner', 'plan' );
 ?>
 <div x-data="wsProducts(<?php echo esc_attr( wp_json_encode( array(
-    'suppliers'  => $suppliers,
-    'currency'   => $currency,
-    'currencies' => $currencies,
-    'canEdit'    => $can_edit,
-    'canDelete'  => $can_delete,
-    'canCreate'  => $can_create,
+    'suppliers'   => $suppliers,
+    'currency'    => $currency,
+    'currencies'  => $currencies,
+    'categories'  => $categories,
+    'canEdit'     => $can_edit,
+    'canDelete'   => $can_delete,
+    'canCreate'   => $can_create,
     'canFraction' => $can_fraction,
 ) ) ); ?>)">
 
@@ -236,6 +243,13 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
                     <label class="ws-field">
                         <span><?php esc_html_e( 'Código de barras', 'workshop' ); ?></span>
                         <input type="text" x-model="form.barcode">
+                    </label>
+                    <label class="ws-field">
+                        <span><?php esc_html_e( 'Categoría', 'workshop' ); ?></span>
+                        <input type="text" x-model="form.category" list="ws-categories" placeholder="<?php esc_attr_e( 'Ej.: Bebidas, Ropa, Hogar…', 'workshop' ); ?>">
+                        <datalist id="ws-categories">
+                            <template x-for="c in categories" :key="c"><option :value="c"></option></template>
+                        </datalist>
                     </label>
                     <label class="ws-field">
                         <span><?php esc_html_e( 'Imagen URL', 'workshop' ); ?></span>

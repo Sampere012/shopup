@@ -64,6 +64,9 @@ class WS_CRUD {
             $like = '%' . $wpdb->esc_like( $args['search'] ) . '%';
             $where[] = $wpdb->prepare( "(p.name LIKE %s OR p.barcode LIKE %s)", $like, $like );
         }
+        if ( ! empty( $args['category'] ) ) {
+            $where[] = $wpdb->prepare( 'p.category = %s', $args['category'] );
+        }
         if ( ! empty( $args['supplier_id'] ) ) {
             $where[] = $wpdb->prepare( 'p.supplier_id = %d', $args['supplier_id'] );
         }
@@ -123,6 +126,7 @@ class WS_CRUD {
         $fields = array(
             'name'          => sanitize_text_field( $data['name'] ?? '' ),
             'barcode'       => $unique,
+            'category'      => sanitize_text_field( $data['category'] ?? '' ),
             'description'   => sanitize_textarea_field( $data['description'] ?? '' ),
             'image'         => esc_url_raw( $data['image'] ?? '' ),
             'cost_price'    => (float) ( $data['cost_price'] ?? 0 ),

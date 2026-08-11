@@ -569,7 +569,7 @@ class WS_Stock {
     public static function stock_rows( $args = array() ) {
         global $wpdb;
         $where = self::stock_rows_where( $args );
-        $sql = "SELECT s.*, p.name, p.barcode, p.min_stock, p.sale_price, p.transfer_pct, p.currency, p.show_equiv, p.image, p.description,
+        $sql = "SELECT s.*, p.name, p.barcode, p.category, p.min_stock, p.sale_price, p.transfer_pct, p.currency, p.show_equiv, p.image, p.description,
                 l.name AS location_name, l.type AS location_type
                 FROM " . self::table( 'stock' ) . " s
                 INNER JOIN " . self::table( 'products' ) . " p ON p.id = s.product_id
@@ -618,6 +618,18 @@ class WS_Stock {
         if ( ! empty( $args['search'] ) ) {
             $like = '%' . $wpdb->esc_like( $args['search'] ) . '%';
             $where[] = $wpdb->prepare( '(p.name LIKE %s OR p.barcode LIKE %s)', $like, $like );
+        }
+        if ( ! empty( $args['category'] ) ) {
+            $where[] = $wpdb->prepare( 'p.category = %s', $args['category'] );
+        }
+        if ( isset( $args['min_price'] ) && is_numeric( $args['min_price'] ) ) {
+            $where[] = $wpdb->prepare( 'p.sale_price >= %f', (float) $args['min_price'] );
+        }
+        if ( isset( $args['max_price'] ) && is_numeric( $args['max_price'] ) ) {
+            $where[] = $wpdb->prepare( 'p.sale_price <= %f', (float) $args['max_price'] );
+        }
+        if ( ! empty( $args['in_stock'] ) ) {
+            $where[] = 's.qty > 0';
         }
         if ( ! empty( $args['low_stock'] ) ) {
             $where[] = 's.qty <= p.min_stock';

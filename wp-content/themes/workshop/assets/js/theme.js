@@ -597,6 +597,7 @@
             suppliers: opts.suppliers || [],
             currency: opts.currency,
             currencies: opts.currencies || [],
+            categories: opts.categories || [],
             canEdit: opts.canEdit,
             canDelete: opts.canDelete,
             canCreate: opts.canCreate,
@@ -692,7 +693,8 @@
             },
             money(v, c) { return money(v, c || this.currency); },
             openForm(p) {
-                this.form = p ? Object.assign({}, p) : { name: '', barcode: '', description: '', image: '', cost_price: 0, sale_price: 0, transfer_pct: 0, currency: this.currency, show_equiv: 1, supplier_id: 0, min_stock: 0, fraction_parent: 0, fraction_qty: 0 };
+                this.form = p ? Object.assign({}, p) : { name: '', barcode: '', category: '', description: '', image: '', cost_price: 0, sale_price: 0, transfer_pct: 0, currency: this.currency, show_equiv: 1, supplier_id: 0, min_stock: 0, fraction_parent: 0, fraction_qty: 0 };
+                if (this.form.category === undefined) this.form.category = '';
                 if (!this.form.currency) this.form.currency = this.currency;
                 if (this.form.show_equiv === undefined) this.form.show_equiv = 1;
                 if (this.form.fraction_parent === undefined) this.form.fraction_parent = 0;

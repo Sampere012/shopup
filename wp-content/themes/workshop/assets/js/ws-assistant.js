@@ -443,18 +443,117 @@
         reply(msg, chips, 'page:' + p.key);
     }
 
-    function doSearch(q) {
+    var lastSearchQ = '';
+
+    // Fichas de filtro disponibles para seguir afinando la búsqueda.
+    function filterChips() {
+        return [
+            { label: 'Filtrar por categoría', send: 'filtrar por categoría', icon: 'fa-tags' },
+            { label: 'Solo con stock', send: 'solo con stock', icon: 'fa-boxes-stacked' },
+            { label: 'Por precio', send: 'por precio', icon: 'fa-coins' },
+            { label: 'Por tienda', send: 'por tienda', icon: 'fa-store' }
+        ];
+    }
+
+    // Título de los resultados según la búsqueda y los filtros aplicados.
+    function filterSummary(q, filters) {
+        filters = filters || {};
+        var parts = [];
+        if (filters.category) { parts.push('categoría "' + filters.category + '"'); }
+        if (filters.min_price !== undefined && filters.min_price !== null && filters.max_price !== undefined && filters.max_price !== null) {
+            parts.push('entre ' + filters.min_price + ' y ' + filters.max_price);
+        } else {
+            if (filters.min_price !== undefined && filters.min_price !== null) { parts.push('desde ' + filters.min_price); }
+            if (filters.max_price !== undefined && filters.max_price !== null) { parts.push('hasta ' + filters.max_price); }
+        }
+        if (filters.in_stock) { parts.push('con stock'); }
+        if (filters.loc) { parts.push('en esa tienda'); }
+        var label = parts.length ? ' (' + parts.join(', ') + ')' : '';
+        return q ? ('Resultados de "' + q + '"' + label + ':') : ('Productos' + label + ':');
+    }
+
+    // Extrae un rango de precio de un texto: "entre 100 y 500", "menos de 200",
+    // "más de 50", o un solo número ("100" → hasta 100). Devuelve null si no.
+    function parsePriceFilter(text) {
+        var t = String(text || '').toLowerCase();
+        // Normaliza separadores de miles: "1.500"/"1,500" → "1500" (solo si el
+        // separador va seguido de exactamente 3 dígitos y no hay decimales).
+        t = t.replace(/(\d)[.,](\d{3})(?![\d.,])/g, '$1$2');
+        t = t.replace(/,/g, '.');
+        var m = t.match(/entre\s+(\d+(?:\.\d+)?)\s*(?:y|a|-)\s*(\d+(?:\.\d+)?)/);
+        if (m) { return { min_price: parseFloat(m[1]), max_price: parseFloat(m[2]) }; }
+        m = t.match(/(?:menos de|menor(?: a| que)?|maximo|hasta|por debajo de|no mas de)\s+(\d+(?:\.\d+)?)/);
+        if (m) { return { max_price: parseFloat(m[1]) }; }
+        m = t.match(/(?:mas de|mas que|mayor(?: a| que)?|minimo|desde|por encima de)\s+(\d+(?:\.\d+)?)/);
+        if (m) { return { min_price: parseFloat(m[1]) }; }
+        m = t.match(/(\d+(?:\.\d+)?)/);
+        if (m) { return { max_price: parseFloat(m[1]) }; }
+        return null;
+    }
+
+    function fetchFilterOptions(cb) {
+        api('ws_chatbot_filters', { biz: C.bizSlug || '', loc: C.locSlug || '' }, cb);
+    }
+
+    function askCategory() {
+        var t = showTyping();
+        fetchFilterOptions(function (json) {
+            removeTyping(t);
+            var cats = (json && json.success && json.data && json.data.categories) || [];
+            if (!cats.length) {
+                reply('Aún no hay categorías en el catálogo. Puedes crearlas al añadir o editar un producto.', [marketChip()].filter(Boolean), 'filters:nocats');
+                return;
+            }
+            pendingAsk = { type: 'filterCategory' };
+            reply('¿De qué categoría quieres ver productos?', cats.slice(0, 8).map(function (c) { return { label: c, send: c, icon: 'fa-tags' }; }), 'filters:category');
+            busy = false;
+        });
+    }
+
+    function askStore() {
+        var t = showTyping();
+        fetchFilterOptions(function (json) {
+            removeTyping(t);
+            var locs = (json && json.success && json.data && json.data.locations) || [];
+            if (!locs.length) {
+                reply('No encuentro puntos de venta para filtrar.', [marketChip()].filter(Boolean), 'filters:nolocs');
+                return;
+            }
+            pendingAsk = { type: 'filterLocation' };
+            reply('¿En qué tienda quieres buscar?', locs.slice(0, 8).map(function (l) { return { label: l.name, send: 'tienda:' + l.slug, icon: 'fa-store' }; }), 'filters:store');
+            busy = false;
+        });
+    }
+
+    function askPrice() {
+        pendingAsk = { type: 'filterPrice' };
+        reply('Dime el rango de precio: por ejemplo "entre 100 y 500", "menos de 200" o "más de 50".', [], 'filters:price');
+        busy = false;
+    }
+
+    function doSearch(q, filters) {
+        filters = filters || {};
+        lastSearchQ = q || '';
         var t = showTyping();
         // Se envía el contexto de la página (negocio + ubicación) para que la
         // búsqueda pública apunte a la tienda correcta también en negocios con slug.
-        api('ws_chatbot_search', { q: q, biz: C.bizSlug || '', loc: C.locSlug || '' }, function (json) {
+        api('ws_chatbot_search', {
+            q: q || '',
+            biz: C.bizSlug || '',
+            loc: filters.loc || C.locSlug || '',
+            category: filters.category || '',
+            min_price: (filters.min_price !== undefined && filters.min_price !== null) ? filters.min_price : '',
+            max_price: (filters.max_price !== undefined && filters.max_price !== null) ? filters.max_price : '',
+            in_stock: filters.in_stock ? 1 : 0
+        }, function (json) {
             removeTyping(t);
             if (json && json.success) {
                 var list = (json.data && json.data.products) || [];
                 var stores = (json.data && json.data.stores) || [];
+                var cats = (json.data && json.data.categories) || [];
                 if (!list.length && !stores.length) {
-                    reply('No encontré "' + q + '" disponible ahora mismo. ¿Pruebas con otra palabra o revisas todas las tiendas?',
-                        [marketChip()].filter(Boolean), 'search:none');
+                    reply(filterSummary(q, filters) + ' No encontré nada con esos criterios. ¿Pruebas con otros filtros o con otra palabra?',
+                        filterChips(), 'search:none');
                     return;
                 }
                 var chips = [marketChip()].filter(Boolean);
@@ -485,8 +584,10 @@
                             url: it.url
                         };
                     });
-                    appendProductCards('Resultados de "' + q + '":', rows, { chips: stores.length ? null : chips });
+                    appendProductCards(filterSummary(q, filters), rows, { chips: stores.length ? null : chips });
                 }
+                // Sugerencias de filtro para seguir afinando la búsqueda.
+                if (cats.length) { appendChips(filterChips()); }
                 track('search:' + (list.length ? 'products' : 'stores'));
             } else {
                 reply((json && json.data && json.data.msg) || 'No pude buscar en este momento.', [marketChip()].filter(Boolean), 'search:error');
@@ -593,6 +694,32 @@
             pendingAsk = null;
             busy = false;
             checkOrder(p.number, value);
+            return;
+        }
+        if (p.type === 'filterCategory') {
+            pendingAsk = null;
+            busy = false;
+            doSearch(lastSearchQ, { category: value });
+            return;
+        }
+        if (p.type === 'filterLocation') {
+            pendingAsk = null;
+            busy = false;
+            var slug = String(value).replace(/^tienda:/i, '').trim();
+            doSearch(lastSearchQ, { loc: slug });
+            return;
+        }
+        if (p.type === 'filterPrice') {
+            pendingAsk = null;
+            busy = false;
+            var pf2 = parsePriceFilter(value);
+            if (!pf2) {
+                reply('No entendí el rango. Prueba con "menos de 200", "más de 50" o "entre 100 y 500".', [], 'filters:priceRetry');
+                pendingAsk = { type: 'filterPrice' };
+                return;
+            }
+            doSearch(lastSearchQ, pf2);
+            return;
         }
     }
 
@@ -1708,13 +1835,56 @@
                 pendingAsk = { type: 'order_number' };
             }
         },
+        filtros: {
+            keys: ['filtrar', 'filtros', 'solo con stock', 'por precio', 'por tienda', 'por categoria', 'filtrar por categoria', 'por categoría', 'filtrar por categoría'],
+            run: function () {
+                if (locked) { actions.locked.run(); return; }
+                var low = String(lastUserText || '').toLowerCase();
+                if (/categor/.test(low)) { askCategory(); return; }
+                if (/tienda|pv\b|punto de venta/.test(low)) { askStore(); return; }
+                if (/precio|barat|caro|economic/.test(low)) { askPrice(); return; }
+                if (/stock|disponible/.test(low)) { doSearch(lastSearchQ || '', { in_stock: 1 }); return; }
+                reply('Puedo filtrar por categoría, precio, stock o tienda. ¿Cuál prefieres?', filterChips(), 'filters:menu');
+            }
+        },
         searchProduct: {
             keys: ['buscar', 'busco', 'busca ', 'tienes ', 'tienen ', 'hay ', 'precio de', 'disponible', 'encuentro', 'donde encuentro'],
             run: function () {
                 if (locked) { actions.locked.run(); return; }
-                var q = extractQuery(lastUserText);
-                if (!q) {
-                    reply('¿Qué quieres buscar? Puedo buscarte productos o tiendas.', [{ label: 'Buscar producto', icon: 'fa-magnifying-glass', send: 'buscar producto' }, { label: 'Ver tiendas', url: C.urls.stores, icon: 'fa-store' }], 'search:ask');
+                var text = String(lastUserText || '');
+                var low = text.toLowerCase();
+                var filters = {};
+                // Filtro por categoría en la frase ("categoría bebidas", "de la
+                // categoría ropa"…): se extrae y se quita del término de búsqueda.
+                var catM = low.match(/(?:categoria|categoría)\s+(?:de\s+|del\s+|la\s+|el\s+|en\s+)?([a-z0-9]{2,30})/);
+                if (catM && !/buscar|ver|todas|lista|disponible/.test(catM[1])) {
+                    filters.category = catM[1].trim();
+                    text = text.replace(new RegExp(catM[0], 'i'), ' ');
+                    low = text.toLowerCase();
+                }
+                // Rango de precio en la frase ("entre 100 y 500", "menos de 200"…).
+                var pf = parsePriceFilter(low);
+                if (pf) {
+                    if (pf.min_price !== undefined) { filters.min_price = pf.min_price; }
+                    if (pf.max_price !== undefined) { filters.max_price = pf.max_price; }
+                    text = text.replace(/\d[\d.,]*/g, ' ');
+                    low = text.toLowerCase();
+                }
+                // Disponibilidad: solo productos con stock.
+                if (/con stock|disponible|solo stock|que haya/.test(low)) {
+                    filters.in_stock = 1;
+                    text = text.replace(/con stock|disponible|solo stock|que haya/gi, ' ');
+                    low = text.toLowerCase();
+                }
+                // "barato/caro" sin número → preguntar el rango de precio.
+                if (/barat|economic|caro/.test(low) && !pf) {
+                    pendingAsk = { type: 'filterPrice' };
+                    reply('¿Hasta qué precio buscas? Dime un monto (p. ej. "menos de 200") y te muestro lo que hay.', [], 'filters:price');
+                    return;
+                }
+                var q = extractQuery(text);
+                if (!q && !filters.category && !filters.min_price && !filters.max_price && !filters.in_stock) {
+                    reply('¿Qué quieres buscar? Puedo buscarte productos, tiendas o filtrar el catálogo.', [{ label: 'Buscar producto', icon: 'fa-magnifying-glass', send: 'buscar producto' }, { label: 'Ver tiendas', url: C.urls.stores, icon: 'fa-store' }, { label: 'Filtrar', send: 'filtrar', icon: 'fa-sliders' }], 'search:ask');
                     pendingAsk = { type: 'search' };
                     return;
                 }
@@ -1722,12 +1892,12 @@
                 // (p. ej. "tienda de zapatos" → "zapatos") y se muestran las
                 // tiendas que coinciden; si es genérico ("tiendas", "donde
                 // compro") se listan todas las del mercado.
-                if (/tienda|tiendas|negocio|negocios|local|locales|donde compro|donde puedo comprar/i.test(q)) {
-                    var storeTerm = q.replace(/^(?:buscar|busca|busco)\s+/i, '').replace(/^(?:una|un|la|el|las|los|mi|mis)\s+/i, '').replace(/^(?:tienda|tiendas|negocio|negocios|local|locales)\s+(?:de|del|d)\s+/i, '').replace(/^(?:tienda|tiendas|negocio|negocios|local|locales|donde compro|donde puedo comprar)$/i, '').trim();
-                    if (storeTerm) { doSearch(storeTerm); } else { doStores(); }
+                if (/tienda|tiendas|negocio|negocios|local|locales|donde compro|donde puedo comprar/i.test(text) && !filters.category) {
+                    var storeTerm = text.replace(/^(?:buscar|busca|busco)\s+/i, '').replace(/^(?:una|un|la|el|las|los|mi|mis)\s+/i, '').replace(/^(?:tienda|tiendas|negocio|negocios|local|locales)\s+(?:de|del|d)\s+/i, '').replace(/^(?:tienda|tiendas|negocio|negocios|local|locales|donde compro|donde puedo comprar)$/i, '').trim();
+                    if (storeTerm) { doSearch(storeTerm, filters); } else { doStores(); }
                     return;
                 }
-                doSearch(q);
+                doSearch(q, filters);
             }
         },
         summary: {
@@ -1950,6 +2120,16 @@
             });
             if (sact) { return sact; }
         }
+        // Filtros explícitos ("filtrar por categoría", "por precio"…): se
+        // atienden antes del FAQ para que no responda ayuda genérica.
+        var fk = null;
+        var fa = actions.filtros;
+        if (fa && fa.keys) {
+            for (var fi = 0; fi < fa.keys.length; fi++) {
+                if (low.indexOf(fa.keys[fi]) > -1 && fa.keys[fi].length > (fk ? fk.length : 0)) { fk = fa.keys[fi]; }
+            }
+        }
+        if (fk) { return fa; }
         // Base de conocimiento (FAQ del admin + Ayuda) para preguntas.
         var k = matchKnowledge(text);
         if (k) { return { knowledge: k }; }
