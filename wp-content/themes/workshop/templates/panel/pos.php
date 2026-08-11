@@ -114,7 +114,7 @@ if ( ! empty( $sub_data['is_trial'] ) && $sub_data['trial_days_left'] > 0 && $su
         </div>
 
         <!-- Panel de carrito -->
-        <div class="ws-pos-cart" :class="{ open: cartOpen }">
+        <div class="ws-pos-cart" :class="{ open: cartOpen }" @keydown.escape.window="cartOpen = false">
             <div class="ws-cart-header">
                 <h3><i class="fa-solid fa-shopping-cart"></i><?php esc_html_e( 'Carrito', 'workshop' ); ?></h3>
                 <div class="ws-cart-header-actions">
@@ -123,6 +123,9 @@ if ( ! empty( $sub_data['is_trial'] ) && $sub_data['trial_days_left'] > 0 && $su
                     </button>
                     <button class="ws-btn-icon" @click="clearCart()" title="<?php esc_attr_e( 'Limpiar carrito', 'workshop' ); ?>">
                         <i class="fa-solid fa-trash"></i>
+                    </button>
+                    <button class="ws-btn-icon" @click="cartOpen = false" title="<?php esc_attr_e( 'Cerrar carrito', 'workshop' ); ?>" aria-label="<?php esc_attr_e( 'Cerrar carrito', 'workshop' ); ?>">
+                        <i class="fa-solid fa-xmark"></i>
                     </button>
                 </div>
             </div>
