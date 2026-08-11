@@ -30,7 +30,7 @@
     background: rgba(15, 23, 42, .35); backdrop-filter: blur(2px);
     opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .2s ease, visibility .2s ease;
 }
-.ws-loader.is-active { opacity: 1; visibility: visible; }
+.ws-loader.is-active { opacity: 1; visibility: visible; pointer-events: auto; }
 .ws-loader-ring {
     width: 52px; height: 52px; border-radius: 50%;
     background: rgba(255, 255, 255, .95); box-shadow: 0 10px 30px rgba(15, 23, 42, .3);
@@ -2330,6 +2330,10 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-fab-group.chat-open .ws-fab-item#wsb-root {
     opacity: 1; pointer-events: auto; transform: translateY(0) scale(1);
 }
+/* Con el chat abierto, quita el transform del ítem para que la ventana
+   (position: fixed en móvil) se resuelva contra el viewport y no contra
+   el ítem del grupo (un ancestro transformado rompe el fixed). */
+.ws-fab-group.chat-open .ws-fab-item#wsb-root { transform: none; }
 .ws-fab-group.chat-open .ws-fab-trigger { opacity: 0; pointer-events: none; }
 
 .ws-fab-backdrop {

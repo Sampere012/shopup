@@ -126,6 +126,7 @@
     background: linear-gradient(135deg, var(--wsb-primary), var(--wsb-primary-dark));
     color: #fff; border: 0; border-radius: 14px 14px 4px 14px;
 }
+.wsb-msg.wsb-user .wsb-bubble:hover { color: #fff; }
 .wsb-bubble strong { font-weight: 700; }
 .wsb-bubble a { color: var(--wsb-primary); font-weight: 600; text-decoration: underline; }
 .wsb-msg.wsb-user .wsb-bubble a { color: #fff; }
@@ -155,9 +156,10 @@
 }
 .wsb-chip i { color: var(--wsb-primary); font-size: .82rem; }
 .wsb-chip:hover {
-    border-color: var(--wsb-primary); background: var(--wsb-primary-light);
-    transform: translateY(-1px); box-shadow: 0 4px 10px rgba(79, 70, 229, .15);
+    border-color: var(--wsb-primary-dark); background: var(--wsb-primary-dark);
+    color: #fff; transform: translateY(-1px); box-shadow: 0 4px 10px rgba(79, 70, 229, .3);
 }
+.wsb-chip:hover i { color: #fff; }
 
 /* Tarjetas de datos (resultados de búsqueda, pedido, resumen) */
 .wsb-card {
@@ -216,13 +218,25 @@
 .wsb-send:hover { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(79, 70, 229, .35); }
 .wsb-send:active { transform: scale(.94); }
 
+/* Overlay: bloquea la interacción con el fondo mientras el chat está abierto */
+.wsb-overlay {
+    position: fixed; inset: 0; z-index: 99990;
+    background: rgba(15, 23, 42, .32);
+    -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+    opacity: 0; visibility: hidden; pointer-events: none;
+    overscroll-behavior: contain;
+    transition: opacity .25s ease, visibility .25s ease;
+}
+body.wsb-chat-open .wsb-overlay { opacity: 1; visibility: visible; pointer-events: auto; }
+body.wsb-chat-open { overflow: hidden; }
+
 /* ---------- Responsive ---------- */
 @media (max-width: 520px) {
     #wsb-root { bottom: 12px; right: 12px; left: 12px; }
     #wsb-window {
-        position: fixed; left: 12px; right: 12px; bottom: 12px;
-        width: auto; height: calc(100vh - 24px); max-width: none;
-        border-radius: 18px;
+        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+        width: auto; height: auto; max-width: none;
+        border-radius: 0;
     }
     #wsb-button { width: 56px; height: 56px; margin-left: auto; }
     #wsb-teaser { right: 68px; max-width: 200px; }

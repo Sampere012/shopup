@@ -73,6 +73,19 @@
     base.appendChild(win);
     document.body.appendChild(base);
 
+    // Overlay que bloquea la interacción con el fondo mientras el chat está
+    // abierto (tocar fuera de la ventana lo cierra).
+    var overlay = document.createElement('div');
+    overlay.id = 'wsb-overlay';
+    overlay.className = 'wsb-overlay';
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', function () {
+        if (open) { setOpen(false); }
+    });
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && open) { setOpen(false); }
+    });
+
     var body = win.querySelector('#wsb-body');
     var input = win.querySelector('#wsb-input');
     var form = win.querySelector('#wsb-form');
@@ -1324,6 +1337,8 @@
         teaser.classList.remove('is-visible');
         btn.setAttribute('aria-expanded', open ? 'true' : 'false');
         if (open) { input.focus(); }
+        // Bloquea el scroll del fondo mientras el chat está abierto.
+        document.body.classList.toggle('wsb-chat-open', open);
     }
 
     btn.addEventListener('click', function () {
