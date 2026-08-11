@@ -63,9 +63,21 @@
 
             console.log(`Procesando ${pendingItems.length} acciones pendientes...`);
 
+            // Discrepancias detectadas al sincronizar ventas offline (stock
+            // insuficiente: la venta se guardó igual, pero falta inventario).
+            const syncWarnings = [];
+
             for (const item of pendingItems) {
                 try {
-                    await processQueueItem(item);
+                    const result = await processQueueItem(item);
+
+                    if (result && result.data && Array.isArray(result.data.discrepancies) && result.data.discrepancies.length) {
+                        result.data.discrepancies.forEach(d => {
+                            syncWarnings.push(
+                                (d.product || 'Producto') + (d.fraction ? ' — sin stock de unidades relacionadas (fraccionamiento)' : ' — faltan ' + d.missing)
+                            );
+                        });
+                    }
                     
                     // Marcar como completado
                     item.status = 'completed';
@@ -106,6 +118,23 @@
                         showConfirmButton: false,
                         timer: 3000
                     });
+                }
+            }
+
+            // Avisar de discrepancias de stock detectadas al sincronizar ventas offline
+            if (syncWarnings.length) {
+                if (window.Swal) {
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Discrepancia de stock al sincronizar',
+                        html: '<div style="text-align:left;font-size:.9em">' +
+                            syncWarnings.slice(0, 5).map(w => '<div style="padding:4px 0">• ' + w + '</div>').join('') +
+                            (syncWarnings.length > 5 ? '<div style="padding:4px 0">… y ' + (syncWarnings.length - 5) + ' más</div>' : '') +
+                            '</div><div style="margin-top:8px;color:#6b7280;font-size:.82em">Revisa la notificación en el panel para regularizar el stock.</div>',
+                        confirmButtonText: 'Entendido'
+                    });
+                } else {
+                    console.warn('Discrepancias de stock al sincronizar:', syncWarnings);
                 }
             }
         } catch (error) {

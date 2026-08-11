@@ -1417,7 +1417,8 @@
                     sales_today: 'fa-circle-dollar',
                     recent_movements: 'fa-clock-rotate-left',
                     top_product: 'fa-trophy',
-                    top_supplier: 'fa-truck-fast'
+                    top_supplier: 'fa-truck-fast',
+                    stock_discrepancy: 'fa-cloud-arrow-down'
                 };
                 return m[type] || 'fa-bell';
             }

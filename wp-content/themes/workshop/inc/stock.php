@@ -90,6 +90,41 @@ class WS_Stock {
     }
 
     /**
+     * Descuenta stock SIN fallar si no alcanza: descuenta lo disponible (0 si
+     * no hay nada) y devuelve la cantidad realmente descontada. Lo usa la
+     * sincronización de ventas offline, donde una discrepancia de stock no
+     * debe tumbar la venta: se anota la diferencia y se avisa al negocio.
+     * Asume que la transacción ya está abierta.
+     */
+    public static function decrease_partial_in_tx( $product_id, $location_id, $qty, $type = 'salida', $ref = '', $note = '', $user_id = 0 ) {
+        global $wpdb;
+        $product_id  = (int) $product_id;
+        $location_id = (int) $location_id;
+        $qty         = (float) $qty;
+        if ( ! $product_id || ! $location_id || $qty <= 0 ) {
+            return 0;
+        }
+        $current = (float) $wpdb->get_var( $wpdb->prepare(
+            "SELECT qty FROM " . self::table( 'stock' ) . " WHERE product_id=%d AND location_id=%d",
+            $product_id, $location_id
+        ) );
+        if ( $current <= 0 ) {
+            return 0;
+        }
+        $deducted = min( $qty, $current );
+        if ( ! self::_decrease_locked( $product_id, $location_id, $deducted ) ) {
+            return 0;
+        }
+        // Enlaces de fraccionamiento: aplica sobre lo realmente descontado.
+        // Si la unidad relacionada (padre o hijo) está agotada, se devuelve la
+        // cantidad en NEGATIVO para que el llamador lo reporte como
+        // discrepancia (el inventario quedó desbalanceado entre padre/hijo).
+        $frac_ok = self::_apply_fraction_links( $product_id, $location_id, $deducted, '-' );
+        self::_log( $type, $product_id, $location_id, 0, $deducted, $ref, $note, $user_id );
+        return $frac_ok ? $deducted : ( -1 * $deducted );
+    }
+
+    /**
      * Aumenta stock asumiendo que la transacción ya está abierta.
      */
     public static function increase_in_tx( $product_id, $location_id, $qty, $type, $ref = '', $note = '', $user_id = 0 ) {

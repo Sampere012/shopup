@@ -887,6 +887,14 @@ document.addEventListener('alpine:init', () => {
                 // sincronizarla cuando vuelva la conexión.
                 if (!navigator.onLine && window.WSIndexedDB && window.WSOfflineQueue) {
                     try {
+                        // Marca la venta como sincronizable offline y le asigna
+                        // una referencia única: el servidor la usa para no
+                        // duplicar la venta ni el descuento de stock si la
+                        // cola reintenta tras perder la respuesta.
+                        saleData.ws_offline_sync = '1';
+                        saleData.client_ref = (window.crypto && typeof crypto.randomUUID === 'function')
+                            ? crypto.randomUUID()
+                            : ('off-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10));
                         await WSIndexedDB.savePOSSale(saleData);
                         await WSOfflineQueue.addToQueue(WSOfflineQueue.QUEUE_ACTIONS.POS_SALE, saleData);
                         this.clearCart();

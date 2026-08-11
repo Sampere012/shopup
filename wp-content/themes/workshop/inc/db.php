@@ -298,10 +298,12 @@ function ws_db_tables() {
             transfer_number VARCHAR(100) NOT NULL DEFAULT '',
             status VARCHAR(20) NOT NULL DEFAULT 'completed',
             register_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
+            client_ref VARCHAR(64) NULL DEFAULT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             UNIQUE KEY number (number),
+            UNIQUE KEY client_ref (client_ref),
             KEY location_id (location_id),
             KEY seller_id (seller_id),
             KEY status (status),
@@ -363,6 +365,7 @@ function ws_db_tables() {
             currency VARCHAR(10) NOT NULL DEFAULT 'USD',
             duration_days INT(11) NOT NULL DEFAULT 30,
             limits TEXT NULL,
+            has_chatbot TINYINT(1) NOT NULL DEFAULT 0,
             is_trial TINYINT(1) NOT NULL DEFAULT 0,
             is_active TINYINT(1) NOT NULL DEFAULT 1,
             sort_order INT(11) NOT NULL DEFAULT 0,
@@ -483,6 +486,17 @@ function ws_db_migrate() {
         ws_plans_seed_defaults();
     }
 
+    // Columna `has_chatbot` en planes: qué planes incluyen el asistente del
+    // sitio (chatbot). Los negocios cuyo plan no lo incluye no usan el bot
+    // en su panel (solo ven el aviso de upgrade).
+    $plans_table = $wpdb->prefix . WS_TABLE_PREFIX . 'plans';
+    if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $plans_table ) ) === $plans_table ) {
+        $p_cols = $wpdb->get_col( "SHOW COLUMNS FROM {$plans_table}", 0 );
+        if ( ! in_array( 'has_chatbot', $p_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$plans_table} ADD COLUMN has_chatbot TINYINT(1) NOT NULL DEFAULT 0 AFTER limits" );
+        }
+    }
+
     // Columna `active` en clientes (CRM): permite activar/desactivar clientes.
     $ct = $wpdb->prefix . WS_TABLE_PREFIX . 'customers';
     if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $ct ) ) === $ct ) {
@@ -515,11 +529,18 @@ function ws_db_migrate() {
             'transfer_amount' => "ALTER TABLE {$st} ADD COLUMN transfer_amount DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER cash_amount",
             'transfer_number' => "ALTER TABLE {$st} ADD COLUMN transfer_number VARCHAR(100) NOT NULL DEFAULT '' AFTER transfer_amount",
             'register_id'     => "ALTER TABLE {$st} ADD COLUMN register_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0 AFTER status",
+            'client_ref'      => "ALTER TABLE {$st} ADD COLUMN client_ref VARCHAR(64) NULL DEFAULT NULL AFTER register_id",
         );
         foreach ( $pos_alters as $col => $sql ) {
             if ( ! in_array( $col, $s_cols, true ) ) {
                 $wpdb->query( $sql );
             }
+        }
+        // Índice único de client_ref: evita ventas duplicadas al reenviar una
+        // venta offline (la respuesta pudo perderse y la cola reintenta).
+        $has_ref_idx = $wpdb->get_var( "SHOW INDEX FROM {$st} WHERE Key_name='client_ref'" );
+        if ( ! $has_ref_idx ) {
+            $wpdb->query( "ALTER TABLE {$st} ADD UNIQUE KEY client_ref (client_ref)" );
         }
     }
 

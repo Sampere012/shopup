@@ -136,6 +136,10 @@ class WS_POS {
             'transfer_number' => sanitize_text_field( $data['transfer_number'] ?? '' ),
             'status'          => sanitize_text_field( $data['status'] ?? 'completed' ),
             'register_id'     => (int) ( $data['register_id'] ?? 0 ),
+            // Referencia única del cliente (ventas offline): permite detectar
+            // y evitar duplicados cuando la cola reintenta un envío. NULL en
+            // ventas en línea para no chocar con el índice único.
+            'client_ref'      => ( isset( $data['client_ref'] ) && '' !== $data['client_ref'] ) ? sanitize_text_field( $data['client_ref'] ) : null,
         );
 
         // Formatos asociativos (robusto ante el orden de claves).
@@ -156,6 +160,7 @@ class WS_POS {
             'transfer_number' => '%s',
             'status'          => '%s',
             'register_id'     => '%d',
+            'client_ref'      => '%s',
         );
 
         if ( $id ) {

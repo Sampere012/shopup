@@ -1701,19 +1701,46 @@ function ws_ajax_pos_sale_save() {
         // Venta directa de POS: siempre queda completada, nunca pendiente.
         'status'          => 'completed',
         'register_id'     => (int) ( $_POST['register_id'] ?? 0 ),
+        // Referencia única generada por el POS al guardar la venta offline:
+        // hace la sincronización idempotente (si la respuesta se pierde y la
+        // cola reintenta, no se duplica la venta ni el descuento de stock).
+        'client_ref'      => sanitize_text_field( $_POST['client_ref'] ?? '' ),
         'items'           => isset( $_POST['items'] ) ? (array) json_decode( wp_unslash( $_POST['items'] ), true ) : array(),
     );
+
+    // Venta sincronizada desde el modo offline del POS.
+    $is_offline_sync = ! empty( $_POST['ws_offline_sync'] );
 
     if ( ! $data['location_id'] || ! $data['seller_id'] ) {
         wp_send_json_error( array( 'msg' => __( 'Datos incompletos.', 'workshop' ) ) );
     }
 
-    // Caja POS: la venta requiere una caja abierta en la ubicación.
-    $cash = WS_POS::get_open_cash( $data['location_id'] );
-    if ( ! $cash ) {
-        wp_send_json_error( array( 'msg' => __( 'Debes abrir la caja antes de vender.', 'workshop' ) ) );
+    global $wpdb;
+
+    // Venta offline ya sincronizada antes: devolver la existente sin volver a
+    // descontar stock ni crear otra venta (idempotencia por client_ref).
+    if ( $is_offline_sync && $data['client_ref'] ) {
+        $existing_id = (int) $wpdb->get_var( $wpdb->prepare(
+            "SELECT id FROM " . ws_table_name( 'pos_sales' ) . " WHERE client_ref=%s AND location_id=%d LIMIT 1",
+            $data['client_ref'], $data['location_id']
+        ) );
+        if ( $existing_id ) {
+            wp_send_json_success( array( 'sale_id' => $existing_id, 'duplicate' => true ) );
+        }
     }
-    $data['register_id'] = (int) $cash->id;
+
+    // Caja POS: en línea la venta requiere una caja abierta en la ubicación.
+    // Las ventas offline ya se cobraron con la caja abierta en su momento, así
+    // que al sincronizar no se exige; si hay caja abierta ahora se asocian.
+    $cash = WS_POS::get_open_cash( $data['location_id'] );
+    if ( ! $is_offline_sync ) {
+        if ( ! $cash ) {
+            wp_send_json_error( array( 'msg' => __( 'Debes abrir la caja antes de vender.', 'workshop' ) ) );
+        }
+        $data['register_id'] = (int) $cash->id;
+    } elseif ( $cash ) {
+        $data['register_id'] = (int) $cash->id;
+    }
 
     // Transferencia (sola o mixta): el nº de transferencia es obligatorio.
     if ( in_array( $data['payment_method'], array( 'transfer', 'both' ), true ) && '' === $data['transfer_number'] ) {
@@ -1721,9 +1748,11 @@ function ws_ajax_pos_sale_save() {
     }
 
     // Descuento de stock atómico: cada ítem de la venta sale del inventario
-    // (propaga el fraccionamiento: vender 1 jaba descuenta el saco). La venta
-    // se revierte si algún producto no tiene stock suficiente.
-    global $wpdb;
+    // (propaga el fraccionamiento: vender 1 jaba descuenta el saco). En línea
+    // la venta se revierte si algún producto no tiene stock suficiente. Al
+    // sincronizar una venta offline se descuenta lo disponible y se anota la
+    // discrepancia (la venta se mantiene: ya fue cobrada al cliente).
+    $discrepancies = array();
     $wpdb->query( 'START TRANSACTION' );
     foreach ( (array) $data['items'] as $it ) {
         $pid = (int) ( $it['product_id'] ?? 0 );
@@ -1731,13 +1760,42 @@ function ws_ajax_pos_sale_save() {
         if ( ! $pid || $qty <= 0 ) {
             continue;
         }
-        $stock_res = WS_Stock::decrease_in_tx(
-            $pid, $data['location_id'], $qty, 'salida',
-            'Venta POS', 'Venta #pendiente', get_current_user_id()
-        );
-        if ( is_wp_error( $stock_res ) ) {
-            $wpdb->query( 'ROLLBACK' );
-            wp_send_json_error( array( 'msg' => $stock_res->get_error_message() ) );
+        $pname = sanitize_text_field( $it['product_name'] ?? '' );
+        if ( '' === $pname ) {
+            $found = $wpdb->get_var( $wpdb->prepare(
+                "SELECT name FROM " . ws_table_name( 'products' ) . " WHERE id=%d", $pid
+            ) );
+            $pname = $found ? $found : '#' . $pid;
+        }
+
+        if ( $is_offline_sync ) {
+            // Modo tolerante: descuenta lo disponible, anota la diferencia. Si
+            // devuelve NEGATIVO, la unidad fraccionada relacionada está
+            // agotada (inventario desbalanceado padre/hijo) y se reporta.
+            $deducted_raw = WS_Stock::decrease_partial_in_tx(
+                $pid, $data['location_id'], $qty, 'salida',
+                'Venta POS offline', 'Venta offline #' . substr( $data['client_ref'], 0, 8 ), get_current_user_id()
+            );
+            $fraction_failed = $deducted_raw < 0;
+            $deducted        = abs( (float) $deducted_raw );
+            if ( $fraction_failed || $deducted < $qty ) {
+                $discrepancies[] = array(
+                    'product'  => $pname,
+                    'requested'=> $qty,
+                    'deducted' => $deducted,
+                    'missing'  => $fraction_failed ? round( $qty, 2 ) : round( $qty - $deducted, 2 ),
+                    'fraction' => $fraction_failed,
+                );
+            }
+        } else {
+            $stock_res = WS_Stock::decrease_in_tx(
+                $pid, $data['location_id'], $qty, 'salida',
+                'Venta POS', 'Venta #pendiente', get_current_user_id()
+            );
+            if ( is_wp_error( $stock_res ) ) {
+                $wpdb->query( 'ROLLBACK' );
+                wp_send_json_error( array( 'msg' => $stock_res->get_error_message() ) );
+            }
         }
     }
 
@@ -1756,8 +1814,50 @@ function ws_ajax_pos_sale_save() {
         }
     }
 
-    ws_log_audit( 'pos_sale_create', 'pos_sale', $sale_id, array( 'location' => $data['location_id'], 'total' => $data['total'] ) );
-    wp_send_json_success( array( 'sale_id' => $sale_id ) );
+    // Discrepancias de stock al sincronizar una venta offline: se avisa al
+    // negocio (dueños y usuarios de la ubicación) para que regularice.
+    if ( $is_offline_sync && ! empty( $discrepancies ) ) {
+        $sale_number = $wpdb->get_var( $wpdb->prepare(
+            "SELECT number FROM " . ws_table_name( 'pos_sales' ) . " WHERE id=%d", $sale_id
+        ) );
+        $parts = array();
+        $more  = 0;
+        foreach ( $discrepancies as $i => $d ) {
+            if ( $i >= 3 ) {
+                $more++;
+                continue;
+            }
+            if ( ! empty( $d['fraction'] ) ) {
+                $parts[] = $d['product'] . ': faltan unidades relacionadas (fraccionamiento)';
+            } else {
+                $parts[] = $d['product'] . ': pedido ' . number_format_i18n( $d['requested'], 2 ) . ', stock ' . number_format_i18n( $d['deducted'], 2 ) . ' (faltan ' . number_format_i18n( $d['missing'], 2 ) . ')';
+            }
+        }
+        $msg = sprintf(
+            /* translators: 1: número de venta, 2: lista de discrepancias */
+            __( 'Venta %1$s sincronizada con stock insuficiente. %2$s', 'workshop' ),
+            $sale_number ? $sale_number : '#' . $sale_id,
+            implode( ' | ', $parts ) . ( $more ? ' | +' . $more . ' más' : '' )
+        );
+        if ( function_exists( 'ws_notify_location_users' ) ) {
+            ws_notify_location_users(
+                $data['location_id'],
+                'stock_discrepancy',
+                __( 'Discrepancia de stock en venta offline', 'workshop' ),
+                $msg,
+                'stock',
+                'products_view',
+                'stock_discrepancy_' . $sale_id
+            );
+        }
+    }
+
+    ws_log_audit( 'pos_sale_create', 'pos_sale', $sale_id, array( 'location' => $data['location_id'], 'total' => $data['total'], 'offline_sync' => $is_offline_sync, 'discrepancies' => count( $discrepancies ) ) );
+    wp_send_json_success( array(
+        'sale_id'        => $sale_id,
+        'synced_offline' => $is_offline_sync,
+        'discrepancies'  => $discrepancies,
+    ) );
 }
 
 add_action( 'wp_ajax_ws_products_get', 'ws_ajax_products_get' );

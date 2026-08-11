@@ -592,6 +592,7 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-notif-recent_movements { background: linear-gradient(135deg, #0ea5e9, #0284c7); }
 .ws-notif-top_product { background: linear-gradient(135deg, #f59e0b, #d97706); }
 .ws-notif-top_supplier { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
+.ws-notif-stock_discrepancy { background: linear-gradient(135deg, #ef4444, #dc2626); }
 .ws-notif-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .ws-notif-body strong { font-size: .85em; }
 .ws-notif-body small { color: var(--ws-muted); font-size: .78em; line-height: 1.35; }
