@@ -71,6 +71,12 @@ function ws_chatbot_config( $in_admin = false ) {
     $in_panel = $in_admin ? true : '' !== (string) get_query_var( 'ws_role' );
     $role     = ws_user_role();
     $is_admin = current_user_can( 'manage_options' );
+    // Admin del SISTEMA: administrador de WordPress sin rol de negocio. No
+    // vende ni gestiona un negocio: controla la plataforma (logs, negocios,
+    // usuarios, planes, suscripciones, páginas…). El asistente se adapta a él.
+    // Solo aplica EN wp-admin ($in_admin): en el sitio público el admin navega
+    // como un visitante normal, no como controlador de la plataforma.
+    $is_sys_admin = $in_admin && $is_admin && '' === (string) $role;
     $logged   = is_user_logged_in();
 
     $biz      = ws_current_business();
@@ -105,8 +111,9 @@ function ws_chatbot_config( $in_admin = false ) {
     $loc_slug = is_object( $ws_loc ) ? (string) ( $ws_loc->slug ?? '' ) : (string) $ws_loc;
 
     $ctx = array(
-        'inPanel' => $in_panel,
-        'role'    => $is_admin && ! $role ? 'admin' : $role,
+        'inPanel'    => $in_panel,
+        'role'       => $is_admin && ! $role ? 'admin' : $role,
+        'isSysAdmin' => $is_sys_admin,
         'logged'  => $logged,
         'bizName' => ws_site_name(),
         'bizSlug' => $slug,
@@ -131,7 +138,9 @@ function ws_chatbot_config( $in_admin = false ) {
 
     $shortcuts = array(
         'public'  => ws_chatbot_public_shortcuts(),
-        'panel'   => ws_chatbot_panel_shortcuts(),
+        // El admin del sistema no tiene módulos de negocio: ve los atajos de
+        // control de la plataforma (logs, negocios, usuarios, planes…).
+        'panel'   => $is_sys_admin ? ws_chatbot_admin_shortcuts() : ws_chatbot_panel_shortcuts(),
     );
 
     return array_merge( $ctx, array(
@@ -149,7 +158,7 @@ function ws_chatbot_config( $in_admin = false ) {
         'shortcuts' => $shortcuts,
         'strings'   => array_merge( ws_chatbot_strings(), $admin['messages'] ),
         'knowledge' => ws_chatbot_knowledge_config(),
-        'guides'    => ws_chatbot_role_guides(),
+        'guides'    => $is_sys_admin ? ws_chatbot_admin_guides() : ws_chatbot_role_guides(),
         // Contexto rico de la página actual: el bot sabe dónde está el usuario
         // (tienda, módulo del panel, ayuda, planes…) y puede explicarla o
         // navegar a otras secciones con cards.
@@ -200,6 +209,28 @@ function ws_chatbot_page_context() {
     $home = ws_business_home( $biz );
     $role = ws_user_role();
     $key  = ws_chatbot_context();
+
+    // El ADMINISTRADOR DEL SISTEMA (WordPress sin rol de negocio) vive en el
+    // panel de wp-admin: su contexto es la plataforma entera, no un negocio.
+    if ( is_admin() && current_user_can( 'manage_options' ) && '' === (string) $role ) {
+        $sec = array();
+        foreach ( ws_chatbot_admin_shortcuts() as $sid => $s ) {
+            $sec[ $sid ] = array(
+                'label' => $s['label'],
+                'desc'  => '',
+                'icon'  => $s['icon'],
+                'url'   => $s['url'],
+            );
+        }
+        return array(
+            'key'      => 'wp-admin',
+            'label'    => __( 'Panel de administración', 'workshop' ),
+            'title'    => __( 'Panel de administración del sistema', 'workshop' ),
+            'desc'     => __( 'Estás en el panel de administración: controlas toda la plataforma, no un negocio en particular.', 'workshop' ),
+            'hint'     => __( 'Puedo ayudarte con los logs, los negocios, los usuarios, los planes y la configuración del asistente.', 'workshop' ),
+            'sections' => $sec,
+        );
+    }
 
     // Secciones globales del sitio (para cards de navegación y "dónde estoy").
     $sections = array(
@@ -406,6 +437,122 @@ function ws_chatbot_panel_shortcuts() {
 }
 
 /**
+ * Atajos del ADMINISTRADOR DEL SISTEMA (wp-admin). El admin no vende ni
+ * gestiona un negocio: controla la plataforma. Estos son los atajos que ve en
+ * el asistente en lugar de los módulos del panel del negocio.
+ */
+function ws_chatbot_admin_shortcuts() {
+    $page = function ( $slug, $label, $icon ) {
+        return array(
+            'label' => $label,
+            'url'   => admin_url( 'admin.php?page=' . $slug ),
+            'icon'  => $icon,
+        );
+    };
+    return array(
+        'dashboard'    => $page( 'ws-permissions', __( 'Panel de control', 'workshop' ), 'fa-gauge-high' ),
+        'logs'         => $page( 'ws-logs', __( 'Logs del sistema', 'workshop' ), 'fa-file-lines' ),
+        'businesses'   => $page( 'ws-businesses', __( 'Negocios', 'workshop' ), 'fa-store' ),
+        'users'        => $page( 'ws-users', __( 'Accesos y usuarios', 'workshop' ), 'fa-users' ),
+        'plans'        => $page( 'ws-plans', __( 'Planes', 'workshop' ), 'fa-crown' ),
+        'subscriptions'=> $page( 'ws-subscriptions', __( 'Suscripciones', 'workshop' ), 'fa-credit-card' ),
+        'marketplace'  => $page( 'ws-marketplace', __( 'Mercado', 'workshop' ), 'fa-store-alt' ),
+        'pages'        => $page( 'ws-site-pages', __( 'Páginas y pie', 'workshop' ), 'fa-file-pen' ),
+        'chatbot'      => $page( 'ws-chatbot', __( 'Asistente (config)', 'workshop' ), 'fa-robot' ),
+        'smtp'         => $page( 'ws-smtp', __( 'Correo SMTP', 'workshop' ), 'fa-envelope' ),
+        'permissions'  => $page( 'ws-permissions', __( 'Permisos de roles', 'workshop' ), 'fa-shield-halved' ),
+    );
+}
+
+/**
+ * Guías paso a paso para el ADMINISTRADOR DEL SISTEMA: explican cómo usar las
+ * páginas de wp-admin de la plataforma (logs, negocios, usuarios, planes…).
+ */
+function ws_chatbot_admin_guides() {
+    $page = function ( $slug ) {
+        return admin_url( 'admin.php?page=' . $slug );
+    };
+    return array(
+        array(
+            'id'    => 'sys-logs',
+            'label' => __( 'Logs del sistema', 'workshop' ),
+            'icon'  => 'fa-file-lines',
+            'url'   => $page( 'ws-logs' ),
+            'intro' => __( 'El visor de Logs registra todo lo que pasa en la plataforma: errores, advertencias, información y la actividad de los negocios.', 'workshop' ),
+            'steps' => array(
+                __( 'Abre Logs del sistema y elige el día que quieras revisar.', 'workshop' ),
+                __( 'Cada nivel (INFO, WARNING, ERROR, FATAL) se cuenta en la mini-gráfica del día.', 'workshop' ),
+                __( 'Los errores FATAL son los más graves: copia el mensaje y el stack trace para diagnosticar.', 'workshop' ),
+                __( 'El asistente también te avisa al instante cuando ocurre un error y lo incluye en el resumen diario.', 'workshop' ),
+            ),
+        ),
+        array(
+            'id'    => 'sys-businesses',
+            'label' => __( 'Negocios', 'workshop' ),
+            'icon'  => 'fa-store',
+            'url'   => $page( 'ws-businesses' ),
+            'intro' => __( 'Desde Negocios administras todas las tiendas de la plataforma: creas, editas o suspendes negocios.', 'workshop' ),
+            'steps' => array(
+                __( 'Crea un negocio asignándole nombre, slug y propietario.', 'workshop' ),
+                __( 'Edita sus datos o cambia su estado si un negocio deja de operar.', 'workshop' ),
+                __( 'Revisa el rating y las reseñas que recibe cada negocio.', 'workshop' ),
+                __( 'Combínalo con Suscripciones para controlar qué plan tiene activo cada negocio.', 'workshop' ),
+            ),
+        ),
+        array(
+            'id'    => 'sys-users',
+            'label' => __( 'Usuarios y accesos', 'workshop' ),
+            'icon'  => 'fa-users',
+            'url'   => $page( 'ws-users' ),
+            'intro' => __( 'Aquí asignas los roles de negocio (dueño, almacenero, vendedor) a los usuarios de cada negocio.', 'workshop' ),
+            'steps' => array(
+                __( 'Busca al usuario y asígnale el rol que le corresponde en su negocio.', 'workshop' ),
+                __( 'Un dueño gestiona todo; un almacenero maneja stock y catálogo; un vendedor atiende el POS.', 'workshop' ),
+                __( 'Puedes configurar el WhatsApp de cada usuario para la derivación a humano del asistente.', 'workshop' ),
+            ),
+        ),
+        array(
+            'id'    => 'sys-plans',
+            'label' => __( 'Planes y suscripciones', 'workshop' ),
+            'icon'  => 'fa-crown',
+            'url'   => $page( 'ws-plans' ),
+            'intro' => __( 'Controlas los planes que se venden (precios, límites, chatbot incluido) y las suscripciones activas.', 'workshop' ),
+            'steps' => array(
+                __( 'Crea o edita planes: precio, duración, límites de productos, puntos de venta y trabajadores.', 'workshop' ),
+                __( 'Marca si el plan incluye el asistente (has_chatbot) para que se active en el panel del negocio.', 'workshop' ),
+                __( 'En Suscripciones ves qué negocio tiene qué plan y hasta cuándo.', 'workshop' ),
+                __( 'El SMTP de la plataforma se configura aparte para los correos del sistema.', 'workshop' ),
+            ),
+        ),
+        array(
+            'id'    => 'sys-marketplace',
+            'label' => __( 'Mercado y páginas', 'workshop' ),
+            'icon'  => 'fa-store-alt',
+            'url'   => $page( 'ws-marketplace' ),
+            'intro' => __( 'Controlas el contenido público: el mercado que ven los visitantes y las páginas del sitio.', 'workshop' ),
+            'steps' => array(
+                __( 'En Mercado revisas cómo se listan los negocios y sus tiendas.', 'workshop' ),
+                __( 'En Páginas y pie editas los textos de Ayuda, Contacto, Acerca de y el pie de página.', 'workshop' ),
+                __( 'El FAQ de Ayuda alimenta al asistente: cuantas más preguntas, mejor responde.', 'workshop' ),
+            ),
+        ),
+        array(
+            'id'    => 'sys-chatbot',
+            'label' => __( 'Asistente (configuración)', 'workshop' ),
+            'icon'  => 'fa-robot',
+            'url'   => $page( 'ws-chatbot' ),
+            'intro' => __( 'Desde Asistente configuras el comportamiento del bot, su base de conocimiento y la IA opcional.', 'workshop' ),
+            'steps' => array(
+                __( 'En Comportamiento eliges dónde se muestra (público, panel) y el proveedor de IA (OpenRouter, Groq o personalizado).', 'workshop' ),
+                __( 'En Conocimiento editas o creas respuestas: patrones de pregunta + respuesta.', 'workshop' ),
+                __( 'En Aprender ves las preguntas que el bot no supo responder: enséñale la respuesta y aprende al instante.', 'workshop' ),
+                __( 'El bot te avisa de errores de la plataforma y te incluye el reporte de logs en el resumen diario.', 'workshop' ),
+            ),
+        ),
+    );
+}
+
+/**
  * Guías paso a paso por rol para los módulos del panel.
  *
  * Respuestas por defecto específicas: cada módulo se explica según el rol
@@ -608,6 +755,7 @@ function ws_chatbot_strings() {
         'welcomePublic'  => __( '¡Hola! 👋 Soy tu asistente. ¿Qué estás buscando hoy?', 'workshop' ),
         'welcomeGuest'   => __( '¡Hola! 👋 ¿Exploras o quieres montar tu propio negocio? Te oriento en lo que necesites.', 'workshop' ),
         'welcomePanel'   => __( '¡Hola! 👋 Soy tu asistente del panel. Dime qué quieres hacer (crear producto, pedidos, stock, reportes…) y te llevo.', 'workshop' ),
+        'welcomeSysAdmin'=> __( '¡Hola! 👋 Soy tu asistente del sistema. Te ayudo a controlar la plataforma: logs, negocios, usuarios, planes y más.', 'workshop' ),
         'welcomeLocked'  => __( 'El asistente no está incluido en tu plan actual 😕', 'workshop' ),
         'lockedBody'     => __( 'Actívalo desde la página de planes y trabaja tu negocio con ayuda en tiempo real en tu panel.', 'workshop' ),
         'goPlan'         => __( 'Ver planes y activarlo', 'workshop' ),
@@ -2181,6 +2329,7 @@ function ws_ajax_chatbot_cards() {
     if ( 'plans' === $type ) {
         $biz   = ws_current_business();
         $role  = ws_user_role();
+        $sys   = current_user_can( 'manage_options' ) && '' === (string) $role;
         $plans = class_exists( 'WS_Plans' ) ? WS_Plans::active() : array();
         $out   = array();
         foreach ( $plans as $p ) {
@@ -2202,7 +2351,8 @@ function ws_ajax_chatbot_cards() {
                 'is_trial'    => (int) ( $p->is_trial ?? 0 ),
                 'has_chatbot' => (int) ( $p->has_chatbot ?? 0 ),
                 'features'    => $feats,
-                'url'         => $role ? ws_panel_url( $role, 'plan', $biz ) : home_url( '/registro/' ),
+                // El admin del sistema ve los planes desde wp-admin, no desde un negocio.
+                'url'         => $sys ? admin_url( 'admin.php?page=ws-plans' ) : ( $role ? ws_panel_url( $role, 'plan', $biz ) : home_url( '/registro/' ) ),
             );
         }
         // Recomendado: la prueba gratis para visitantes; para negocios el plan
@@ -2213,7 +2363,7 @@ function ws_ajax_chatbot_cards() {
                 $recommended = $i + 1;
             }
         }
-        if ( ! $role && ! empty( $out ) && $out[0]['is_trial'] ) {
+        if ( ! $sys && ! $role && ! empty( $out ) && $out[0]['is_trial'] ) {
             $recommended = 1; // Nuevo visitante → prueba gratis.
         }
         foreach ( $out as $i => $pl ) {

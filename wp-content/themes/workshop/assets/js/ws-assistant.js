@@ -8,6 +8,9 @@
     var S = C.strings;
     var hasBizRole = C.role === 'owner' || C.role === 'storekeeper' || C.role === 'seller';
     var isPanel = C.inPanel && (hasBizRole || C.role === 'admin');
+    // Administrador del SISTEMA (WordPress sin negocio): no vende ni gestiona
+    // un negocio; controla la plataforma (logs, negocios, usuarios, planes…).
+    var isSysAdmin = C.isSysAdmin === true;
     var locked = C.inPanel && hasBizRole && !C.chatbot; // plan sin chatbot: solo upsell
     var mode = isPanel ? 'panel' : 'public';
 
@@ -1232,7 +1235,9 @@
     // Frases imperativas de acción: ganan a la base de conocimiento (el bot
     // ejecuta en lugar de solo explicar). Solo aplica en el panel con plan.
     function matchAction(text) {
-        if (!isPanel || locked) { return null; }
+        // El admin del SISTEMA no ejecuta acciones del negocio (crear producto,
+        // abrir caja, reponer…): no tiene negocio que gestionar.
+        if (!isPanel || locked || isSysAdmin) { return null; }
         var low = String(text || '').toLowerCase();
         var best = null, bestLen = 0;
         ACTION_PHRASES.forEach(function (pair) {
@@ -1543,7 +1548,9 @@
             keys: ['hola', 'buenas', 'hey', 'hi', 'saludo', 'que tal', 'holi', 'hello', 'buen dia', 'buenas tardes'],
             run: function () {
                 if (locked) { actions.locked.run(); return; }
-                if (isPanel) {
+                if (isSysAdmin) {
+                    reply(S.welcomeSysAdmin || S.welcomePanel, chipsFor(['logs', 'businesses', 'users', 'plans', 'chatbot']), 'greeting:sysadmin');
+                } else if (isPanel) {
                     reply(S.welcomePanel, chipsFor(['productNew', 'orders', 'stock', 'plan']), 'greeting');
                 } else if (!C.logged) {
                     reply(S.welcomeGuest + ' ' + S.registerHook, [registerChip(), chipsFor(['marketplace', 'ayuda'])[0]].filter(Boolean), 'greeting');
@@ -1565,6 +1572,7 @@
             }
         },
         createProduct: {
+            biz: true,
             keys: ['crear producto', 'nuevo producto', 'agregar producto', 'alta producto', 'crear un producto', 'añadir producto', 'anadir producto'],
             run: function () {
                 if (!isPanel || locked) { actions.webstore.run(); return; }
@@ -1579,6 +1587,7 @@
             }
         },
         listProducts: {
+            biz: true,
             keys: ['productos', 'catalogo', 'listado de productos', 'ver productos', 'categoria', 'categorias'],
             run: function () {
                 if (!isPanel || locked) { actions.webstore.run(); return; }
@@ -1586,6 +1595,7 @@
             }
         },
         orders: {
+            biz: true,
             keys: ['pedidos', 'orden', 'ordenes', 'mis pedidos', 'revisar pedidos', 'aceptar pedido', 'pedido nuevo'],
             run: function () {
                 if (!isPanel || locked) { actions.trackOrder.run(); return; }
@@ -1614,6 +1624,7 @@
             }
         },
         summary: {
+            biz: true,
             keys: ['resumen', 'como va mi negocio', 'como va mi tienda', 'como va el dia', 'estado de mi negocio', 'ventas de hoy', 'pedidos pendientes', 'stock bajo', 'caja abierta', 'reporte del dia', 'numeros del dia'],
             run: function () {
                 if (!isPanel || locked) { actions.webstore.run(); return; }
@@ -1621,6 +1632,7 @@
             }
         },
         stock: {
+            biz: true,
             keys: ['stock', 'inventario', 'existencias', 'reponer', 'entrada de stock', 'salida de stock', 'bajo stock'],
             run: function () {
                 if (!isPanel || locked) { actions.webstore.run(); return; }
@@ -1628,6 +1640,7 @@
             }
         },
         customers: {
+            biz: true,
             keys: ['clientes', 'crm', 'contacto de cliente', 'base de clientes', 'agregar cliente'],
             run: function () {
                 if (!isPanel || locked) { actions.contact.run(); return; }
@@ -1635,6 +1648,7 @@
             }
         },
         pos: {
+            biz: true,
             keys: ['vender', 'pos', 'punto de venta', 'caja', 'registrar venta'],
             run: function () {
                 if (!isPanel || locked) { actions.webstore.run(); return; }
@@ -1642,6 +1656,7 @@
             }
         },
         reports: {
+            biz: true,
             keys: ['reportes', 'reporte', 'estadisticas', 'ventas mes', 'ganancia', 'facturacion', 'graficos'],
             run: function () {
                 if (!isPanel || locked) { actions.webstore.run(); return; }
@@ -1649,18 +1664,22 @@
             }
         },
         report: {
+            biz: true,
             keys: ['reporte de ventas', 'ventas de hoy', 'stock bajo', 'cuanto vendi', 'cuánto vendí', 'resumen del negocio', 'reporte del equipo'],
             run: function () { if (!isPanel || locked) { actions.webstore.run(); return; } reportFlow('ask'); }
         },
         schedule: {
+            biz: true,
             keys: ['programa un reporte', 'programar reporte', 'agendar reporte', 'programar tarea', 'tarea programada', 'reporte diario'],
             run: function () { if (!isPanel || locked) { actions.webstore.run(); return; } scheduleFlow('ask'); }
         },
         mytasks: {
+            biz: true,
             keys: ['mis reportes', 'mis tareas', 'tareas programadas', 'reportes programados'],
             run: function () { if (!isPanel || locked) { actions.webstore.run(); return; } myTasks(); }
         },
         suppliers: {
+            biz: true,
             keys: ['proveedores', 'proveedor', 'compania', 'compras a proveedor'],
             run: function () {
                 if (!isPanel || locked) { actions.contact.run(); return; }
@@ -1668,6 +1687,7 @@
             }
         },
         workers: {
+            biz: true,
             keys: ['trabajadores', 'empleados', 'personal', 'permisos', 'roles', 'invitar usuario'],
             run: function () {
                 if (!isPanel || locked) { reply(S.noAtajos, chipsFor(['marketplace', 'ayuda']), 'workers'); return; }
@@ -1840,7 +1860,11 @@
         window.setTimeout(function () {
             if (act) { busy = false; startFlowGuard(act); return; }
             if (intent && intent.knowledge) { busy = false; runKnowledge(intent.knowledge); }
-            else if (intent) { busy = false; intent.run(); }
+            else if (intent) {
+                // Acciones de negocio bloqueadas para el admin del sistema.
+                if (isSysAdmin && intent.biz) { busy = false; sysBlock(); return; }
+                busy = false; intent.run();
+            }
             else if (C.llm && C.llm.enabled) { doLLM(value); } // busy queda activo hasta la respuesta
             else { busy = false; smartFallback(value); }
         }, delay);
@@ -1910,7 +1934,10 @@
                 appendChips([{ label: 'Cómo comprar', icon: 'fa-cart-shopping', send: 'como compro' }, { label: 'Ver tiendas', url: C.urls.stores, icon: 'fa-store' }]);
             }
         }
-        if (isPanel) {
+        if (isSysAdmin) {
+            // Admin del SISTEMA: controla la plataforma, no un negocio.
+            reply(S.welcomeSysAdmin || S.welcomePanel, chipsFor(['logs', 'businesses', 'users', 'plans', 'subscriptions', 'chatbot']), 'boot:sysadmin');
+        } else if (isPanel) {
             reply(S.welcomePanel, [
                 { label: 'Resumen del día', icon: 'fa-gauge-high', send: 'resumen' },
                 { label: 'Crear producto', icon: 'fa-plus', send: 'crear producto' },
@@ -1976,9 +2003,18 @@
 
     function teaserText() {
         if (locked) { return 'Activa el asistente en tu plan'; }
+        if (isSysAdmin) { return '¿Qué necesitas del sistema?'; }
         if (isPanel) { return '¿Qué quieres hacer hoy?'; }
         if (C.context === 'store') { return S.storeTeaser; }
         return '¿Necesitas ayuda?'; 
+    }
+
+    // El admin del SISTEMA no gestiona un negocio: cuando intenta una acción de
+    // negocio (crear producto, abrir caja, stock…) se le explica con el contexto
+    // de control de la plataforma en vez de fallar en silencio.
+    function sysBlock() {
+        var msg = 'Eso es del panel de un negocio 🏪 — como administrador del sistema yo controlo la plataforma. Puedo ayudarte con:';
+        reply(msg, chipsFor(['logs', 'businesses', 'users', 'plans', 'subscriptions', 'chatbot']), 'sysadmin:block');
     }
 
     function pulse() {
