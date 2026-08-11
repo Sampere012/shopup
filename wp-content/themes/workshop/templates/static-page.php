@@ -167,17 +167,38 @@ get_header();
                 </div>
             <?php else : ?>
                 <div class="ws-static-card ws-static-card-content">
-                    <div class="ws-static-content">
+                    <?php if ( 'help' === $ws_key && ! empty( $ws_pages['faqs'] ) ) : ?>
                         <?php if ( '' !== trim( $ws_content ) ) : ?>
-                            <?php echo wp_kses_post( $ws_content ); ?>
-                        <?php else : ?>
-                            <?php if ( 'help' === $ws_key ) : ?>
-                                <p><?php esc_html_e( 'En esta sección podrás resolver tus dudas sobre cómo comprar, ver tu pedido, devoluciones y más.', 'workshop' ); ?></p>
+                            <div class="ws-static-content ws-faq-intro">
+                                <?php echo wp_kses_post( $ws_content ); ?>
+                            </div>
+                        <?php endif; ?>
+                        <div class="ws-faq">
+                            <?php $ws_faq_open = 0; ?>
+                            <?php foreach ( (array) $ws_pages['faqs'] as $ws_topic ) : ?>
+                                <?php if ( empty( $ws_topic['topic'] ) || empty( $ws_topic['items'] ) ) : continue; endif; ?>
+                                <div class="ws-faq-topic">
+                                    <h3 class="ws-faq-topic-title"><i class="fa-solid fa-circle-question"></i> <?php echo esc_html( $ws_topic['topic'] ); ?></h3>
+                                    <?php foreach ( (array) $ws_topic['items'] as $ws_item ) : ?>
+                                        <?php if ( empty( $ws_item['q'] ) ) : continue; endif; ?>
+                                        <details class="ws-faq-item"<?php echo 0 === (int) $ws_faq_open ? ' open' : ''; ?>>
+                                            <summary><?php echo esc_html( $ws_item['q'] ); ?><i class="fa-solid fa-chevron-down ws-faq-chevron"></i></summary>
+                                            <div class="ws-faq-answer"><?php echo wp_kses_post( $ws_item['a'] ); ?></div>
+                                        </details>
+                                        <?php $ws_faq_open = (int) $ws_faq_open + 1; ?>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php else : ?>
+                        <div class="ws-static-content">
+                            <?php if ( '' !== trim( $ws_content ) ) : ?>
+                                <?php echo wp_kses_post( $ws_content ); ?>
                             <?php else : ?>
                                 <p><?php esc_html_e( 'Descubre quiénes somos, qué hacemos y cómo este mercado conecta negocios y clientes.', 'workshop' ); ?></p>
                             <?php endif; ?>
-                        <?php endif; ?>
-                    </div>
+                        </div>
+                    <?php endif; ?>
                 </div>
             <?php endif; ?>
 

@@ -13,7 +13,7 @@
 defined( 'ABSPATH' ) || exit;
 
 define( 'WS_SITE_PAGES_KEY', 'ws_site_pages' );
-define( 'WS_SITE_PAGES_VERSION', '2' );
+define( 'WS_SITE_PAGES_VERSION', '3' );
 
 /**
  * Valores por defecto de las páginas e información del pie.
@@ -28,19 +28,7 @@ function ws_site_pages_defaults() {
             'badge'    => __( 'Centro de ayuda', 'workshop' ),
             'subtitle' => __( 'Resolvemos tus dudas para que compres con total confianza.', 'workshop' ),
             'content'  => ''
-                . '<p>Te ayudamos a sacarle el máximo partido al mercado. Aquí tienes las respuestas a las dudas más frecuentes; si no encuentras la tuya, escríbenos y te responderemos lo antes posible.</p>'
-                . '<h2>¿Cómo hago un pedido?</h2>'
-                . '<p>Entra en el directorio de tiendas, elige tu tienda favorita y explora sus productos. Añade lo que quieras al carrito, escribe tus datos y confirma el pedido. Te llegará el detalle por WhatsApp.</p>'
-                . '<h2>¿Cómo hago el seguimiento de mi pedido?</h2>'
-                . '<p>Tras confirmar tu pedido recibirás un número de seguimiento. La tienda te contacta por WhatsApp para coordinar la entrega o la recogida.</p>'
-                . '<h2>¿Qué métodos de pago aceptáis?</h2>'
-                . '<ul><li>Efectivo al recibir el pedido.</li><li>Transferencia bancaria.</li><li>Otros métodos que la tienda indique al confirmar tu pedido.</li></ul>'
-                . '<h2>¿Hay envío a domicilio?</h2>'
-                . '<p>Depende de cada tienda. En la página de la tienda verás si ofrece reparto y cuál es su zona de cobertura, así como el coste del envío.</p>'
-                . '<h2>¿Puedo devolver un producto?</h2>'
-                . '<p>Consulta con la tienda donde compraste. Cada negocio gestiona sus devoluciones de forma directa y te indicará cómo proceder.</p>'
-                . '<h2>¿Necesitas más ayuda?</h2>'
-                . '<p>Visita la página de <a href="' . esc_url( home_url( '/contacto/' ) ) . '">Contacto</a> y te responderemos lo antes posible.</p>',
+                . '<p>Te ayudamos a sacarle el máximo partido al mercado. Aquí tienes las respuestas a las dudas más frecuentes; si no encuentras la tuya, escríbenos y te responderemos lo antes posible.</p>',
         ),
         'contact' => array(
             'title'    => __( 'Contacto', 'workshop' ),
@@ -62,9 +50,55 @@ function ws_site_pages_defaults() {
                 . '<h2>Nuestra misión</h2>'
                 . '<p>Ayudar a los negocios a vender online sin complicaciones: pedidos por WhatsApp, stock en tiempo real y todo el control desde un solo panel.</p>'
                 . '<h2>¿Por qué elegirnos?</h2>'
-                . '<ul><li>Tu tienda visible para todos los clientes.</li><li>Pedidos directos por WhatsApp, sin intermediarios.</li><li>Stock y ventas sincronizados al instante.</li><li>Empiezas gratis, sin tarjeta.</li></ul>'
-                . '<h2>¿Tienes un negocio?</h2>'
-                . '<p>Crea tu cuenta, personaliza tu tienda y empieza a vender hoy mismo. <a href="' . esc_url( ws_register_url() ) . '">Únete gratis</a>.</p>',
+                . '<ul><li>Tu tienda visible para todos los clientes.</li><li>Pedidos directos por WhatsApp, sin intermediarios.</li><li>Stock y ventas sincronizados al instante.</li><li>Empiezas gratis, sin tarjeta.</li></ul>',
+        ),
+        // Preguntas frecuentes de la página de Ayuda: lista de temas, cada uno
+        // con sus preguntas y respuestas. El admin las gestiona desde wp-admin
+        // (ShopUp → Páginas y pie → Preguntas frecuentes).
+        'faqs'    => array(
+            array(
+                'topic' => __( 'Pedidos y compras', 'workshop' ),
+                'items' => array(
+                    array(
+                        'q' => __( '¿Cómo hago un pedido?', 'workshop' ),
+                        'a' => __( 'Entra en el directorio de tiendas, elige tu tienda favorita y explora sus productos. Añade lo que quieras al carrito, escribe tus datos y confirma el pedido. Te llegará el detalle por WhatsApp.', 'workshop' ),
+                    ),
+                    array(
+                        'q' => __( '¿Cómo hago el seguimiento de mi pedido?', 'workshop' ),
+                        'a' => __( 'Tras confirmar tu pedido recibirás un número de seguimiento. La tienda te contacta por WhatsApp para coordinar la entrega o la recogida.', 'workshop' ),
+                    ),
+                    array(
+                        'q' => __( '¿Qué métodos de pago aceptáis?', 'workshop' ),
+                        'a' => __( 'Efectivo al recibir el pedido, transferencia bancaria u otros métodos que la tienda indique al confirmar tu pedido.', 'workshop' ),
+                    ),
+                ),
+            ),
+            array(
+                'topic' => __( 'Envíos y devoluciones', 'workshop' ),
+                'items' => array(
+                    array(
+                        'q' => __( '¿Hay envío a domicilio?', 'workshop' ),
+                        'a' => __( 'Depende de cada tienda. En la página de la tienda verás si ofrece reparto y cuál es su zona de cobertura, así como el coste del envío.', 'workshop' ),
+                    ),
+                    array(
+                        'q' => __( '¿Puedo devolver un producto?', 'workshop' ),
+                        'a' => __( 'Consulta con la tienda donde compraste. Cada negocio gestiona sus devoluciones de forma directa y te indicará cómo proceder.', 'workshop' ),
+                    ),
+                ),
+            ),
+            array(
+                'topic' => __( 'Tu cuenta y tu tienda', 'workshop' ),
+                'items' => array(
+                    array(
+                        'q' => __( '¿Cómo creo mi tienda?', 'workshop' ),
+                        'a' => __( 'Crea tu cuenta gratis desde el marketplace, personaliza tu tienda y empieza a vender. No necesitas tarjeta para empezar.', 'workshop' ),
+                    ),
+                    array(
+                        'q' => __( '¿Cómo contacto con el soporte?', 'workshop' ),
+                        'a' => __( 'Usa la página de Contacto o el formulario de WhatsApp y te responderemos lo antes posible.', 'workshop' ),
+                    ),
+                ),
+            ),
         ),
         // Garantías de confianza: tarjetas que se muestran bajo el contenido de
         // las páginas estáticas para transmitir seguridad (icono FA + título + texto).
@@ -149,6 +183,35 @@ function ws_site_pages_migrate() {
         $cur['trust'] = $defaults['trust'];
     }
 
+    // v3: la página de Ayuda pasa a ser un FAQ por temas. Solo se reemplaza el
+    // contenido si aún conserva el HTML antiguo de preguntas (marcadores), para
+    // no pisar un intro que el admin haya personalizado. También se elimina el
+    // bloque "¿Necesitas más ayuda?" que duplicaba el enlace a Contacto (el
+    // panel lateral ya enlaza).
+    $help_old = (string) ( $cur['help']['content'] ?? '' );
+    if ( false !== strpos( $help_old, '¿Cómo hago un pedido?' ) || false !== strpos( $help_old, '¿Necesitas más ayuda?' ) ) {
+        $cur['help']['content'] = $defaults['help']['content'];
+    }
+    // v3: Acerca de nosotros: se elimina la sección "¿Tienes un negocio?" con
+    // el enlace "Únete gratis" del contenido; queda el card lateral "Crear mi
+    // tienda" como única vía de registro. Si el regex no matchea (contenido
+    // personalizado), se conserva el texto del admin.
+    $about_old = (string) ( $cur['about']['content'] ?? '' );
+    $about_new = preg_replace(
+        '/<h2[^>]*>\s*¿Tienes un negocio\?.*?<\/p>/isu',
+        '',
+        $about_old
+    );
+    if ( null !== $about_new && trim( $about_new ) !== trim( $about_old ) ) {
+        $cur['about']['content'] = trim( $about_new );
+    } else {
+        $cur['about']['content'] = $about_old;
+    }
+    // v3: FAQs por temas.
+    if ( empty( $cur['faqs'] ) ) {
+        $cur['faqs'] = $defaults['faqs'];
+    }
+
     update_option( WS_SITE_PAGES_KEY, $cur );
     update_option( 'ws_site_pages_version', WS_SITE_PAGES_VERSION );
 }
@@ -213,6 +276,30 @@ function ws_site_pages() {
         }
     }
     $defaults['trust'] = $trust;
+
+    // Preguntas frecuentes: lista de temas, cada uno con sus preguntas.
+    $faqs = array();
+    foreach ( (array) ( $saved['faqs'] ?? array() ) as $topic ) {
+        if ( ! is_array( $topic ) || '' === trim( (string) ( $topic['topic'] ?? '' ) ) ) {
+            continue;
+        }
+        $items = array();
+        foreach ( (array) ( $topic['items'] ?? array() ) as $it ) {
+            if ( is_array( $it ) && '' !== trim( (string) ( $it['q'] ?? '' ) ) ) {
+                $items[] = array(
+                    'q' => trim( (string) $it['q'] ),
+                    'a' => trim( (string) ( $it['a'] ?? '' ) ),
+                );
+            }
+        }
+        if ( ! empty( $items ) ) {
+            $faqs[] = array( 'topic' => trim( $topic['topic'] ), 'items' => $items );
+        }
+    }
+    if ( ! array_key_exists( 'faqs', $saved ) ) {
+        $faqs = $defaults['faqs'];
+    }
+    $defaults['faqs'] = $faqs;
 
     return $defaults;
 }
@@ -314,6 +401,27 @@ function ws_admin_page_site_pages() {
         }
         $cur['trust'] = $trust;
 
+        // Preguntas frecuentes: cada tema con sus preguntas y respuestas.
+        $faqs = array();
+        foreach ( (array) ( $_POST['faq_topic'] ?? array() ) as $ti => $topic ) {
+            $topic = trim( sanitize_text_field( $topic ) );
+            if ( '' === $topic ) {
+                continue;
+            }
+            $items = array();
+            foreach ( (array) ( $_POST['faq_q'][ $ti ] ?? array() ) as $ji => $q ) {
+                $q = trim( sanitize_text_field( $q ) );
+                $a = trim( wp_kses_post( (string) ( $_POST['faq_a'][ $ti ][ $ji ] ?? '' ) ) );
+                if ( '' !== $q ) {
+                    $items[] = array( 'q' => $q, 'a' => $a );
+                }
+            }
+            if ( ! empty( $items ) ) {
+                $faqs[] = array( 'topic' => $topic, 'items' => $items );
+            }
+        }
+        $cur['faqs'] = $faqs;
+
         update_option( WS_SITE_PAGES_KEY, $cur );
         $saved = true;
     }
@@ -349,11 +457,47 @@ function ws_admin_page_site_pages() {
                             <p class="description"><?php esc_html_e( 'Frase corta bajo el título que resume la página.', 'workshop' ); ?></p></td>
                     </tr>
                     <tr>
-                        <th scope="row"><label><?php esc_html_e( 'Contenido', 'workshop' ); ?></label></th>
-                        <td><textarea name="help[content]" class="large-text" rows="8"><?php echo esc_textarea( $pages['help']['content'] ); ?></textarea>
-                            <p class="description"><?php esc_html_e( 'Puedes usar HTML básico (párrafos, listas, enlaces).', 'workshop' ); ?></p></td>
+                        <th scope="row"><label><?php esc_html_e( 'Texto de introducción', 'workshop' ); ?></label></th>
+                        <td><textarea name="help[content]" class="large-text" rows="4"><?php echo esc_textarea( $pages['help']['content'] ); ?></textarea>
+                            <p class="description"><?php esc_html_e( 'Texto breve que se muestra sobre las preguntas frecuentes. Las preguntas se gestionan en la sección "Preguntas frecuentes" de más abajo.', 'workshop' ); ?></p></td>
                     </tr>
                 </table>
+            </div>
+
+            <div class="ws-mp-admin-group">
+                <h2><span class="dashicons dashicons-editor-help" style="margin-right:6px"></span><?php esc_html_e( 'Preguntas frecuentes (Ayuda)', 'workshop' ); ?></h2>
+                <p class="description"><?php esc_html_e( 'Las preguntas se agrupan por tema. Añade, edita o elimina temas y preguntas; se mostrarán en la página de Ayuda.', 'workshop' ); ?></p>
+                <div id="ws-sp-faqs">
+                    <?php foreach ( (array) $pages['faqs'] as $fi => $topic ) : ?>
+                        <div class="ws-sp-faq-topic" data-i="<?php echo (int) $fi; ?>">
+                            <div class="ws-sp-faq-topic-head">
+                                <strong><?php esc_html_e( 'Tema', 'workshop' ); ?></strong>
+                                <button type="button" class="button button-link-delete" onclick="this.closest('.ws-sp-faq-topic').remove();ws_sp_faq_sync();"><?php esc_html_e( 'Eliminar tema', 'workshop' ); ?></button>
+                            </div>
+                            <label class="ws-sp-field">
+                                <span><?php esc_html_e( 'Nombre del tema', 'workshop' ); ?></span>
+                                <input type="text" name="faq_topic[]" class="regular-text" placeholder="<?php esc_attr_e( 'Ej. Pedidos y compras', 'workshop' ); ?>" value="<?php echo esc_attr( $topic['topic'] ); ?>">
+                            </label>
+                            <div class="ws-sp-faq-items" data-holder>
+                                <?php foreach ( (array) $topic['items'] as $item ) : ?>
+                                    <div class="ws-sp-faq-item">
+                                        <label class="ws-sp-field">
+                                            <span><?php esc_html_e( 'Pregunta', 'workshop' ); ?></span>
+                                            <input type="text" name="faq_q[<?php echo (int) $fi; ?>][]" class="regular-text" placeholder="<?php esc_attr_e( 'Ej. ¿Cómo hago un pedido?', 'workshop' ); ?>" value="<?php echo esc_attr( $item['q'] ); ?>">
+                                        </label>
+                                        <label class="ws-sp-field">
+                                            <span><?php esc_html_e( 'Respuesta', 'workshop' ); ?></span>
+                                            <textarea name="faq_a[<?php echo (int) $fi; ?>][]" class="large-text" rows="3" placeholder="<?php esc_attr_e( 'Escribe la respuesta…', 'workshop' ); ?>"><?php echo esc_textarea( $item['a'] ); ?></textarea>
+                                        </label>
+                                        <p><button type="button" class="button button-link-delete" onclick="this.closest('.ws-sp-faq-item').remove()"><?php esc_html_e( 'Quitar pregunta', 'workshop' ); ?></button></p>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                            <p><button type="button" class="button" onclick="ws_sp_add_faq_item(this)"><?php esc_html_e( 'Añadir pregunta', 'workshop' ); ?></button></p>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+                <p><button type="button" class="button button-primary" onclick="ws_sp_add_faq_topic()"><?php esc_html_e( 'Añadir tema', 'workshop' ); ?></button></p>
             </div>
 
             <div class="ws-mp-admin-group">
@@ -491,6 +635,10 @@ function ws_admin_page_site_pages() {
         .ws-mp-admin-group h2 { font-size: 15px; padding-top: 12px; border-bottom: 1px solid #f0f0f1; padding-bottom: 10px; }
         .ws-sp-col { border: 1px solid #c3c4c7; padding: 12px 14px; margin: 10px 0; background: #f8f9fa; border-radius: 6px; }
         .ws-sp-col-head { display: flex; justify-content: space-between; margin-bottom: 8px; }
+        .ws-sp-faq-topic { border: 1px solid #c3c4c7; padding: 12px 14px; margin: 12px 0; background: #f8f9fa; border-radius: 6px; }
+        .ws-sp-faq-topic-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .ws-sp-faq-topic-head strong { font-size: 13px; text-transform: uppercase; letter-spacing: .4px; color: #50575e; }
+        .ws-sp-faq-item { border: 1px solid #dcdcde; border-left: 4px solid #c5d9ed; padding: 10px 12px; margin: 8px 0; background: #fff; border-radius: 4px; }
         .ws-sp-link-row { display: flex; gap: 6px; margin: 6px 0; flex-wrap: wrap; }
         .ws-sp-link-row .regular-text:first-child { width: 180px; }
         .ws-sp-link-row .regular-text:nth-child(2) { flex: 1; }
@@ -567,6 +715,52 @@ function ws_admin_page_site_pages() {
                 + '<button type="button" class="button button-link-delete" onclick="this.closest(\'.ws-sp-link-row\').remove()"><?php echo esc_js( __( '✕', 'workshop' ) ); ?></button>';
             box.appendChild(row);
         }
+        function ws_sp_add_faq_topic() {
+            var box = document.getElementById('ws-sp-faqs');
+            if (!box) return;
+            var d = document.createElement('div');
+            d.className = 'ws-sp-faq-topic';
+            d.innerHTML =
+                '<div class="ws-sp-faq-topic-head"><strong><?php echo esc_js( __( 'Tema', 'workshop' ) ); ?></strong>'
+                + '<button type="button" class="button button-link-delete" onclick="this.closest(\'.ws-sp-faq-topic\').remove();ws_sp_faq_sync();"><?php echo esc_js( __( 'Eliminar tema', 'workshop' ) ); ?></button></div>'
+                + '<label class="ws-sp-field"><span><?php echo esc_js( __( 'Nombre del tema', 'workshop' ) ); ?></span>'
+                + '<input type="text" name="faq_topic[]" class="regular-text" placeholder="<?php echo esc_js( __( 'Ej. Pedidos y compras', 'workshop' ) ); ?>"></label>'
+                + '<div class="ws-sp-faq-items" data-holder></div>'
+                + '<p><button type="button" class="button" onclick="ws_sp_add_faq_item(this)"><?php echo esc_js( __( 'Añadir pregunta', 'workshop' ) ); ?></button></p>';
+            box.appendChild(d);
+            ws_sp_faq_sync();
+        }
+        function ws_sp_add_faq_item(btn) {
+            var holder = btn.closest('.ws-sp-faq-topic').querySelector('[data-holder]');
+            if (!holder) return;
+            var i = ws_sp_faq_index(btn);
+            var item = document.createElement('div');
+            item.className = 'ws-sp-faq-item';
+            item.innerHTML =
+                '<label class="ws-sp-field"><span><?php echo esc_js( __( 'Pregunta', 'workshop' ) ); ?></span>'
+                + '<input type="text" name="faq_q[' + i + '][]" class="regular-text" placeholder="<?php echo esc_js( __( 'Ej. ¿Cómo hago un pedido?', 'workshop' ) ); ?>"></label>'
+                + '<label class="ws-sp-field"><span><?php echo esc_js( __( 'Respuesta', 'workshop' ) ); ?></span>'
+                + '<textarea name="faq_a[' + i + '][]" class="large-text" rows="3" placeholder="<?php echo esc_js( __( 'Escribe la respuesta…', 'workshop' ) ); ?>"></textarea></label>'
+                + '<p><button type="button" class="button button-link-delete" onclick="this.closest(\'.ws-sp-faq-item\').remove()"><?php echo esc_js( __( 'Quitar pregunta', 'workshop' ) ); ?></button></p>';
+            holder.appendChild(item);
+        }
+        function ws_sp_faq_index(btn) {
+            var topics = document.querySelectorAll('#ws-sp-faqs .ws-sp-faq-topic');
+            var el = btn ? btn.closest('.ws-sp-faq-topic') : null;
+            for (var k = 0; k < topics.length; k++) {
+                if (el && topics[k] === el) return k;
+            }
+            return topics.length;
+        }
+        function ws_sp_faq_sync() {
+            var topics = document.querySelectorAll('#ws-sp-faqs .ws-sp-faq-topic');
+            topics.forEach(function (t, i) {
+                t.querySelectorAll('input[name^="faq_topic"]').forEach(function (inp) { inp.name = 'faq_topic[' + i + ']'; });
+                t.querySelectorAll('input[name^="faq_q"]').forEach(function (inp) { inp.name = 'faq_q[' + i + '][]'; });
+                t.querySelectorAll('textarea[name^="faq_a"]').forEach(function (inp) { inp.name = 'faq_a[' + i + '][]'; });
+            });
+        }
+        ws_sp_faq_sync();
     </script>
     <?php
 }

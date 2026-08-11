@@ -1130,6 +1130,38 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
     .ws-contact-form-row { grid-template-columns: 1fr; }
 }
 
+/* Preguntas frecuentes (acordeón nativo, página de Ayuda) */
+.ws-faq-intro { margin-bottom: 6px; }
+.ws-faq { display: flex; flex-direction: column; gap: 26px; margin-top: 26px; }
+.ws-faq-topic { min-width: 0; }
+.ws-faq-topic-title {
+    display: flex; align-items: center; gap: 10px; margin: 0 0 14px; font-size: 1.14rem; font-weight: 800;
+    color: var(--ws-text); padding-bottom: 10px; border-bottom: 2px solid var(--ws-border);
+}
+.ws-faq-topic-title i { color: var(--ws-primary); font-size: 1rem; }
+.ws-faq-item {
+    border: 1px solid var(--ws-border); border-radius: 12px; background: var(--ws-card); overflow: hidden;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, .04); margin-bottom: 10px; transition: border-color .2s ease, box-shadow .2s ease;
+}
+.ws-faq-item[open] { border-color: rgba(79, 70, 229, .45); box-shadow: 0 4px 14px rgba(79, 70, 229, .08); }
+.ws-faq-item summary {
+    list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 15px 18px; font-weight: 700; font-size: .98rem; color: var(--ws-text); user-select: none;
+}
+.ws-faq-item summary::-webkit-details-marker { display: none; }
+.ws-faq-item summary:hover { background: rgba(79, 70, 229, .04); }
+.ws-faq-item summary .ws-faq-chevron {
+    flex-shrink: 0; font-size: .8rem; color: var(--ws-muted); transition: transform .25s ease;
+}
+.ws-faq-item[open] summary .ws-faq-chevron { transform: rotate(180deg); color: var(--ws-primary); }
+.ws-faq-answer {
+    padding: 2px 18px 16px; color: var(--ws-muted); font-size: .94rem; line-height: 1.7;
+    border-top: 1px dashed var(--ws-border);
+}
+.ws-faq-answer p:first-child, .ws-faq-answer p { margin: 12px 0 0; }
+.ws-faq-answer ul, .ws-faq-answer ol { margin: 8px 0 0 20px; padding: 0; }
+.ws-faq-answer li { margin: 4px 0; }
+
 /* Barra de confianza (bajo el contenido) */
 .ws-trust-bar {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px;
