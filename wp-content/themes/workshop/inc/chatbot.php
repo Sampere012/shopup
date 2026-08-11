@@ -150,6 +150,10 @@ function ws_chatbot_config( $in_admin = false ) {
         'strings'   => array_merge( ws_chatbot_strings(), $admin['messages'] ),
         'knowledge' => ws_chatbot_knowledge_config(),
         'guides'    => ws_chatbot_role_guides(),
+        // Contexto rico de la página actual: el bot sabe dónde está el usuario
+        // (tienda, módulo del panel, ayuda, planes…) y puede explicarla o
+        // navegar a otras secciones con cards.
+        'page'      => ws_chatbot_page_context(),
         'trackUrl'  => admin_url( 'admin-ajax.php' ) . '?action=ws_chatbot_track',
         'apiUrl'    => admin_url( 'admin-ajax.php' ),
         'nonce'     => wp_create_nonce( 'ws_nonce' ),
@@ -181,6 +185,136 @@ function ws_chatbot_context() {
         return 'marketplace';
     }
     return 'other';
+}
+
+/**
+ * Contexto RICO de la página actual para el widget (C.page).
+ *
+ * El bot sabe en qué página está el usuario (tienda, módulo del panel, ayuda,
+ * planes, mercado…) con su título, descripción, datos relevantes y enlaces
+ * útiles. Así puede explicar la página donde están, responder con datos reales
+ * y ofrecer cards de navegación a otras secciones.
+ */
+function ws_chatbot_page_context() {
+    $biz  = ws_current_business();
+    $home = ws_business_home( $biz );
+    $role = ws_user_role();
+    $key  = ws_chatbot_context();
+
+    // Secciones globales del sitio (para cards de navegación y "dónde estoy").
+    $sections = array(
+        'marketplace' => array(
+            'label' => __( 'Mercado', 'workshop' ),
+            'desc'  => __( 'Todos los negocios y tiendas del sitio.', 'workshop' ),
+            'icon'  => 'fa-store-alt',
+            'url'   => $home,
+        ),
+        'tiendas' => array(
+            'label' => __( 'Tiendas', 'workshop' ),
+            'desc'  => __( 'Directorio de tiendas para comprar.', 'workshop' ),
+            'icon'  => 'fa-store',
+            'url'   => ws_marketplace_stores_url(),
+        ),
+        'ayuda' => array(
+            'label' => __( 'Ayuda y FAQ', 'workshop' ),
+            'desc'  => __( 'Preguntas frecuentes y guías del sitio.', 'workshop' ),
+            'icon'  => 'fa-circle-question',
+            'url'   => $home . 'ayuda/',
+        ),
+        'contacto' => array(
+            'label' => __( 'Contacto', 'workshop' ),
+            'desc'  => __( 'Escribe al soporte del sitio.', 'workshop' ),
+            'icon'  => 'fa-envelope',
+            'url'   => $home . 'contacto/',
+        ),
+        'planes' => array(
+            'label' => __( 'Planes y precios', 'workshop' ),
+            'desc'  => __( 'Todo lo que incluye cada plan de negocio.', 'workshop' ),
+            'icon'  => 'fa-crown',
+            'url'   => ws_chatbot_resolve_link( 'panel:plan' ),
+        ),
+        'registro' => array(
+            'label' => __( 'Crear mi negocio', 'workshop' ),
+            'desc'  => __( 'Regístrate gratis y monta tu tienda.', 'workshop' ),
+            'icon'  => 'fa-rocket',
+            'url'   => home_url( '/registro/' ),
+        ),
+    );
+
+    $out = array(
+        'key'      => $key,
+        'label'    => __( 'Esta página', 'workshop' ),
+        'title'    => '',
+        'desc'     => '',
+        'hint'     => '',
+        'sections' => $sections,
+    );
+
+    if ( 0 === strpos( (string) $key, 'panel:' ) ) {
+        $module = substr( (string) $key, 6 );
+        $labels = array(
+            'dashboard'    => __( 'Panel de inicio', 'workshop' ),
+            'products'     => __( 'Productos', 'workshop' ),
+            'locations'    => __( 'Ubicaciones', 'workshop' ),
+            'suppliers'    => __( 'Proveedores', 'workshop' ),
+            'stock'        => __( 'Stock', 'workshop' ),
+            'movements'    => __( 'Historial de movimientos', 'workshop' ),
+            'orders'       => __( 'Pedidos', 'workshop' ),
+            'shifts'       => __( 'Turnos', 'workshop' ),
+            'workers'      => __( 'Trabajadores', 'workshop' ),
+            'customers'    => __( 'Clientes', 'workshop' ),
+            'pos'          => __( 'Punto de venta (POS)', 'workshop' ),
+            'pos-sales'    => __( 'Ventas del POS', 'workshop' ),
+            'reviews'      => __( 'Valoraciones', 'workshop' ),
+            'loyalty'      => __( 'Fidelización', 'workshop' ),
+            'permissions'  => __( 'Permisos', 'workshop' ),
+            'reports'      => __( 'Reportes', 'workshop' ),
+            'appearance'   => __( 'Apariencia de tu tienda', 'workshop' ),
+            'settings'     => __( 'Configuración', 'workshop' ),
+            'account'      => __( 'Mi cuenta', 'workshop' ),
+            'plan'         => __( 'Mi plan', 'workshop' ),
+        );
+        $title = $labels[ $module ] ?? __( 'Panel de tu negocio', 'workshop' );
+        $out['label'] = $title;
+        $out['title'] = $title;
+        $out['desc']  = sprintf( __( 'Estás en el módulo %s del panel de tu negocio.', 'workshop' ), $title );
+        $out['hint']  = sprintf( __( 'Puedo ayudarte con este módulo o explicarte cómo se usa. También puedo generarte reportes, reponer stock o crear productos.', 'workshop' ), $title );
+        // La sección de planes apunta al módulo del panel.
+        $out['sections']['planes']['url'] = ws_panel_url( $role ? $role : 'owner', 'plan', $biz );
+    } elseif ( 'store' === $key ) {
+        $loc = get_query_var( 'ws_location' );
+        $name = is_object( $loc ) ? (string) ( $loc->name ?? '' ) : '';
+        $out['label'] = $name ? $name : __( 'Tienda', 'workshop' );
+        $out['title'] = $name ? $name : __( 'Esta tienda', 'workshop' );
+        $out['desc']  = $name ? sprintf( __( 'Estás viendo la tienda %s: sus productos, precios y formas de pago.', 'workshop' ), $name ) : __( 'Estás viendo una tienda del mercado.', 'workshop' );
+        $out['hint']  = __( 'Puedo buscar productos de esta tienda, explicarte cómo comprar o ayudarte a seguir tu pedido.', 'workshop' );
+        $out['sections']['tiendas']['url'] = ws_marketplace_stores_url();
+    } elseif ( 'landing' === $key ) {
+        $out['label'] = __( 'Página del negocio', 'workshop' );
+        $out['title'] = __( 'Página del negocio', 'workshop' );
+        $out['desc']  = __( 'Estás en la página principal de un negocio del mercado.', 'workshop' );
+        $out['hint']  = __( 'Puedo llevarte a sus tiendas, explicarte cómo comprar o mostrarte los planes si quieres montar el tuyo.', 'workshop' );
+    } elseif ( 'marketplace' === $key ) {
+        $out['label'] = __( 'Mercado', 'workshop' );
+        $out['title'] = __( 'Mercado de negocios', 'workshop' );
+        $out['desc']  = __( 'Estás en el mercado: aquí se listan todos los negocios y tiendas del sitio.', 'workshop' );
+        $out['hint']  = __( 'Puedo recomendarte tiendas, buscar productos o explicarte los planes para montar tu negocio.', 'workshop' );
+    } elseif ( 0 === strpos( (string) $key, 'static:' ) ) {
+        $which = substr( (string) $key, 7 );
+        $map = array(
+            'ayuda'    => array( __( 'Ayuda y FAQ', 'workshop' ), __( 'Estás en la página de Ayuda con todas las preguntas frecuentes.', 'workshop' ) ),
+            'contacto' => array( __( 'Contacto', 'workshop' ), __( 'Estás en la página de Contacto para escribir al soporte.', 'workshop' ) ),
+            'acerca'   => array( __( 'Acerca de nosotros', 'workshop' ), __( 'Estás en la página Acerca de nosotros.', 'workshop' ) ),
+        );
+        if ( isset( $map[ $which ] ) ) {
+            $out['label'] = $map[ $which ][0];
+            $out['title'] = $map[ $which ][0];
+            $out['desc']  = $map[ $which ][1];
+            $out['hint']  = __( '¿Tienes una duda? Pregúntamela o te llevo a otra sección.', 'workshop' );
+        }
+    }
+
+    return $out;
 }
 
 /**
@@ -2025,4 +2159,93 @@ function ws_chatbot_learn_item( $question, $answer ) {
     );
     update_option( 'ws_chatbot_knowledge', $kb );
     return true;
+}
+
+/* -------------------------------------------------------------------------
+ * Cards/widgets del asistente: planes, tiendas y secciones del sitio.
+ * El bot responde con tarjetas ricas (no solo texto) según lo que pregunte:
+ *  - plans    → los planes activos con precio, límites y el recomendado.
+ *  - stores   → las tiendas del mercado con foto y rating.
+ *  - sections → las secciones del sitio (navegación rápida).
+ *  - page     → contexto de la página actual (C.page ya viaja en el config).
+ * ---------------------------------------------------------------------- */
+
+add_action( 'wp_ajax_ws_chatbot_cards', 'ws_ajax_chatbot_cards' );
+add_action( 'wp_ajax_nopriv_ws_chatbot_cards', 'ws_ajax_chatbot_cards' );
+function ws_ajax_chatbot_cards() {
+    if ( ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Sesión expirada.', 'workshop' ) ) );
+    }
+    $type = sanitize_key( $_POST['type'] ?? '' );
+
+    if ( 'plans' === $type ) {
+        $biz   = ws_current_business();
+        $role  = ws_user_role();
+        $plans = class_exists( 'WS_Plans' ) ? WS_Plans::active() : array();
+        $out   = array();
+        foreach ( $plans as $p ) {
+            $limits = class_exists( 'WS_Plans' ) ? WS_Plans::limits( $p ) : array();
+            $feats  = array();
+            $feats[] = sprintf( __( '%d productos', 'workshop' ), (int) ( $limits['products'] ?? 0 ) ?: 999 );
+            $feats[] = sprintf( __( '%d puntos de venta', 'workshop' ), (int) ( $limits['pvs'] ?? 0 ) ?: 999 );
+            $feats[] = sprintf( __( '%d trabajadores', 'workshop' ), (int) ( $limits['users'] ?? 0 ) ?: 999 );
+            if ( (int) ( $p->has_chatbot ?? 0 ) ) {
+                $feats[] = __( 'Asistente incluido', 'workshop' );
+            }
+            $out[] = array(
+                'id'          => (int) $p->id,
+                'name'        => (string) ( $p->name ?? '' ),
+                'slug'        => (string) ( $p->slug ?? '' ),
+                'price'       => class_exists( 'WS_Plans' ) ? WS_Plans::format_price( $p ) : '',
+                'price_num'   => (float) ( $p->price ?? 0 ),
+                'duration'    => class_exists( 'WS_Plans' ) ? WS_Plans::duration_label( $p ) : '',
+                'is_trial'    => (int) ( $p->is_trial ?? 0 ),
+                'has_chatbot' => (int) ( $p->has_chatbot ?? 0 ),
+                'features'    => $feats,
+                'url'         => $role ? ws_panel_url( $role, 'plan', $biz ) : home_url( '/registro/' ),
+            );
+        }
+        // Recomendado: la prueba gratis para visitantes; para negocios el plan
+        // con más funciones (el de mayor precio numérico).
+        $recommended = 0;
+        foreach ( $out as $i => $pl ) {
+            if ( ! $pl['is_trial'] && ( ! $recommended || $pl['price_num'] > $out[ $recommended - 1 ]['price_num'] ) ) {
+                $recommended = $i + 1;
+            }
+        }
+        if ( ! $role && ! empty( $out ) && $out[0]['is_trial'] ) {
+            $recommended = 1; // Nuevo visitante → prueba gratis.
+        }
+        foreach ( $out as $i => $pl ) {
+            $out[ $i ]['recommended'] = ( $i + 1 ) === $recommended;
+        }
+        wp_send_json_success( array( 'plans' => $out ) );
+    }
+
+    if ( 'stores' === $type ) {
+        $bizs = class_exists( 'WS_Business' ) ? WS_Business::marketplace_ranked() : array();
+        $out  = array();
+        foreach ( array_slice( $bizs, 0, 8 ) as $b ) {
+            $slug = (string) ( $b->slug ?? '' );
+            $url  = '' !== $slug ? ws_business_home( $b ) : ws_business_url( $slug );
+            $out[] = array(
+                'id'      => (int) $b->id,
+                'name'    => (string) ( $b->name ?? '' ),
+                'slug'    => (string) ( $b->slug ?? '' ),
+                'logo'    => (string) ( $b->logo ?? '' ),
+                'rating'  => (float) ( $b->ws_rating ?? 0 ),
+                'reviews' => (int) ( $b->ws_reviews ?? 0 ),
+                'pvs'     => (int) ( $b->ws_pvs ?? 0 ),
+                'url'     => $url,
+            );
+        }
+        wp_send_json_success( array( 'stores' => $out ) );
+    }
+
+    if ( 'sections' === $type ) {
+        $ctx = ws_chatbot_page_context();
+        wp_send_json_success( array( 'sections' => array_values( $ctx['sections'] ) ) );
+    }
+
+    wp_send_json_error( array( 'msg' => __( 'Tipo de tarjeta no válido.', 'workshop' ) ) );
 }

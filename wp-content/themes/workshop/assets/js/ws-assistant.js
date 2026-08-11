@@ -232,6 +232,141 @@
         return row;
     }
 
+    // Widgets ricos: tarjetas visuales (planes, tiendas, secciones) en vez de
+    // solo texto. Cada widget es una columna de items con icono/imagen,
+    // titulo, detalle y accion. Los datos llegan del endpoint ws_chatbot_cards.
+    function starsHtml(rating) {
+        var n = Math.round(Number(rating) || 0);
+        var out = '';
+        for (var i = 1; i <= 5; i++) {
+            out += '<i class="fa-solid fa-star' + (i <= n ? ' is-on' : '') + '" aria-hidden="true"></i>';
+        }
+        return '<span class="wsb-stars">' + out + '</span>';
+    }
+
+    function appendWidget(title, items, opts) {
+        opts = opts || {};
+        var row = document.createElement('div');
+        row.className = 'wsb-msg';
+        var card = document.createElement('div');
+        card.className = 'wsb-widget';
+        var html = '';
+        if (title) { html += '<div class="wsb-widget-title">' + escapeHtml(title) + '</div>'; }
+        (items || []).forEach(function (it) {
+            var badge = it.badge ? '<span class="wsb-widget-badge ' + (it.badgeCls || 'is-hot') + '">' + escapeHtml(it.badge) + '</span>' : '';
+            var icon = it.icon ? '<span class="wsb-widget-ico"><i class="fa-solid ' + escapeHtml(it.icon) + '"></i></span>' : '';
+            var img = it.img ? '<span class="wsb-widget-img" style="background-image:url(' + escapeHtml(it.img) + ')"></span>' : '';
+            var meta = it.meta ? '<span class="wsb-widget-meta">' + escapeHtml(it.meta) + '</span>' : '';
+            var price = it.price ? '<b class="wsb-price">' + escapeHtml(it.price) + '</b>' : '';
+            var feats = (it.features || []).length
+                ? '<span class="wsb-widget-feats">' + it.features.map(function (f) { return '<span class="wsb-feat"><i class="fa-solid fa-circle-check"></i> ' + escapeHtml(f) + '</span>'; }).join('') + '</span>'
+                : '';
+            var stars = it.rating ? '<span class="wsb-widget-rating">' + starsHtml(it.rating) + (it.reviews ? ' <em>' + escapeHtml(it.reviews) + '</em>' : '') + '</span>' : '';
+            html += '<a class="wsb-widget-item' + (it.recommended ? ' is-recommended' : '') + '" href="' + escapeHtml(it.url || '#') + '" target="_blank" rel="noopener">' +
+                (img || icon) +
+                '<span class="wsb-widget-body">' +
+                    '<span class="wsb-widget-name">' + escapeHtml(it.name) + badge + '</span>' +
+                    (it.duration ? '<span class="wsb-widget-duration">' + escapeHtml(it.duration) + '</span>' : '') +
+                    (it.desc ? '<span class="wsb-widget-desc">' + escapeHtml(it.desc) + '</span>' : '') +
+                    stars +
+                    feats +
+                    price +
+                    meta +
+                '</span>' +
+                '<span class="wsb-widget-go"><i class="fa-solid fa-chevron-right"></i></span>' +
+            '</a>';
+        });
+        if (!(items || []).length) { html += '<div class="wsb-widget-empty">' + (opts.empty || 'Sin resultados.') + '</div>'; }
+        card.innerHTML = html;
+        row.appendChild(card);
+        body.appendChild(row);
+        body.scrollTop = body.scrollHeight;
+        if (opts.chips && opts.chips.length) { appendChips(opts.chips); }
+        return row;
+    }
+
+    // --- Widgets: planes, tiendas y secciones ---
+    function doPlans() {
+        var t = showTyping();
+        api('ws_chatbot_cards', { type: 'plans' }, function (json) {
+            removeTyping(t);
+            if (!json || !json.success || !json.data || !json.data.plans || !json.data.plans.length) {
+                reply((json && json.data && json.data.msg) || 'Aún no hay planes publicados.', [], 'plans:none');
+                return;
+            }
+            appendWidget('Planes disponibles:', json.data.plans.map(function (p) {
+                return {
+                    name: p.name,
+                    badge: p.is_trial ? 'GRATIS' : (p.recommended ? 'RECOMENDADO' : ''),
+                    badgeCls: p.is_trial ? 'is-free' : 'is-hot',
+                    duration: p.duration,
+                    features: p.features,
+                    price: p.price,
+                    icon: p.is_trial ? 'fa-gift' : 'fa-crown',
+                    url: p.url,
+                    recommended: p.recommended
+                };
+            }), {
+                chips: C.urls.register ? [{ label: 'Crear mi negocio', url: C.urls.register, icon: 'fa-rocket' }] : []
+            });
+            track('cards:plans');
+        });
+    }
+
+    function doStores() {
+        var t = showTyping();
+        api('ws_chatbot_cards', { type: 'stores' }, function (json) {
+            removeTyping(t);
+            if (!json || !json.success || !json.data || !json.data.stores || !json.data.stores.length) {
+                reply((json && json.data && json.data.msg) || 'Aún no hay tiendas en el mercado.', [], 'stores:none');
+                return;
+            }
+            var list = json.data.stores;
+            appendWidget('Tiendas del mercado:', list.map(function (s) {
+                return {
+                    name: s.name,
+                    img: s.logo || '',
+                    icon: s.logo ? '' : 'fa-store',
+                    rating: s.rating,
+                    reviews: s.reviews ? '(' + s.reviews + ')' : '',
+                    desc: s.pvs ? (s.pvs + ' punto(s) de venta') : '',
+                    meta: s.reviews ? (s.reviews + ' reseña' + (s.reviews === 1 ? '' : 's')) : 'Nueva',
+                    url: s.url
+                };
+            }), {
+                chips: [{ label: 'Ver todas', url: C.urls.stores, icon: 'fa-store' }]
+            });
+            track('cards:stores');
+        });
+    }
+
+    function doSections() {
+        var t = showTyping();
+        api('ws_chatbot_cards', { type: 'sections' }, function (json) {
+            removeTyping(t);
+            if (!json || !json.success || !json.data || !json.data.sections) {
+                reply((json && json.data && json.data.msg) || 'No pude cargar las secciones.', [], 'sections:error');
+                return;
+            }
+            appendWidget('Secciones del sitio:', json.data.sections.map(function (s) {
+                return { name: s.label, desc: s.desc, icon: s.icon, url: s.url };
+            }), {});
+            track('cards:sections');
+        });
+    }
+
+    // Contexto de la página actual: explica dónde está el usuario con datos
+    // reales (C.page) y le ofrece navegar a otras secciones.
+    function doPageContext() {
+        var p = C.page || {};
+        if (!p.key) { reply('No sé exactamente en qué sección estás ahora, pero puedo ayudarte con lo que necesites.', chipsFor(['marketplace', 'ayuda', 'contacto']), 'page:none'); return; }
+        var msg = (p.desc ? p.desc + ' ' : '') + (p.hint || '');
+        reply(msg, (p.sections ? Object.keys(p.sections).slice(0, 6).map(function (k) {
+            var s = p.sections[k];
+            return { label: s.label, url: s.url, icon: s.icon };
+        }) : []), 'page:' + p.key);
+    }
+
     function doSearch(q) {
         var t = showTyping();
         // Se envía el contexto de la página (negocio + ubicación) para que la
@@ -1282,15 +1417,18 @@
             return;
         }
         track('guide:' + id);
-        var rows = (g.steps || []).map(function (s, i) {
-            return { name: 'Paso ' + (i + 1), meta: s, url: g.url || '#' };
+        // Los pasos se muestran como mensajes normales del bot (burbujas),
+        // no como un card clicable que se desborda dentro del chat y no se lee.
+        if (g.intro) { appendMsg(g.intro, false); }
+        var steps = g.steps || [];
+        if (!steps.length) { steps = ['Entra al módulo y explora sus opciones.']; }
+        steps.forEach(function (s, i) {
+            appendMsg('Paso ' + (i + 1) + ': ' + s, false);
         });
-        appendCard(g.label + ' — paso a paso:', rows, {
-            chips: [
-                { label: 'Abrir módulo', icon: 'fa-arrow-pointer', url: g.url || '#', newTab: true },
-                { label: 'Otra guía', icon: 'fa-list-ol', click: startGuideFlow }
-            ]
-        });
+        var chips = [];
+        if (g.url) { chips.push({ label: 'Abrir módulo', icon: 'fa-arrow-pointer', url: g.url, newTab: true }); }
+        chips.push({ label: 'Otra guía', icon: 'fa-list-ol', click: startGuideFlow });
+        appendChips(chips);
         busy = false;
     }
 
@@ -1539,21 +1677,38 @@
         plan: {
             keys: ['plan', 'precio', 'upgrade', 'suscripcion', 'pagar', 'cuanto cuesta', 'precios', 'costo', 'planes'],
             run: function () {
-                if (isPanel) { reply('Tu plan actual es ' + C.planName + '. Si quieres más funciones, aquí puedes pedirlo.', chipsFor(['plan']), 'plan'); return; }
-                reply('Montar tu negocio en el sitio es gratis en la prueba de 7 días. Crea tu cuenta y elige el plan que mejor te quede.', [registerChip(), { label: 'Ver tarifas', url: C.urls.plan, icon: 'fa-crown' }].filter(Boolean), 'plan');
+                if (locked) { actions.locked.run(); return; }
+                if (isPanel) {
+                    // En el panel: card con los planes y el recomendado para el negocio.
+                    doPlans();
+                    return;
+                }
+                doPlans();
+            }
+        },
+        tiendas: {
+            keys: ['tiendas', 'ver tiendas', 'las tiendas', 'directorio', 'marketplace', 'negocios', 'ver negocios', 'que tiendas hay', 'todas las tiendas', 'donde compro'],
+            run: function () {
+                if (locked) { actions.locked.run(); return; }
+                doStores();
+            }
+        },
+        secciones: {
+            keys: ['secciones', 'navegar', 'donde estoy', 'que pagina es esta', 'en que pagina estoy', 'que hay aqui', 'sobre esta pagina', 'explicame esta pagina', 'que seccion', 'ir a otra seccion', 'mapa del sitio', 'todas las paginas', 'paginas del sitio'],
+            run: function () {
+                if (locked) { actions.locked.run(); return; }
+                doPageContext();
             }
         },
         tutorial: {
             keys: ['recorrido', 'tour', 'tutorial', 'guiame', 'guiar', 'como se usa el panel', 'como funciona el panel', 'primeros pasos', 'como empiezo', 'enseñame', 'ensename'],
             run: function () {
-                // El recorrido guiado es onboarding nativo del panel: se ofrece
-                // incluso si el plan no incluye el asistente (locked).
+                // El recorrido guiado por spotlight del panel se retiró del chat:
+                // se veía como un card clicable desbordado dentro de la burbuja
+                // y el texto no se leía. Ahora el asistente explica por pasos en
+                // burbujas normales (startGuideFlow) y con las guías por rol.
                 if (isPanel) {
-                    reply('Claro, te hago un recorrido guiado por esta sección del panel y te voy señalando cada elemento. Pulsa el botón para empezar:', [{
-                        label: 'Iniciar recorrido guiado',
-                        icon: 'fa-location-arrow',
-                        click: startTour
-                    }], 'tutorial');
+                    startGuideFlow();
                 } else {
                     reply('Puedes explorar las tiendas del mercado, revisar la Ayuda o contactarnos. Y si quieres vender, montar tu negocio toma menos de 5 minutos 😉', chipsFor(['marketplace', 'ayuda', 'contacto']), 'tutorial');
                 }
@@ -1761,7 +1916,7 @@
                 { label: 'Crear producto', icon: 'fa-plus', send: 'crear producto' },
                 { label: 'Abrir caja', icon: 'fa-cash-register', send: 'abrir caja' },
                 { label: 'Guía del panel', icon: 'fa-list-ol', send: 'guia del panel' },
-                { label: 'Recorrido guiado', icon: 'fa-location-arrow', send: 'recorrido' }
+                { label: 'Ver tiendas', icon: 'fa-store', send: 'ver tiendas' }
             ], 'boot:panel');
             // Memoria de sesión: retoma donde quedó la última vez.
             if (mem && mem.lastAction && mem.lastEntity) {
@@ -1779,18 +1934,43 @@
                 { label: 'Seguir mi pedido', icon: 'fa-truck-fast', send: 'seguir mi pedido' },
                 registerChip()
             ].filter(Boolean), 'boot:guest');
-        } else if (C.context === 'store') {
-            reply(S.storeTeaser + ' Puedes también ver todas las tiendas.', [
-                { label: 'Buscar en esta tienda', icon: 'fa-magnifying-glass', send: 'buscar' },
-                { label: 'Ver todas las tiendas', icon: 'fa-store', send: 'todas las tiendas' },
-                { label: 'Seguir mi pedido', icon: 'fa-truck-fast', send: 'seguir mi pedido' }
-            ], 'boot:store');
         } else {
-            reply(S.welcomeNewUser, [
-                { label: 'Buscar producto', icon: 'fa-magnifying-glass', send: 'buscar' },
-                { label: 'Ver tiendas', icon: 'fa-store', send: 'todas las tiendas' },
-                { label: 'Seguir mi pedido', icon: 'fa-truck-fast', send: 'seguir mi pedido' }
-            ], 'boot:user');
+            // Contexto rico de la página: el bot sabe dónde está el usuario
+            // (tienda, negocio, mercado, ayuda…) y pregunta algo útil según eso.
+            var pg = C.page || {};
+            var pgMsg = (pg.desc ? pg.desc + ' ' : '') + (pg.hint || '');
+            var pgChips = [];
+            if (pg.key === 'store' || C.context === 'store') {
+                pgChips = [
+                    { label: 'Buscar en esta tienda', icon: 'fa-magnifying-glass', send: 'buscar' },
+                    { label: 'Ver todas las tiendas', icon: 'fa-store', send: 'todas las tiendas' },
+                    { label: 'Seguir mi pedido', icon: 'fa-truck-fast', send: 'seguir mi pedido' }
+                ];
+            } else if (pg.key === 'landing' || pg.key === 'marketplace') {
+                pgChips = [
+                    { label: 'Ver tiendas', icon: 'fa-store', send: 'todas las tiendas' },
+                    { label: 'Buscar producto', icon: 'fa-magnifying-glass', send: 'buscar' },
+                    { label: 'Ver planes', icon: 'fa-crown', send: 'planes' }
+                ];
+            } else if (pg.key === 'planes' || pg.key === 'pricing' || pg.key === 'panel:plan') {
+                pgChips = [
+                    { label: 'Ver planes', icon: 'fa-crown', send: 'planes' },
+                    { label: 'Crear mi negocio', icon: 'fa-rocket', send: 'crear negocio' }
+                ];
+            } else if (pg.key === 'ayuda' || pg.key === 'help' || pg.key === 'static:ayuda') {
+                pgChips = [
+                    { label: 'Buscar en la Ayuda', icon: 'fa-circle-question', send: 'ayuda' },
+                    { label: 'Contactar', icon: 'fa-envelope', send: 'contacto' }
+                ];
+            } else {
+                pgChips = [
+                    { label: 'Buscar producto', icon: 'fa-magnifying-glass', send: 'buscar' },
+                    { label: 'Ver tiendas', icon: 'fa-store', send: 'todas las tiendas' },
+                    { label: 'Ver planes', icon: 'fa-crown', send: 'planes' }
+                ];
+            }
+            var pgLead = pg.key === 'store' ? (S.storeTeaser + ' Puedes también ver todas las tiendas.') : (pgMsg || S.welcomeNewUser);
+            reply(pgLead, pgChips, 'boot:' + (pg.key || 'user'));
         }
     }
 
