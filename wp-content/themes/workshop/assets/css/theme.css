@@ -791,6 +791,15 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-sound-toggle:hover { background: rgba(255, 255, 255, .24); border-color: rgba(255, 255, 255, .35); }
 .ws-sound-toggle[aria-pressed="false"] { opacity: .55; }
 .ws-store-layout { padding: 32px 20px 60px; }
+/* Título de sección: separa los productos del header/hero. */
+.ws-store-section-head {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    margin: 8px 0 20px;
+}
+.ws-store-section-head h2 { margin: 0; font-size: 1.4rem; font-weight: 800; color: var(--ws-text); }
+.ws-store-section-head h2 i { color: var(--ws-primary); margin-right: 8px; }
+.ws-store-section-count { color: var(--ws-muted); font-size: .9em; font-weight: 500; }
+.ws-store-section-count b { color: var(--ws-primary-dark); font-weight: 800; }
 .ws-store-breadcrumb { display: flex; align-items: center; gap: 8px; margin-bottom: 22px; font-size: .85em; color: var(--ws-muted); }
 .ws-store-breadcrumb a { color: var(--ws-muted); }
 .ws-store-breadcrumb a:hover { color: var(--ws-primary); }

@@ -75,6 +75,11 @@ get_header();
                 <span><?php echo esc_html( $location->name ); ?></span>
             </div>
 
+            <div class="ws-store-section-head">
+                <h2><i class="fa-solid fa-box"></i> <?php esc_html_e( 'Productos', 'workshop' ); ?></h2>
+                <span class="ws-store-section-count"><b x-text="filtered.length"></b> <?php esc_html_e( 'disponibles', 'workshop' ); ?></span>
+            </div>
+
             <div class="ws-search">
                 <i class="fa-solid fa-magnifying-glass"></i>
                 <input type="search" placeholder="<?php esc_attr_e( 'Buscar producto…', 'workshop' ); ?>" x-model="search">
