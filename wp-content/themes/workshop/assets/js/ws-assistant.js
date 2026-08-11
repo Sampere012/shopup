@@ -1221,14 +1221,25 @@
         window.dispatchEvent(new CustomEvent('ws-open-tutorial'));
     }
 
-    /* Base de conocimiento del admin: responde antes que las intenciones
-       internas (patrón más largo gana). */
+    /* Normaliza texto (minúsculas, sin tildes ni signos) igual que el PHP:
+       así las FAQs y patrones matchean escribas con o sin tildes. */
+    function normText(s) {
+        return String(s || '').toLowerCase()
+            .replace(/[¿?¡!.,;:()"'“”‘’\-–—\/]+/g, ' ')
+            .replace(/[áàäâ]/g, 'a').replace(/[éèëê]/g, 'e')
+            .replace(/[íìïî]/g, 'i').replace(/[óòöô]/g, 'o')
+            .replace(/[úùüû]/g, 'u').replace(/ñ/g, 'n').replace(/ç/g, 'c')
+            .replace(/\s+/g, ' ').trim();
+    }
+
+    /* Base de conocimiento del admin + FAQs de Ayuda: responde antes que las
+       intenciones internas (patrón más largo gana). */
     function matchKnowledge(text) {
-        var low = String(text || '').toLowerCase();
+        var low = normText(text);
         var best = null, bestLen = 0;
         (C.knowledge || []).forEach(function (item) {
             (item.patterns || []).forEach(function (p) {
-                p = String(p || '').toLowerCase().trim();
+                p = normText(p);
                 if (p && low.indexOf(p) > -1 && p.length > bestLen) {
                     best = item;
                     bestLen = p.length;
@@ -1240,9 +1251,12 @@
 
     function runKnowledge(item) {
         if (locked) { actions.locked.run(); return; }
-        var chips = item && item.chip ? [item.chip] : null;
+        var chips = [];
+        // Preguntas del FAQ primero (acción), enlace a Ayuda al final.
+        if (item && item.chips && item.chips.length) { chips = chips.concat(item.chips); }
+        if (item && item.chip) { chips.push(item.chip); }
         track('knowledge:' + (item ? (item.id || 'x') : 'x'));
-        reply(item ? (item.answer || '') : '', chips, 'knowledge');
+        reply(item ? (item.answer || '') : '', chips.length ? chips : null, 'knowledge');
     }
 
     function resolveIntent(text) {

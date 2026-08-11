@@ -120,6 +120,7 @@
     border: 1px solid var(--wsb-border); border-radius: 14px 14px 14px 4px;
     box-shadow: 0 2px 6px rgba(15, 23, 42, .05);
     word-break: break-word;
+    white-space: pre-line;
 }
 .wsb-msg.wsb-user .wsb-bubble {
     background: linear-gradient(135deg, var(--wsb-primary), var(--wsb-primary-dark));

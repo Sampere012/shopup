@@ -682,6 +682,156 @@ function ws_chatbot_knowledge() {
 }
 
 /**
+ * Normaliza texto para emparejar FAQs: minúsculas, sin tildes ni signos de
+ * puntuación. El JS aplica la misma normalización antes de comparar, así el
+ * usuario puede escribir con o sin tildes.
+ */
+function ws_chatbot_norm_text( $text ) {
+    $text = html_entity_decode( (string) $text, ENT_QUOTES, 'UTF-8' );
+    $text = mb_strtolower( trim( $text ), 'UTF-8' );
+    $text = strtr( $text, array(
+        'á' => 'a', 'à' => 'a', 'ä' => 'a', 'â' => 'a',
+        'é' => 'e', 'è' => 'e', 'ë' => 'e', 'ê' => 'e',
+        'í' => 'i', 'ì' => 'i', 'ï' => 'i', 'î' => 'i',
+        'ó' => 'o', 'ò' => 'o', 'ö' => 'o', 'ô' => 'o',
+        'ú' => 'u', 'ù' => 'u', 'ü' => 'u', 'û' => 'u',
+        'ñ' => 'n', 'ç' => 'c',
+    ) );
+    $text = preg_replace( '/[¿?¡!.,;:()"\'“”‘’\-–—\/]+/u', ' ', $text );
+    return trim( (string) preg_replace( '/\s+/u', ' ', $text ) );
+}
+
+/**
+ * Patrones de emparejamiento para una pregunta del FAQ: la pregunta
+ * normalizada y una variante sin la palabra interrogativa inicial.
+ */
+function ws_chatbot_faq_patterns( $q ) {
+    $norm     = ws_chatbot_norm_text( $q );
+    $patterns = array( $norm );
+    $reduced  = (string) preg_replace( '/^(como|que|cual|cuales|cual es|cuando|donde|cuanto|cuantos|puedo|hay|existe|me puedes|quiero saber|se puede)\s+/u', '', $norm );
+    if ( '' !== $reduced && $reduced !== $norm ) {
+        $patterns[] = $reduced;
+    }
+    return array_values( array_unique( $patterns ) );
+}
+
+/**
+ * Convierte las FAQs de la página de Ayuda (editables en wp-admin) en ítems
+ * de conocimiento del asistente: una entrada por tema con sus preguntas como
+ * chips navegables, y una entrada por pregunta que responde directamente.
+ */
+function ws_chatbot_faq_knowledge() {
+    $pages = ws_site_pages();
+    $faqs  = (array) ( $pages['faqs'] ?? array() );
+    $ayuda = ws_chatbot_resolve_link( 'ayuda' );
+    $out   = array();
+    $ti    = 0;
+
+    // Índice: "faq", "preguntas frecuentes", "dudas" → lista los temas como
+    // chips para que las FAQs sean descubribles sin conocer las preguntas.
+    $topic_names = array();
+    foreach ( $faqs as $topic ) {
+        if ( is_array( $topic ) && '' !== trim( (string) ( $topic['topic'] ?? '' ) ) ) {
+            $topic_names[] = trim( (string) $topic['topic'] );
+        }
+    }
+    if ( ! empty( $topic_names ) ) {
+        $index_chips = array();
+        foreach ( $topic_names as $tname ) {
+            $index_chips[] = array( 'label' => $tname, 'send' => $tname );
+        }
+        $out[] = array(
+            'id'       => 'faq-indice',
+            'patterns' => array( 'faq', 'preguntas frecuentes', 'dudas frecuentes', 'preguntas y respuestas', 'tengo dudas', 'lista de preguntas' ),
+            'answer'   => __( 'Estas son las secciones de ayuda disponibles. Toca una para ver sus preguntas:', 'workshop' ),
+            'chip'     => array(
+                'label' => __( 'Ver en Ayuda', 'workshop' ),
+                'url'   => $ayuda,
+                'icon'  => 'fa-circle-question',
+            ),
+            'chips'    => $index_chips,
+        );
+    }
+
+    foreach ( $faqs as $topic ) {
+        if ( ! is_array( $topic ) ) {
+            continue;
+        }
+        $tname = trim( (string) ( $topic['topic'] ?? '' ) );
+        if ( '' === $tname ) {
+            continue;
+        }
+        $items = array();
+        foreach ( (array) ( $topic['items'] ?? array() ) as $it ) {
+            if ( ! is_array( $it ) ) {
+                continue;
+            }
+            $q = trim( (string) ( $it['q'] ?? '' ) );
+            $a = trim( (string) ( $it['a'] ?? '' ) );
+            if ( '' === $q || '' === $a ) {
+                continue;
+            }
+            $items[] = array( 'q' => $q, 'a' => $a );
+        }
+        if ( empty( $items ) ) {
+            continue;
+        }
+
+        // Ítem por tema: responde con sus preguntas como chips navegables.
+        $tkey = sanitize_key( $tname );
+        $tpat = array( ws_chatbot_norm_text( $tname ) );
+        foreach ( preg_split( '/\s+/u', ws_chatbot_norm_text( $tname ) ) as $w ) {
+            if ( mb_strlen( $w ) < 5 ) {
+                continue;
+            }
+            $tpat[] = $w;
+            $stem   = $w;
+            if ( 'es' === substr( $stem, -2 ) && mb_strlen( $stem ) > 5 ) {
+                $stem = substr( $stem, 0, -2 );
+            } elseif ( 's' === substr( $stem, -1 ) && mb_strlen( $stem ) > 5 ) {
+                $stem = substr( $stem, 0, -1 );
+            }
+            if ( $stem !== $w ) {
+                $tpat[] = $stem;
+            }
+        }
+        $question_chips = array();
+        foreach ( $items as $it ) {
+            $question_chips[] = array( 'label' => $it['q'], 'send' => $it['q'] );
+        }
+        $out[] = array(
+            'id'       => 'faq-tema-' . $tkey . '-' . ( ++$ti ),
+            'patterns' => array_values( array_unique( $tpat ) ),
+            'answer'   => sprintf( __( 'Estas son las dudas más frecuentes sobre «%s». Toca una para ver la respuesta:', 'workshop' ), $tname ),
+            'chip'     => array(
+                'label' => __( 'Ver en Ayuda', 'workshop' ),
+                'url'   => $ayuda,
+                'icon'  => 'fa-circle-question',
+            ),
+            'chips'    => $question_chips,
+        );
+
+        // Ítem por pregunta: responde con la respuesta guardada en el FAQ.
+        $qi = 0;
+        foreach ( $items as $it ) {
+            $out[] = array(
+                'id'       => 'faq-' . $tkey . '-' . ( ++$qi ),
+                'patterns' => ws_chatbot_faq_patterns( $it['q'] ),
+                // Conserva saltos de línea (el bubble usa white-space: pre-line).
+                'answer'   => trim( (string) preg_replace( '/[ \t]+/u', ' ', (string) wp_strip_all_tags( $it['a'] ) ) ),
+                'chip'     => array(
+                    'label' => __( 'Ver en Ayuda', 'workshop' ),
+                    'url'   => $ayuda,
+                    'icon'  => 'fa-circle-question',
+                ),
+            );
+        }
+    }
+
+    return $out;
+}
+
+/**
  * Convierte la base de conocimiento a la forma que entiende el widget JS,
  * resolviendo los enlaces según el rol/negocio del usuario actual.
  */
@@ -707,6 +857,16 @@ function ws_chatbot_knowledge_config() {
                 'url'   => $link,
                 'icon'  => (string) ( $item['link_icon'] ?? 'fa-arrow-pointer' ),
             ) : null,
+        );
+    }
+    // FAQs de la página de Ayuda: conocimiento vivo y editable desde wp-admin.
+    foreach ( ws_chatbot_faq_knowledge() as $item ) {
+        $out[] = array(
+            'id'       => sanitize_key( $item['id'] ),
+            'patterns' => array_values( array_filter( array_map( 'trim', (array) $item['patterns'] ) ) ),
+            'answer'   => (string) ( $item['answer'] ?? '' ),
+            'chip'     => ! empty( $item['chip']['url'] ) ? $item['chip'] : null,
+            'chips'    => ! empty( $item['chips'] ) ? $item['chips'] : null,
         );
     }
     return $out;
