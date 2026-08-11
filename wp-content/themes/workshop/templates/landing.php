@@ -33,6 +33,11 @@ get_header();
     </section>
 
     <main class="ws-container">
+        <div class="ws-store-section-head">
+            <h2><i class="fa-solid fa-store"></i> <?php esc_html_e( 'Puntos de venta', 'workshop' ); ?></h2>
+            <span class="ws-store-section-count"><b><?php echo esc_html( count( $locations ) ); ?></b> <?php esc_html_e( 'tiendas', 'workshop' ); ?></span>
+        </div>
+
         <div class="ws-landing-grid">
             <?php if ( empty( $locations ) ) : ?>
                 <p class="ws-empty"><?php esc_html_e( 'Aún no hay puntos de venta disponibles.', 'workshop' ); ?></p>

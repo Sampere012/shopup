@@ -791,7 +791,7 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-sound-toggle:hover { background: rgba(255, 255, 255, .24); border-color: rgba(255, 255, 255, .35); }
 .ws-sound-toggle[aria-pressed="false"] { opacity: .55; }
 .ws-store-layout { padding: 32px 20px 60px; }
-/* Título de sección: separa los productos del header/hero. */
+/* Título de sección: separa productos/cards del header/hero. */
 .ws-store-section-head {
     display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap;
     margin: 8px 0 20px;
@@ -1845,7 +1845,6 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-mp-filter-tabs button.is-active { background: #fff; color: var(--ws-primary); box-shadow: var(--ws-shadow); }
 .ws-mp-grid .ws-business-card, .ws-business-card, .ws-how-card, .ws-plan-card, .ws-value-card { opacity: 0; transform: translateY(18px); transition: opacity .5s ease, transform .5s ease; }
 .ws-mp-grid .ws-business-card.is-visible, .ws-business-card.is-visible, .ws-how-card.is-visible, .ws-plan-card.is-visible, .ws-value-card.is-visible { opacity: 1; transform: translateY(0); }
-.ws-landing-grid { padding-top: 0; }
 
 /* ---------- Top tiendas (carrusel) ---------- */
 .ws-mp-top-block .ws-section-head { margin-bottom: 18px; }
