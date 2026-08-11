@@ -133,7 +133,7 @@ get_header();
                                     <span class="ws-chip"><i class="fa-solid fa-box"></i> <?php echo esc_html( sprintf( _n( '%s producto', '%s productos', $biz->ws_products, 'workshop' ), ws_compact_number( $biz->ws_products ) ) ); ?></span>
                                     <?php if ( $biz->ws_orders ) : ?>
                                         <span class="ws-chip"><i class="fa-solid fa-bag-shopping"></i> <?php echo esc_html( sprintf( _n( '%s pedido', '%s pedidos', $biz->ws_orders, 'workshop' ), ws_compact_number( $biz->ws_orders ) ) ); ?></span>
-                                        <span class="ws-chip ws-chip-accent"><i class="fa-solid fa-coins"></i> <?php echo esc_html( $ws_cur . ws_compact_number( $biz->ws_revenue ) ); ?> <?php esc_html_e( 'facturados', 'workshop' ); ?></span>
+                                        <span class="ws-chip ws-chip-accent"><i class="fa-solid fa-coins"></i> <?php echo esc_html( $ws_cur . ' ' . ws_compact_number( $biz->ws_revenue ) ); ?> <?php esc_html_e( 'facturados', 'workshop' ); ?></span>
                                     <?php else : ?>
                                         <span class="ws-chip ws-chip-new"><i class="fa-solid fa-sparkles"></i> <?php esc_html_e( 'Nuevo en el mercado', 'workshop' ); ?></span>
                                     <?php endif; ?>
