@@ -72,9 +72,14 @@
     background: var(--wsb-bg); border-radius: var(--wsb-radius);
     box-shadow: var(--wsb-shadow); border: 1px solid var(--wsb-border);
     display: flex; flex-direction: column; overflow: hidden;
-    opacity: 0; transform: translateY(16px) scale(.96); pointer-events: none;
+    opacity: 0; pointer-events: none;
+    /* Anima desde el botón hacia arriba: al cerrar la ventana baja por debajo
+       del botón (translateY 100% + 24px) con un ligero encogido; al abrir
+       sube con un rebote sutil desde el origen inferior derecho. */
+    transform: translateY(calc(100% + 24px)) scale(.92);
     transform-origin: bottom right;
-    transition: opacity .25s ease, transform .3s cubic-bezier(.34, 1.56, .64, 1);
+    transition: opacity .22s ease, transform .42s cubic-bezier(.3, 1.25, .4, 1);
+    will-change: transform, opacity;
 }
 #wsb-root.is-open #wsb-window { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
 

@@ -2344,7 +2344,7 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
     background: linear-gradient(135deg, #334155, #0f172a); color: #fff;
     font-size: 1.3rem; display: flex; align-items: center; justify-content: center;
     box-shadow: 0 10px 26px rgba(15, 23, 42, .4);
-    position: relative; z-index: 2; transition: transform .2s ease, background .2s ease;
+    position: relative; z-index: 2; transition: transform .2s ease, background .2s ease, opacity .18s ease;
 }
 .ws-fab-trigger:hover { transform: scale(1.06); box-shadow: 0 12px 30px rgba(15, 23, 42, .5); }
 .ws-fab-trigger:active { transform: scale(.95); }
@@ -2364,7 +2364,7 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
     position: absolute; right: 0; bottom: calc(60px + 62px * var(--i, 0));
     opacity: 0; pointer-events: none;
     transform: translateY(12px) scale(.5); transform-origin: bottom right;
-    transition: opacity .18s ease, transform .3s cubic-bezier(.34, 1.56, .64, 1);
+    transition: opacity .18s ease, transform .3s cubic-bezier(.34, 1.56, .64, 1), bottom .3s cubic-bezier(.34, 1.56, .64, 1);
     z-index: 1;
 }
 .ws-fab-group.is-open .ws-fab-item,
@@ -2374,7 +2374,14 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 /* Con el chat abierto, quita el transform del ítem para que la ventana
    (position: fixed en móvil) se resuelva contra el viewport y no contra
    el ítem del grupo (un ancestro transformado rompe el fixed). */
-.ws-fab-group.chat-open .ws-fab-item#wsb-root { transform: none; }
+/* Al abrir el chat el ítem baja a la esquina (bottom 0): el transform se
+   quita AL INSTANTE (transform 0s) para que en mobile la ventana full-screen
+   (fixed) se resuelva contra el viewport sin un snap a mitad de la animación;
+   el bottom sí transita para que el botón baje deslizándose con la ventana. */
+.ws-fab-group.chat-open .ws-fab-item#wsb-root {
+    transform: none;
+    transition: opacity .18s ease, transform 0s, bottom .3s cubic-bezier(.34, 1.56, .64, 1);
+}
 .ws-fab-group.chat-open .ws-fab-trigger { opacity: 0; pointer-events: none; }
 /* El chat abierto DEBE quedar por encima de su propio overlay oscuro
    (.wsb-overlay z 99990): el grupo sube por encima al abrirlo. */
