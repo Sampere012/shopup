@@ -40,8 +40,23 @@
         'cart_add', 'cart_update', 'cart_remove', 'cart_clear', 'cart_merge'
     ];
 
+    // Acciones de LISTA con respaldo de instantánea: si offline no hay
+    // coincidencia exacta (página/filtro nunca consultados con conexión), se
+    // sirve la última copia guardada de esa acción para que paginar no falle.
+    // Las lecturas de DETALLE (order_detail, get_location_by_slug…) quedan
+    // fuera: devolver el último registro cacheado mostraría un dato equivocado.
+    var SNAPSHOT_ACTIONS = [
+        'cache_customers', 'locations_list', 'movements_list', 'my_locations',
+        'notifications_list', 'order_list', 'pos_cash_history', 'pos_sales_get',
+        'price_history_list', 'products_get', 'products_list', 'reviews_get',
+        'shifts_list', 'stock_list', 'suppliers_list', 'loyalty_customers',
+        'loyalty_transactions', 'store_products',
+        'ws_chatbot_search', 'ws_chatbot_summary', 'ws_chatbot_meta',
+        'ws_chatbot_top', 'ws_notifications_list'
+    ];
     var isRead = function(action) { return READ_ACTIONS.indexOf(action) !== -1; };
     var isSkip = function(action) { return SKIP_ACTIONS.indexOf(action) !== -1; };
+    var isSnapshot = function(action) { return SNAPSHOT_ACTIONS.indexOf(action) !== -1; };
 
     // Captura el wrapper de theme.js (que cuenta peticiones y adjunta ws_biz).
     var _fetch = window.fetch.bind(window);
@@ -84,7 +99,17 @@
     async function saveReadCache(key, data) {
         if (!window.WSIndexedDB) return;
         try {
-            await WSIndexedDB.cacheAjax(key, { action: key.split('|')[0], data: data });
+            var action = key.split('|')[0];
+            // Instantánea por acción (sin parámetros): sirve de respaldo para
+            // offline cuando se pide una página/filtro que nunca se consultó
+            // con conexión (p.ej. página 2 de una lista), evitando el error
+            // de conexión al paginar. Solo para acciones de lista.
+            await Promise.all([
+                WSIndexedDB.cacheAjax(key, { action: action, data: data }),
+                (action && isSnapshot(action))
+                    ? WSIndexedDB.cacheAjax(action + '|__latest__', { action: action, data: data })
+                    : Promise.resolve()
+            ]);
         } catch (e) {}
     }
 
@@ -169,6 +194,17 @@
 
         if (isReadAction) {
             var cached = await cachedRead(key);
+            if (!cached) {
+                // Sin coincidencia exacta (página o filtro nunca consultados
+                // online): servir la última instantánea guardada de esa acción
+                // (solo listas, nunca detalle) para que paginar/recargar no
+                // falle con error de conexión.
+                var actionOnly = key.split('|')[0];
+                cached = (actionOnly && isSnapshot(actionOnly)) ? await cachedRead(actionOnly + '|__latest__') : null;
+                if (cached) {
+                    return jsonResponse(Object.assign({}, cached, { offlineSnapshot: true }));
+                }
+            }
             if (cached) {
                 return jsonResponse(cached);
             }

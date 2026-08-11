@@ -154,4 +154,96 @@
             });
         };
     }
+
+    // ---------- Prompt de instalación PWA (persistente) ----------
+    // El navegador muestra su prompt nativo y lo oculta solo en segundos.
+    // Interceptamos el evento (preventDefault) para suprimir ese prompt fugaz
+    // y mostramos un diálogo propio que permanece hasta que el usuario decide.
+    var deferredInstallPrompt = null;
+    var WS_PWA_COOLDOWN_KEY = 'ws_pwa_install_dismissed_at';
+    var WS_PWA_COOLDOWN_DAYS = 7;
+    var WS_PWA_COOLDOWN_MS = WS_PWA_COOLDOWN_DAYS * 86400000;
+
+    function wsIsStandalone() {
+        return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+            window.navigator.standalone === true;
+    }
+
+    function wsInstallCooldownActive() {
+        try {
+            var t = parseInt(localStorage.getItem(WS_PWA_COOLDOWN_KEY) || '0', 10);
+            if (!t) return false;
+            return (Date.now() - t) < WS_PWA_COOLDOWN_MS;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function wsRememberDismiss() {
+        try { localStorage.setItem(WS_PWA_COOLDOWN_KEY, String(Date.now())); } catch (e) {}
+    }
+
+    function wsMaybeShowInstallPrompt() {
+        // Ya instalada, en espera (cooldown) o sin soporte: no molestar.
+        if (!deferredInstallPrompt || wsIsStandalone() || wsInstallCooldownActive()) return;
+        if (!window.Swal) return;
+
+        // Pequeño retardo para que la página termine de renderizar y el
+        // diálogo no compita con la carga inicial.
+        setTimeout(function() {
+            if (!deferredInstallPrompt) return;
+            Swal.fire({
+                title: 'Instala Workshop en tu dispositivo',
+                html: 'Accede <strong>más rápido</strong> y trabaja <strong>sin conexión</strong> desde la tienda, tu panel y el POS.',
+                icon: 'info',
+                showConfirmButton: true,
+                confirmButtonText: 'Instalar ahora',
+                showCancelButton: true,
+                cancelButtonText: 'Ahora no',
+                // El diálogo permanece hasta que el usuario decide; cerrarlo
+                // (X, ESC o click fuera) también cuenta como "Ahora no".
+                focusConfirm: true
+            }).then(function(result) {
+                if (result.isConfirmed && deferredInstallPrompt) {
+                    // prompt() puede lanzar si el evento ya no es válido
+                    // (ya instalada, standalone…): en ese caso se registra el
+                    // cooldown para no volver a mostrarlo de inmediato.
+                    try {
+                        deferredInstallPrompt.prompt();
+                        deferredInstallPrompt.userChoice.then(function(choice) {
+                            if (choice && choice.outcome === 'accepted') {
+                                deferredInstallPrompt = null;
+                                if (window.Swal) {
+                                    Swal.fire({
+                                        toast: true, position: 'top-end', icon: 'success',
+                                        title: 'Instalación iniciada',
+                                        showConfirmButton: false, timer: 2500
+                                    });
+                                }
+                            } else {
+                                wsRememberDismiss();
+                            }
+                        });
+                    } catch (e) {
+                        deferredInstallPrompt = null;
+                        wsRememberDismiss();
+                    }
+                } else {
+                    wsRememberDismiss();
+                }
+            });
+        }, 1200);
+    }
+
+    window.addEventListener('beforeinstallprompt', function(e) {
+        // Suprime el prompt nativo fugaz; el nuestro se encarga.
+        e.preventDefault();
+        deferredInstallPrompt = e;
+        wsMaybeShowInstallPrompt();
+    });
+
+    window.addEventListener('appinstalled', function() {
+        deferredInstallPrompt = null;
+        try { localStorage.removeItem(WS_PWA_COOLDOWN_KEY); } catch (e) {}
+    });
 })();
