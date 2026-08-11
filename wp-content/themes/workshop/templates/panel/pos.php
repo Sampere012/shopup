@@ -268,10 +268,13 @@ if ( ! empty( $sub_data['is_trial'] ) && $sub_data['trial_days_left'] > 0 && $su
         </div>
     </div>
 
-    <!-- Botón flotante del carrito (móvil/tablet) -->
-    <button class="ws-pos-cart-toggle" @click="cartOpen = true" x-show="cart.length > 0" x-cloak x-transition>
+    <!-- Botón flotante del carrito (siempre visible; se agrupa con el chat en
+         los tres puntos cuando hay más de un FAB, igual que el carrito de la
+         tienda). En móvil abre el drawer con backdrop; en desktop hace scroll
+         hasta el carrito (que está visible como columna). -->
+    <button class="ws-pos-cart-toggle" @click="toggleCart()" aria-label="<?php esc_attr_e( 'Abrir carrito', 'workshop' ); ?>">
         <i class="fa-solid fa-shopping-cart"></i>
-        <span class="ws-cart-count" x-text="cartCount"></span>
+        <span class="ws-cart-count" x-show="cart.length > 0" x-text="cartCount"></span>
     </button>
     <div class="ws-pos-backdrop" :class="{ show: cartOpen }" @click="cartOpen = false"></div>
 
@@ -403,6 +406,24 @@ document.addEventListener('alpine:init', () => {
             this.loadLocations();
             this.loadCustomers();
             this.initOfflineReconnect();
+        },
+
+        // Abre el carrito con la misma lógica que el carrito de compra de la
+        // tienda: en móvil (drawer) abre el panel lateral con backdrop; en
+        // desktop el carrito ya es la columna visible, así que solo lleva la
+        // vista hasta él con scroll suave (sin activar el backdrop).
+        toggleCart() {
+            // El drawer del carrito solo existe en la media query ≤520px del CSS;
+            // usar matchMedia garantiza que el umbral coincida siempre (en
+            // 521-768px el carrito sigue siendo columna, no hay drawer).
+            if (window.matchMedia('(max-width: 520px)').matches) {
+                this.cartOpen = true;
+                return;
+            }
+            const el = this.$el ? this.$el.querySelector('.ws-pos-cart') : null;
+            if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
         },
 
         async loadLocations() {

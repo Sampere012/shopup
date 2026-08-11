@@ -1503,13 +1503,16 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-pos-customer .ws-cust-clear { border: none; background: transparent; color: var(--ws-muted); cursor: pointer; font-size: .95em; padding: 4px; border-radius: 6px; }
 .ws-pos-customer .ws-cust-clear:hover { color: var(--ws-danger); background: #fef2f2; }
 
-/* Botón flotante del carrito (móvil/tablet) */
+/* Botón flotante del carrito POS. Siempre visible (desktop y móvil) para que
+   se agrupe con el chat en los tres puntos cuando hay más de un FAB, igual que
+   el carrito de la tienda. Dentro del grupo el CSS del FAB lo apila y lo oculta
+   hasta desplegar; suelto queda fijo abajo a la derecha. */
 .ws-pos-cart-toggle {
-    display: none; position: fixed; right: 18px; bottom: 18px; z-index: 900;
+    position: fixed; right: 18px; bottom: 18px; z-index: 900;
     width: 56px; height: 56px; border-radius: 50%; border: none; cursor: pointer;
     background: linear-gradient(135deg, var(--ws-primary), var(--ws-primary-dark)); color: #fff;
     font-size: 1.25rem; box-shadow: 0 8px 24px rgba(79, 70, 229, .45);
-    align-items: center; justify-content: center; transition: transform .15s;
+    display: inline-flex; align-items: center; justify-content: center; transition: transform .15s;
 }
 .ws-pos-cart-toggle:hover { transform: scale(1.06); }
 .ws-pos-cart-toggle .ws-cart-count {
@@ -1621,7 +1624,6 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
         transform: translateX(105%); transition: transform .28s ease; border-radius: 0; box-shadow: var(--ws-shadow-lg);
     }
     .ws-pos-cart.open { transform: translateX(0); }
-    .ws-pos-cart-toggle { display: inline-flex; }
     .ws-sale-details { grid-template-columns: 1fr; }
 }
 @media (max-width: 768px) {
