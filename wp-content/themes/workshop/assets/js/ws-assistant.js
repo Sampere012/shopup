@@ -1190,6 +1190,19 @@
         reply(S.fallback + '\n\n' + (isPanel
             ? 'Puedo ayudarte con: productos, stock, pedidos, ventas, clientes, reportes, tu equipo, tu plan o programar reportes.'
             : 'Puedo orientarte para comprar, seguir tu pedido, devoluciones, envíos o montar tu tienda.'), chips.filter(Boolean), 'fallback');
+        // Auto-aprendizaje: la frase que el bot no supo responder se guarda
+        // para que el admin la revise en wp-admin > Asistente > Aprender.
+        learnCandidate(text);
+    }
+
+    // Cola de aprendizaje: envía la pregunta no resuelta al servidor (el admin
+    // la verá en wp-admin > Asistente > Aprender y puede enseñarle al bot).
+    var lastLearnSent = '';
+    function learnCandidate(text) {
+        var t = String(text || '').trim();
+        if (!t || t.length > 300 || t === lastLearnSent) { return; }
+        lastLearnSent = t;
+        api('ws_chatbot_learn', { text: t }, function () {});
     }
 
     // IA opcional: cuando el admin configuró OpenRouter, la frase no resuelta

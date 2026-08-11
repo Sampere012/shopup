@@ -723,9 +723,6 @@ function ws_chatbot_default_knowledge() {
 }
 
 /**
- * Conocimiento activo: los ítems del admin, o los seeds si aún no configuró.
- */
-/**
  * Conocimiento de contexto de toda la app: se suma SIEMPRE a la base editable
  * del administrador (no se puede editar desde wp-admin, pero cubre cualquier
  * pregunta sobre el funcionamiento del sitio, el panel, los planes, el modo
@@ -1904,4 +1901,128 @@ function ws_ajax_chatbot_llm() {
     update_option( 'ws_chatbot_stats', $log );
 
     wp_send_json_success( array( 'text' => $text ) );
+}
+
+/* -------------------------------------------------------------------------
+ * Aprendizaje: el bot guarda las preguntas que NO supo responder para que el
+ * administrador las revise en wp-admin > Asistente > Aprender y, escribiendo
+ * la respuesta, las añada a la base de conocimiento (el bot "aprende").
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Preguntas no resueltas pendientes de aprender (opción ws_chatbot_learnings).
+ */
+function ws_chatbot_learnings() {
+    $list = get_option( 'ws_chatbot_learnings', array() );
+    return is_array( $list ) ? $list : array();
+}
+
+add_action( 'wp_ajax_ws_chatbot_learn', 'ws_ajax_chatbot_learn' );
+add_action( 'wp_ajax_nopriv_ws_chatbot_learn', 'ws_ajax_chatbot_learn' );
+function ws_ajax_chatbot_learn() {
+    if ( ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Sesión expirada.', 'workshop' ) ) );
+    }
+    $text = trim( sanitize_text_field( wp_unslash( $_POST['text'] ?? '' ) ) );
+    if ( '' === $text || mb_strlen( $text ) > 300 ) {
+        wp_send_json_error( array( 'msg' => __( 'Mensaje no válido.', 'workshop' ) ) );
+    }
+    // Límite por IP para evitar que el endpoint se use para llenar la cola.
+    $ip = (string) ( $_SERVER['HTTP_CF_CONNECTING_IP'] ?? '' );
+    if ( '' === $ip && ! empty( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) {
+        $ip = trim( (string) explode( ',', (string) $_SERVER['HTTP_X_FORWARDED_FOR'] )[0] );
+    }
+    if ( '' === $ip ) {
+        $ip = (string) ( $_SERVER['REMOTE_ADDR'] ?? '' );
+    }
+    $rk = 'ws_learn_' . md5( $ip );
+    $n  = (int) get_transient( $rk );
+    if ( $n >= 20 ) {
+        wp_send_json_error( array( 'msg' => __( 'Demasiadas consultas por un momento.', 'workshop' ) ) );
+    }
+    set_transient( $rk, $n + 1, 10 * MINUTE_IN_SECONDS );
+
+    // No encolar preguntas que el bot YA conoce: si la frase coincide con
+    // algún patrón del conocimiento activo, no es candidata a aprendizaje.
+    $already_known = false;
+    $norm_text     = ws_chatbot_norm_text( $text );
+    if ( '' !== $norm_text ) {
+        foreach ( ws_chatbot_knowledge() as $kitem ) {
+            foreach ( (array) ( $kitem['patterns'] ?? array() ) as $pat ) {
+                if ( '' !== trim( (string) $pat ) && ws_chatbot_norm_text( $pat ) === $norm_text ) {
+                    $already_known = true;
+                    break 2;
+                }
+            }
+        }
+    }
+    if ( $already_known ) {
+        wp_send_json_success();
+    }
+
+    $list = ws_chatbot_learnings();
+    $norm = $norm_text;
+    if ( '' !== $norm ) {
+        $found = false;
+        foreach ( $list as $i => $l ) {
+            if ( ws_chatbot_norm_text( (string) ( $l['q'] ?? '' ) ) === $norm ) {
+                $list[ $i ]['count'] = (int) ( $l['count'] ?? 0 ) + 1;
+                $list[ $i ]['t']     = current_time( 'mysql' );
+                $found = true;
+                break;
+            }
+        }
+        if ( ! $found ) {
+            $list[] = array(
+                'q'     => mb_substr( $text, 0, 300 ),
+                'count' => 1,
+                't'     => current_time( 'mysql' ),
+            );
+        }
+        // Mantiene la lista acotada (300): las más recientes primero.
+        usort( $list, function ( $a, $b ) {
+            return strcmp( (string) ( $b['t'] ?? '' ), (string) ( $a['t'] ?? '' ) );
+        } );
+        if ( count( $list ) > 300 ) {
+            $list = array_slice( $list, 0, 300 );
+        }
+        update_option( 'ws_chatbot_learnings', $list );
+    }
+    wp_send_json_success();
+}
+
+/**
+ * Convierte una pregunta aprendida en un ítem de conocimiento activo.
+ * Lo usa la pestaña Aprender del panel: patterns = variantes de la pregunta,
+ * answer = la respuesta que escribe el administrador.
+ */
+function ws_chatbot_learn_item( $question, $answer ) {
+    $question = trim( (string) $question );
+    $answer   = trim( (string) $answer );
+    if ( '' === $question || '' === $answer ) {
+        return false;
+    }
+    $kb = get_option( 'ws_chatbot_knowledge', null );
+    if ( null === $kb ) {
+        $kb = ws_chatbot_default_knowledge();
+    }
+    $kb = is_array( $kb ) ? $kb : array();
+
+    $patterns = array( $question );
+    $clean = ws_chatbot_norm_text( $question );
+    if ( '' !== $clean ) {
+        $patterns[] = $clean; // sin tildes/mayúsculas para matchear mejor
+    }
+
+    $kb[] = array(
+        'id'       => 'learn-' . time() . '-' . wp_rand( 100, 999 ),
+        'patterns' => array_values( array_unique( $patterns ) ),
+        'answer'   => $answer,
+        'link_target' => '',
+        'link_label'  => '',
+        'link_icon'   => '',
+        'active'      => 1,
+    );
+    update_option( 'ws_chatbot_knowledge', $kb );
+    return true;
 }

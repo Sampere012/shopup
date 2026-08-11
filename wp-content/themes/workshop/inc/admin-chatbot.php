@@ -29,7 +29,7 @@ function ws_chatbot_admin_menu() {
 /** Página principal con pestañas. */
 function ws_admin_page_chatbot() {
     $tab = isset( $_GET['tab'] ) ? sanitize_key( $_GET['tab'] ) : 'knowledge';
-    if ( ! in_array( $tab, array( 'knowledge', 'messages', 'behavior', 'stats' ), true ) ) {
+    if ( ! in_array( $tab, array( 'knowledge', 'learn', 'messages', 'behavior', 'stats' ), true ) ) {
         $tab = 'knowledge';
     }
 
@@ -37,6 +37,8 @@ function ws_admin_page_chatbot() {
     if ( isset( $_POST['ws_chatbot_nonce'] ) && wp_verify_nonce( $_POST['ws_chatbot_nonce'], 'ws_chatbot_save' ) ) {
         if ( 'knowledge' === $tab ) {
             ws_chatbot_save_knowledge( $_POST );
+        } elseif ( 'learn' === $tab ) {
+            ws_chatbot_save_learn( $_POST );
         } elseif ( 'messages' === $tab ) {
             ws_chatbot_save_messages( $_POST );
         } elseif ( 'behavior' === $tab ) {
@@ -49,6 +51,7 @@ function ws_admin_page_chatbot() {
 
     $tabs = array(
         'knowledge' => __( 'Conocimiento', 'workshop' ),
+        'learn'     => __( 'Aprender', 'workshop' ),
         'messages'  => __( 'Mensajes', 'workshop' ),
         'behavior'  => __( 'Comportamiento', 'workshop' ),
         'stats'     => __( 'Analítica', 'workshop' ),
@@ -69,6 +72,8 @@ function ws_admin_page_chatbot() {
 
         <?php if ( 'knowledge' === $tab ) : ?>
             <?php ws_chatbot_admin_knowledge( $kb ); ?>
+        <?php elseif ( 'learn' === $tab ) : ?>
+            <?php ws_chatbot_admin_learn(); ?>
         <?php elseif ( 'messages' === $tab ) : ?>
             <?php ws_chatbot_admin_messages_form(); ?>
         <?php elseif ( 'behavior' === $tab ) : ?>
@@ -166,8 +171,89 @@ function ws_chatbot_save_knowledge( $post ) {
     echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__( 'Conocimiento guardado.', 'workshop' ) . '</p></div>';
 }
 
+/* -------------------------------------------------------------------------
+ * Pestaña Aprender: preguntas que el bot no supo responder y el admin puede
+ * enseñarle (se convierten en conocimiento con la respuesta que escriba).
+ * ---------------------------------------------------------------------- */
+
+function ws_chatbot_save_learn( $post ) {
+    $list = ws_chatbot_learnings();
+    $action = sanitize_key( $post['ws_learn_action'] ?? '' );
+    $idx    = (int) ( $post['ws_learn_idx'] ?? -1 );
+    if ( $idx < 0 || $idx >= count( $list ) ) {
+        echo '<div class="notice notice-error is-dismissible"><p>' . esc_html__( 'Elemento no encontrado.', 'workshop' ) . '</p></div>';
+        return;
+    }
+    $question = (string) ( $list[ $idx ]['q'] ?? '' );
+
+    if ( 'ignore' === $action ) {
+        array_splice( $list, $idx, 1 );
+        update_option( 'ws_chatbot_learnings', $list );
+        echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__( 'Pregunta descartada.', 'workshop' ) . '</p></div>';
+        return;
+    }
+
+    $answer = sanitize_textarea_field( $post['ws_learn_answer'] ?? '' );
+    if ( 'learn' === $action && ws_chatbot_learn_item( $question, $answer ) ) {
+        array_splice( $list, $idx, 1 );
+        update_option( 'ws_chatbot_learnings', $list );
+        echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__( '¡El bot aprendió esta respuesta! Ya está en el Conocimiento.', 'workshop' ) . '</p></div>';
+        return;
+    }
+    echo '<div class="notice notice-error is-dismissible"><p>' . esc_html__( 'Escribe la respuesta para enseñarle al bot.', 'workshop' ) . '</p></div>';
+}
+
+function ws_chatbot_admin_learn() {
+    $list = ws_chatbot_learnings();
+    if ( empty( $list ) ) {
+        echo '<div class="card" style="max-width:640px"><p>🎓 ' . esc_html__( 'No hay preguntas pendientes por aprender. Cuando el bot no sepa responder algo, la pregunta aparecerá aquí y podrás enseñarle la respuesta.', 'workshop' ) . '</p></div>';
+        return;
+    }
+    $total = 0;
+    foreach ( $list as $l ) {
+        $total += (int) ( $l['count'] ?? 0 );
+    }
+    ?>
+    <div class="card" style="max-width:860px">
+        <p><strong>🎓 Aprender</strong> — <?php echo esc_html( sprintf( __( '%d preguntas que el bot no supo responder (%d veces en total). Escríbeles la respuesta y el bot las aprende al instante.', 'workshop' ), count( $list ), $total ) ); ?></p>
+        <table class="widefat striped">
+            <thead>
+                <tr>
+                    <th style="width:38px">#</th>
+                    <th><?php esc_html_e( 'Pregunta del usuario', 'workshop' ); ?></th>
+                    <th style="width:70px"><?php esc_html_e( 'Veces', 'workshop' ); ?></th>
+                    <th style="width:120px"><?php esc_html_e( 'Última vez', 'workshop' ); ?></th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ( $list as $i => $l ) : ?>
+                <tr>
+                    <td><?php echo (int) $i + 1; ?></td>
+                    <td style="vertical-align:top">
+                        <strong><?php echo esc_html( (string) ( $l['q'] ?? '' ) ); ?></strong>
+                        <form method="post" style="margin:6px 0 0">
+                            <?php wp_nonce_field( 'ws_chatbot_save', 'ws_chatbot_nonce' ); ?>
+                            <input type="hidden" name="ws_learn_idx" value="<?php echo (int) $i; ?>">
+                            <textarea name="ws_learn_answer" rows="2" style="width:100%" placeholder="<?php esc_attr_e( 'Escribe la respuesta que el bot debe dar…', 'workshop' ); ?>"></textarea>
+                            <p style="margin:6px 0 0">
+                                <button class="button button-primary" name="ws_learn_action" value="learn">✓ <?php esc_html_e( 'Enseñar y aprender', 'workshop' ); ?></button>
+                                <button class="button" name="ws_learn_action" value="ignore"><?php esc_html_e( 'Descartar', 'workshop' ); ?></button>
+                            </p>
+                        </form>
+                    </td>
+                    <td style="text-align:center"><span class="ws-kb-help"><?php echo (int) ( $l['count'] ?? 0 ); ?>×</span></td>
+                    <td style="font-size:12px;color:#646970"><?php echo esc_html( wp_date( 'd/m/Y H:i', strtotime( (string) ( $l['t'] ?? '' ) ) ?: time() ) ); ?></td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+        <p class="ws-kb-help"><?php esc_html_e( 'Cada pregunta aprendida se agrega automáticamente al Conocimiento (pestaña anterior) y podrás editarla o quitarla desde ahí.', 'workshop' ); ?></p>
+    </div>
+    <?php
+}
+
 function ws_chatbot_admin_knowledge( $kb ) {
-    $editing = null;
+    $editing = false;
     if ( isset( $_GET['edit'] ) ) { // Solo lectura de la URL para editar
         $eid = sanitize_key( $_GET['edit'] );
         foreach ( $kb as $it ) {

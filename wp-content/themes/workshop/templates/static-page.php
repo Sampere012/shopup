@@ -180,7 +180,7 @@ get_header();
                             <input type="search" id="ws-faq-search" placeholder="<?php esc_attr_e( 'Buscar en las preguntas frecuentes…', 'workshop' ); ?>" aria-label="<?php esc_attr_e( 'Buscar en las preguntas frecuentes', 'workshop' ); ?>" autocomplete="off">
                         </div>
                         <div class="ws-faq" id="ws-faq">
-                            <?php $ws_faq_open = 0; ?>
+                            <?php $ws_faq_open = 0; $ws_faq_gi = 0; ?>
                             <?php foreach ( (array) $ws_faqs_all as $ws_topic ) : ?>
                                 <?php if ( empty( $ws_topic['topic'] ) || empty( $ws_topic['items'] ) ) : continue; endif; ?>
                                 <div class="ws-faq-topic" data-topic>
@@ -188,8 +188,8 @@ get_header();
                                     <?php $ws_faq_num = 0; ?>
                                     <?php foreach ( (array) $ws_topic['items'] as $ws_item ) : ?>
                                         <?php if ( empty( $ws_item['q'] ) ) : continue; endif; ?>
-                                        <?php $ws_faq_num = (int) $ws_faq_num + 1; ?>
-                                        <details class="ws-faq-item"<?php echo 0 === (int) $ws_faq_open ? ' open' : ''; ?>>
+                                        <?php $ws_faq_num = (int) $ws_faq_num + 1; $ws_faq_gi = (int) $ws_faq_gi + 1; ?>
+                                        <details class="ws-faq-item" data-pi="<?php echo (int) $ws_faq_gi; ?>"<?php echo 0 === (int) $ws_faq_open ? ' open' : ''; ?>>
                                             <summary>
                                                 <span class="ws-faq-q"><span class="ws-faq-num"><?php echo (int) $ws_faq_num; ?></span><span class="ws-faq-q-text"><?php echo esc_html( $ws_item['q'] ); ?></span></span>
                                                 <span class="ws-faq-chevron"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></span>
@@ -204,30 +204,80 @@ get_header();
                             <?php endforeach; ?>
                             <div class="ws-faq-empty" hidden><?php esc_html_e( 'No encontramos preguntas con ese término. Prueba con otra palabra o escríbenos desde Contacto.', 'workshop' ); ?></div>
                         </div>
+                        <?php $ws_faq_total = (int) $ws_faq_gi; ?>
+                        <div class="ws-faq-pagination" id="ws-faq-pagination" hidden>
+                            <button type="button" class="ws-faq-page-btn" id="ws-faq-prev" aria-label="<?php esc_attr_e( 'Página anterior', 'workshop' ); ?>"><i class="fa-solid fa-chevron-left"></i></button>
+                            <span class="ws-faq-page-info" id="ws-faq-page-info"></span>
+                            <div class="ws-faq-page-numbers" id="ws-faq-page-numbers"></div>
+                            <button type="button" class="ws-faq-page-btn" id="ws-faq-next" aria-label="<?php esc_attr_e( 'Página siguiente', 'workshop' ); ?>"><i class="fa-solid fa-chevron-right"></i></button>
+                        </div>
                         <script>
                         (function () {
                             var input = document.getElementById('ws-faq-search');
                             var faq = document.getElementById('ws-faq');
-                            if (!input || !faq) return;
+                            var pager = document.getElementById('ws-faq-pagination');
+                            if (!input || !faq || !pager) return;
                             var topics = faq.querySelectorAll('[data-topic]');
                             var empty = faq.querySelector('.ws-faq-empty');
-                            input.addEventListener('input', function () {
-                                var q = (input.value || '').trim().toLowerCase();
-                                faq.classList.toggle('is-filtering', !!q);
+                            var total = <?php echo (int) $ws_faq_total; ?>;
+                            var perPage = 30;
+                            var page = 1;
+                            var pages = Math.max(1, Math.ceil(total / perPage));
+                            var info = document.getElementById('ws-faq-page-info');
+                            var nums = document.getElementById('ws-faq-page-numbers');
+                            var prev = document.getElementById('ws-faq-prev');
+                            var next = document.getElementById('ws-faq-next');
+                            var query = '';
+
+                            function render() {
                                 var any = false;
+                                var q = query;
                                 topics.forEach(function (t) {
                                     var shown = false;
                                     t.querySelectorAll('.ws-faq-item').forEach(function (item) {
+                                        var pi = parseInt(item.getAttribute('data-pi') || '0', 10);
                                         var text = (item.textContent || '').toLowerCase();
                                         var match = !q || text.indexOf(q) !== -1;
-                                        item.hidden = !match;
-                                        if (match) shown = true;
+                                        var onPage = q || pi > (page - 1) * perPage && pi <= page * perPage;
+                                        item.hidden = !match || !onPage;
+                                        if (!item.hidden) shown = true;
                                     });
                                     t.hidden = !shown;
                                     if (shown) any = true;
                                 });
                                 if (empty) empty.hidden = any;
+                                var filtering = !!q;
+                                pager.hidden = filtering || pages <= 1;
+                                if (filtering) { return; }
+                                var from = (page - 1) * perPage + 1;
+                                var to = Math.min(page * perPage, total);
+                                if (info) info.textContent = from + '–' + to + ' de ' + total;
+                                if (nums) {
+                                    nums.innerHTML = '';
+                                    var start = Math.max(1, page - 2);
+                                    var end = Math.min(pages, page + 2);
+                                    for (var p = start; p <= end; p++) {
+                                        var b = document.createElement('button');
+                                        b.type = 'button';
+                                        b.className = 'ws-faq-page-num' + (p === page ? ' is-active' : '');
+                                        b.textContent = p;
+                                        (function (pp) {
+                                            b.addEventListener('click', function () { page = pp; render(); });
+                                        })(p);
+                                        nums.appendChild(b);
+                                    }
+                                }
+                                if (prev) prev.disabled = page <= 1;
+                                if (next) next.disabled = page >= pages;
+                            }
+                            if (prev) prev.addEventListener('click', function () { if (page > 1) { page--; render(); } });
+                            if (next) next.addEventListener('click', function () { if (page < pages) { page++; render(); } });
+                            input.addEventListener('input', function () {
+                                query = (input.value || '').trim().toLowerCase();
+                                faq.classList.toggle('is-filtering', !!query);
+                                render();
                             });
+                            render();
                         })();
                         </script>
                         <?php endif; /* ws_faqs_all */ ?>
