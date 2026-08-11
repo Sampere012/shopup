@@ -2396,7 +2396,16 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
     position: absolute; top: auto; left: auto; right: 0;
     width: auto; z-index: 3;
 }
-.ws-fab-group.chat-open .ws-fab-item#wsb-root { bottom: 0; }
+/* El botón del chat es #wsb-root (un ID): su CSS suelto (#wsb-root {
+   bottom/right: 20px }) gana en especificidad sobre .ws-fab-item, por eso
+   el chat se quedaba pegado al trigger ⋮ sin apilarse como el carrito.
+   Se refuerza con !important para que se apile igual que el resto. */
+.ws-fab-group .ws-fab-item#wsb-root {
+    bottom: calc(60px + 62px * var(--i, 0)) !important;
+    right: 0 !important;
+    left: auto !important;
+}
+.ws-fab-group.chat-open .ws-fab-item#wsb-root { bottom: 0 !important; }
 .ws-fab-group #wsb-teaser { display: none; }
 .ws-fab-group .ws-cart-fab { position: absolute; right: 0; z-index: 1; }
 .ws-fab-group .ws-pos-cart-toggle { position: absolute; right: 0; z-index: 1; }
@@ -2405,6 +2414,8 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
     .ws-fab-group { right: 12px; bottom: 12px; }
     .ws-fab-trigger { width: 52px; height: 52px; }
     .ws-fab-group .ws-fab-item { bottom: calc(56px + 60px * var(--i, 0)); }
+    /* El chat también debe apilarse en mobile (su ID gana en especificidad). */
+    .ws-fab-group .ws-fab-item#wsb-root { bottom: calc(56px + 60px * var(--i, 0)) !important; }
 }
 
 /* ---------- Fraccionamiento de productos ---------- */
