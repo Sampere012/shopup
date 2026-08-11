@@ -273,6 +273,60 @@ function ws_log_daily_stats( $days = 1 ) {
     return array( 'counts' => $counts, 'severe' => $severe );
 }
 
+/**
+ * Conteo de errores graves (ERROR/FATAL) por día para los últimos N días.
+ * Devuelve array( 'Y-m-d' => int ) con los días en orden cronológico,
+ * incluidos los días sin errores (0). Se usa en la mini-gráfica del visor.
+ */
+function ws_log_errors_by_day( $days = 14 ) {
+    $days  = max( 1, min( 60, (int) $days ) );
+    $out   = array();
+    $nowts = current_time( 'timestamp' );
+    for ( $i = $days - 1; $i >= 0; $i-- ) {
+        $out[ gmdate( 'Y-m-d', $nowts - $i * DAY_IN_SECONDS ) ] = 0;
+    }
+
+    $file = ws_log_file();
+    if ( ! $file ) {
+        return $out;
+    }
+    $files = array( $file );
+    $rot   = dirname( $file ) . '/app.1.log';
+    if ( file_exists( $rot ) ) {
+        $files[] = $rot;
+    }
+    $start = gmdate( 'Y-m-d', $nowts - ( $days - 1 ) * DAY_IN_SECONDS ) . ' 00:00:00';
+
+    foreach ( $files as $f ) {
+        $raw = @file( $f, FILE_IGNORE_NEW_LINES );
+        if ( ! is_array( $raw ) ) {
+            continue;
+        }
+        foreach ( $raw as $line ) {
+            $line = trim( (string) $line );
+            if ( '' === $line ) {
+                continue;
+            }
+            $e = json_decode( $line, true );
+            if ( ! is_array( $e ) ) {
+                continue;
+            }
+            $t = (string) ( $e['t'] ?? '' );
+            if ( $t < $start ) {
+                continue;
+            }
+            $l = (string) ( $e['l'] ?? 'INFO' );
+            if ( in_array( $l, array( 'ERROR', 'FATAL' ), true ) ) {
+                $d = substr( $t, 0, 10 );
+                if ( isset( $out[ $d ] ) ) {
+                    $out[ $d ]++;
+                }
+            }
+        }
+    }
+    return $out;
+}
+
 /** Últimas N líneas del log (nuevo -> viejo), parseadas a arrays. */
 function ws_log_tail( $file, $max_lines = 300 ) {
     if ( ! $file || ! file_exists( $file ) ) { return array(); }
@@ -302,7 +356,40 @@ function ws_admin_page_logs() {
     $file    = ws_log_file();
     $level_f = isset( $_GET['level'] ) ? sanitize_key( $_GET['level'] ) : '';
     $search  = isset( $_GET['s'] ) ? sanitize_text_field( wp_unslash( $_GET['s'] ) ) : '';
-    $all     = ws_log_tail( $file, 400 );
+    $day_f   = isset( $_GET['day'] ) ? sanitize_text_field( wp_unslash( $_GET['day'] ) ) : '';
+    if ( $day_f && ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $day_f ) ) {
+        $day_f = '';
+    }
+    if ( '' !== $day_f ) {
+        // Con filtro de día se leen ambos archivos completos: el día puede
+        // estar fuera de la ventana de 400 eventos del log activo.
+        $all = array();
+        foreach ( array( $file, $file ? dirname( $file ) . '/app.1.log' : '' ) as $lf ) {
+            if ( ! $lf || ! file_exists( $lf ) ) {
+                continue;
+            }
+            $raw = @file( $lf, FILE_IGNORE_NEW_LINES );
+            if ( ! is_array( $raw ) ) {
+                continue;
+            }
+            foreach ( $raw as $line ) {
+                $line = trim( (string) $line );
+                if ( '' === $line ) {
+                    continue;
+                }
+                $json = json_decode( $line, true );
+                if ( ! is_array( $json ) ) {
+                    continue;
+                }
+                $all[] = $json;
+            }
+        }
+        // Más recientes primero, como ws_log_tail.
+        $all = array_reverse( $all );
+        $all = array_slice( $all, 0, 2000 );
+    } else {
+        $all = ws_log_tail( $file, 400 );
+    }
     $counts  = array( 'INFO' => 0, 'NOTICE' => 0, 'WARNING' => 0, 'ERROR' => 0, 'FATAL' => 0, 'DEBUG' => 0 );
     foreach ( $all as $e ) {
         $l = (string) ( $e['l'] ?? 'INFO' );
@@ -312,11 +399,18 @@ function ws_admin_page_logs() {
     if ( $level_f && isset( WS_LOG_LEVELS[ $level_f ] ) ) {
         $entries = array_values( array_filter( $entries, function ( $e ) use ( $level_f ) { return ( $e['l'] ?? '' ) === $level_f; } ) );
     }
+    if ( '' !== $day_f ) {
+        $entries = array_values( array_filter( $entries, function ( $e ) use ( $day_f ) {
+            return 0 === strpos( (string) ( $e['t'] ?? '' ), $day_f );
+        } ) );
+    }
     if ( '' !== $search ) {
         $entries = array_values( array_filter( $entries, function ( $e ) use ( $search ) {
             return false !== stripos( (string) ( $e['m'] ?? '' ), $search ) || false !== stripos( (string) ( $e['f'] ?? '' ), $search );
         } ) );
     }
+    $errors_by_day = ws_log_errors_by_day( 14 );
+    $max_err_day   = max( 1, max( array_values( $errors_by_day ) ) );
     $nonce_dl   = wp_create_nonce( 'ws_logs_dl' );
     $nonce_clr  = wp_create_nonce( 'ws_logs_clr' );
     $badge = array( 'INFO' => 'blue', 'NOTICE' => 'gray', 'WARNING' => 'orange', 'ERROR' => 'red', 'FATAL' => 'red', 'DEBUG' => 'gray' );
@@ -333,8 +427,11 @@ function ws_admin_page_logs() {
             <p style="color:#d63638">No se pudo crear el directorio de logs (permisos de escritura). Revisa los permisos del tema o de wp-content/uploads.</p>
         <?php endif; ?>
 
-        <form method="get" style="margin:12px 0;display:flex;gap:8px;align-items:center">
+        <form method="get" style="margin:12px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <input type="hidden" name="page" value="ws-logs">
+            <label style="display:flex;align-items:center;gap:6px">Día:
+                <input type="date" name="day" value="<?php echo esc_attr( $day_f ); ?>">
+            </label>
             <select name="level">
                 <option value="">Todos los niveles</option>
                 <?php foreach ( array_keys( $counts ) as $lv ) : ?>
@@ -343,7 +440,38 @@ function ws_admin_page_logs() {
             </select>
             <input type="search" name="s" value="<?php echo esc_attr( $search ); ?>" placeholder="Buscar en mensajes…">
             <button type="submit" class="button">Filtrar</button>
+            <?php if ( $day_f ) : ?>
+                <a href="<?php echo esc_url( admin_url( 'admin.php?page=ws-logs' ) ); ?>" class="button button-link">✕ Quitar día</a>
+            <?php endif; ?>
         </form>
+
+        <?php if ( ! empty( $errors_by_day ) ) : ?>
+        <div class="ws-log-chart" style="background:#fff;border:1px solid #c3c4c7;border-radius:6px;padding:14px 16px 10px;margin-bottom:16px">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:10px">
+                <strong>🛡️ Errores graves (ERROR/FATAL) — últimos 14 días</strong>
+                <span style="color:#646970;font-size:12px">Toca una barra para ver ese día</span>
+            </div>
+            <div class="ws-log-bars" style="display:flex;align-items:flex-end;gap:6px;height:104px;padding:18px 2px 0">
+                <?php foreach ( $errors_by_day as $d => $n ) : ?>
+                    <?php
+                    $h = $n > 0 ? max( 6, (int) round( 84 * $n / $max_err_day ) ) : 2;
+                    $is_today = ( $d === gmdate( 'Y-m-d', current_time( 'timestamp' ) ) );
+                    $active   = ( $d === $day_f );
+                    ?>
+                    <a href="<?php echo esc_url( admin_url( 'admin.php?page=ws-logs&day=' . rawurlencode( $d ) ) ); ?>"
+                       class="ws-log-bar<?php echo $is_today ? ' is-today' : ''; ?><?php echo $active ? ' is-active' : ''; ?>"
+                       style="height:<?php echo (int) $h; ?>px"
+                       title="<?php echo esc_attr( wp_date( 'd/m', strtotime( $d ) ) . ' — ' . (int) $n . ' error(es)' . ( $is_today ? ' (hoy)' : '' ) ); ?>">
+                        <span class="ws-log-bar-val"><?php echo (int) $n; ?></span>
+                    </a>
+                <?php endforeach; ?>
+            </div>
+            <div style="display:flex;justify-content:space-between;color:#787c82;font-size:10px;margin-top:4px">
+                <span><?php echo esc_html( wp_date( 'd/m', strtotime( (string) key( $errors_by_day ) ) ) ); ?></span>
+                <span>hoy <?php echo esc_html( wp_date( 'd/m' ) ); ?></span>
+            </div>
+        </div>
+        <?php endif; ?>
 
         <table class="widefat striped" id="ws-logs-table">
             <thead>
@@ -385,6 +513,13 @@ function ws_admin_page_logs() {
         .ws-log-blue { background:#2271b1; } .ws-log-gray { background:#787c82; }
         #ws-logs-table td { vertical-align: top; }
         #ws-logs-table td:nth-child(3) { max-width: 620px; word-break: break-word; }
+        .ws-log-bars { border-bottom:2px solid #dcdcde; }
+        .ws-log-bar { position:relative; flex:1; min-width:14px; max-width:44px; display:block; background:linear-gradient(180deg,#e65054,#b32d2e); border-radius:4px 4px 0 0; opacity:.75; transition:opacity .15s ease, transform .15s ease; text-decoration:none; }
+        .ws-log-bar:hover, .ws-log-bar.is-active { opacity:1; transform:scaleY(1.04); transform-origin:bottom; }
+        .ws-log-bar.is-today { outline:2px solid #2271b1; outline-offset:1px; }
+        .ws-log-bar-val { position:absolute; top:-16px; left:50%; transform:translateX(-50%); font-size:10px; font-weight:700; color:#1d2327; }
+        .ws-log-bar:hover .ws-log-bar-val { color:#d63638; }
+        .ws-log-chart a:focus { box-shadow:none; }
     </style>
     <script>
     (function () {
