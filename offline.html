@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sin conexión · Workshop</title>
+<meta name="theme-color" content="#0f172a">
+<style>
+    :root {
+        --bg: #0b1120;
+        --card: #111a2e;
+        --line: #1e2a44;
+        --text: #e2e8f0;
+        --muted: #94a3b8;
+        --brand: #22c55e;
+        --brand2: #16a34a;
+        --accent: #38bdf8;
+        --danger: #f87171;
+        --radius: 16px;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+        font-family: 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif;
+        background:
+            radial-gradient(1200px 600px at 80% -10%, rgba(34,197,94,.14), transparent 60%),
+            radial-gradient(900px 500px at 0% 110%, rgba(56,189,248,.10), transparent 60%),
+            var(--bg);
+        color: var(--text);
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 24px 16px 48px;
+        text-align: center;
+    }
+    .wrap { max-width: 520px; width: 100%; }
+    .logo {
+        width: 64px; height: 64px; border-radius: 18px;
+        background: linear-gradient(135deg, #22c55e, #15803d);
+        display: inline-flex; align-items: center; justify-content: center;
+        font-size: 30px; color: #fff; box-shadow: 0 12px 30px rgba(34,197,94,.35);
+        margin-bottom: 22px;
+    }
+    .badge {
+        display: inline-flex; align-items: center; gap: 8px;
+        background: rgba(248,113,113,.12); color: var(--danger);
+        border: 1px solid rgba(248,113,113,.3);
+        padding: 7px 14px; border-radius: 999px; font-size: 13px; font-weight: 600;
+        margin-bottom: 18px;
+    }
+    .badge .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); animation: pulse 1.6s infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+    h1 { font-size: 26px; font-weight: 800; letter-spacing: -.5px; margin-bottom: 10px; }
+    p.lead { color: var(--muted); font-size: 15px; line-height: 1.6; margin-bottom: 8px; }
+    .queue {
+        margin: 20px auto 6px; padding: 12px 16px;
+        background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+        display: none; align-items: center; gap: 10px; font-size: 14px; text-align: left;
+    }
+    .queue.on { display: flex; }
+    .queue .q-ico { width: 34px; height: 34px; border-radius: 10px; background: rgba(56,189,248,.15); color: var(--accent); display: inline-flex; align-items: center; justify-content: center; flex: none; }
+    .queue b { color: var(--text); }
+    .grid {
+        display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 22px;
+    }
+    .btn {
+        display: flex; align-items: center; gap: 10px; text-align: left;
+        background: var(--card); border: 1px solid var(--line); color: var(--text);
+        padding: 14px 16px; border-radius: 14px; text-decoration: none;
+        font-size: 14px; font-weight: 600; transition: all .18s ease;
+    }
+    .btn:hover { transform: translateY(-2px); border-color: var(--brand); background: #14213a; }
+    .btn .ico { width: 36px; height: 36px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; font-size: 16px; flex: none; }
+    .btn .t { display: flex; flex-direction: column; }
+    .btn small { color: var(--muted); font-weight: 400; font-size: 12px; }
+    .btn.g .ico { background: rgba(34,197,94,.15); color: var(--brand); }
+    .btn.b .ico { background: rgba(56,189,248,.15); color: var(--accent); }
+    .btn.y .ico { background: rgba(234,179,8,.15); color: #facc15; }
+    .btn.p .ico { background: rgba(168,85,247,.15); color: #c084fc; }
+    .btn.wide { grid-column: 1 / -1; justify-content: center; text-align: center; }
+    .btn.wide .ico { flex: none; }
+    .actions { margin-top: 18px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+    .ghost {
+        background: transparent; border: 1px solid var(--line); color: var(--muted);
+        padding: 10px 18px; border-radius: 999px; font-size: 13px; font-weight: 600;
+        cursor: pointer; transition: all .18s ease;
+    }
+    .ghost:hover { color: var(--text); border-color: var(--muted); }
+    .foot { margin-top: 30px; color: #475569; font-size: 12px; }
+    .online-banner {
+        display: none; margin-top: 18px; padding: 12px 18px; border-radius: 999px;
+        background: rgba(34,197,94,.15); border: 1px solid rgba(34,197,94,.4); color: var(--brand);
+        font-size: 14px; font-weight: 600;
+    }
+    @media (max-width: 420px) {
+        .grid { grid-template-columns: 1fr; }
+        h1 { font-size: 22px; }
+    }
+</style>
+</head>
+<body>
+<div class="wrap">
+    <div class="logo">🛒</div>
+    <div class="badge"><span class="dot"></span> Sin conexión</div>
+    <h1>Estás trabajando en modo offline</h1>
+    <p class="lead">Todo lo que guardes aquí se sincronizará automáticamente cuando vuelva la conexión. Puedes seguir navegando por las páginas guardadas.</p>
+
+    <div class="queue" id="ws-queue">
+        <span class="q-ico">📤</span>
+        <span><b id="ws-queue-count">0</b> acción(es) pendiente(s) de sincronizar</span>
+    </div>
+
+    <div class="grid">
+        <a class="btn g" href="./">
+            <span class="ico">🏠</span>
+            <span class="t">Inicio<small>Portada del mercado</small></span>
+        </a>
+        <a class="btn b" href="marketplace/">
+            <span class="ico">🏪</span>
+            <span class="t">Tiendas<small>Directorio del mercado</small></span>
+        </a>
+        <a class="btn y" href="ayuda/">
+            <span class="ico">💡</span>
+            <span class="t">Ayuda<small>Preguntas frecuentes</small></span>
+        </a>
+        <a class="btn p" href="contacto/">
+            <span class="ico">✉️</span>
+            <span class="t">Contacto<small>Escríbenos</small></span>
+        </a>
+        <a class="btn g wide" id="ws-panel-link" href="panel/" style="display:none">
+            <span class="ico">🧰</span>
+            <span class="t">Volver a tu panel<small id="ws-panel-name"></small></span>
+        </a>
+    </div>
+
+    <div class="actions">
+        <button class="ghost" onclick="wsRetry()">↻ Reintentar conexión</button>
+    </div>
+
+    <div class="online-banner" id="ws-online-banner">¡Conexión restaurada! Recargando…</div>
+    <div class="foot">Workshop · Modo offline · <span id="ws-time"></span></div>
+</div>
+
+<script>
+(function() {
+    'use strict';
+
+    // Marca de tiempo de carga.
+    var t = document.getElementById('ws-time');
+    if (t) {
+        t.textContent = new Date().toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    // Base path de la instalación ('' en producción, '/workshop' en local). Se
+    // guarda en localStorage por sw-register.js. La página offline puede estar
+    // sirviéndose bajo cualquier URL (p.ej. /panel/owner/products/), por eso
+    // los enlaces deben ser absolutos respecto a la raíz de la app.
+    function wsBase() {
+        try {
+            var b = localStorage.getItem('ws_pwa_base');
+            return (b === null || b === undefined) ? '' : b;
+        } catch (e) { return ''; }
+    }
+
+    // Fija los enlaces de navegación con el base path correcto.
+    function setupLinks() {
+        var base = wsBase();
+        var map = {
+            'a[href="./"]': base + '/',
+            'a[href="marketplace/"]': base + '/marketplace/',
+            'a[href="ayuda/"]': base + '/ayuda/',
+            'a[href="contacto/"]': base + '/contacto/'
+        };
+        Object.keys(map).forEach(function(sel) {
+            var el = document.querySelector(sel);
+            if (el) { el.href = map[sel]; }
+        });
+    }
+
+    // Recupera la última URL del panel que visitó el usuario (la guarda
+    // sw-register.js) y ofrece volver a ella aunque la página actual no esté
+    // cacheada (el dashboard sí lo estará tras el precache del panel).
+    function setupPanelLink() {
+        var a = document.getElementById('ws-panel-link');
+        if (!a) return;
+        try {
+            var raw = localStorage.getItem('ws_last_panel');
+            if (!raw) return;
+            var info = JSON.parse(raw);
+            if (info && info.url) {
+                a.href = info.url;
+                var nm = document.getElementById('ws-panel-name');
+                if (nm && info.label) { nm.textContent = info.label; }
+                a.style.display = 'flex';
+            }
+        } catch (e) {}
+    }
+
+    // Muestra cuántas acciones de la cola offline quedan por sincronizar.
+    function setupQueue() {
+        var q = document.getElementById('ws-queue');
+        if (!q || !window.indexedDB) return;
+        try {
+            var openReq = indexedDB.open('WorkshopOfflineDB');
+            openReq.onsuccess = function() {
+                try {
+                    var db = openReq.result;
+                    var tx = db.transaction('offline_queue', 'readonly');
+                    var store = tx.objectStore('offline_queue');
+                    var countReq = store.count();
+                    countReq.onsuccess = function() {
+                        if (countReq.result > 0) {
+                            document.getElementById('ws-queue-count').textContent = countReq.result;
+                            q.classList.add('on');
+                        }
+                    };
+                } catch (e) {}
+            };
+        } catch (e) {}
+    }
+
+    // Si la conexión vuelve mientras vemos esta página, recargar para que el
+    // servidor (o la caché revalidada) sirva el contenido real. Solo se recarga
+    // con el evento 'online' real (evita bucles: al servirse desde la caché
+    // offline navigator.onLine puede seguir en true y recargar en bucle).
+    function watchOnline() {
+        var banner = document.getElementById('ws-online-banner');
+        var reloaded = false;
+        window.addEventListener('online', function() {
+            if (reloaded) return;
+            reloaded = true;
+            if (banner) { banner.style.display = 'block'; }
+            setTimeout(function() { location.reload(); }, 600);
+        });
+    }
+
+    window.wsRetry = function() {
+        location.reload();
+    };
+
+    setupLinks();
+    setupPanelLink();
+    setupQueue();
+    watchOnline();
+})();
+</script>
+</body>
+</html>

@@ -1,5 +1,5 @@
 /* Workshop MultiTienda Service Worker */
-const CACHE_NAME = 'workshop-v37';
+const CACHE_NAME = 'workshop-v38';
 const STATIC_CACHE = 'workshop-static-v7';
 const DYNAMIC_CACHE = 'workshop-dynamic-v7';
 const DATA_CACHE = 'workshop-data-v7';
@@ -7,9 +7,10 @@ const DATA_CACHE = 'workshop-data-v7';
 // URLs estáticas para cachear inmediatamente
 // El SW se sirve desde /workshop/sw.js (local) o /sw.js (producción), así que
 // los paths root-relativos deben llevar el prefijo BASE_PATH de la instalación.
-// NOTA: la portada (BASE_PATH + '/') NO se lista aquí: es contenido dinámico
-// (mercado de negocios) y se sirve con Network First para que los cambios del
-// admin (qué negocios se muestran) se reflejen en la siguiente carga.
+// NOTA: la portada (BASE_PATH + '/') NO va en esta lista: la comprobación
+// isStatic usa includes() y 'http://…/' contiene '/', con lo que TODAS las
+// peticiones se tratarían como estáticas (Cache-First) y rompería el Network
+// First de la navegación. La portada se precachea por separado en install.
 const BASE_PATH = '/workshop';
 const STATIC_ASSETS = [
     BASE_PATH + '/manifest.json',
@@ -29,6 +30,8 @@ const STATIC_ASSETS = [
     BASE_PATH + '/wp-content/themes/workshop/assets/images/icon-72.png',
     BASE_PATH + '/wp-content/themes/workshop/assets/images/icon-192.png',
     BASE_PATH + '/wp-content/themes/workshop/assets/images/icon-512.png',
+    // Respaldo offline (navegación útil sin red).
+    BASE_PATH + '/offline.html',
     'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css',
 ];
 
@@ -39,6 +42,13 @@ self.addEventListener('install', (event) => {
             .then((cache) => Promise.allSettled(
                 STATIC_ASSETS.map((asset) => cache.add(asset).catch(() => {}))
             ))
+            // Portada como último recurso offline (precachada aparte para no
+            // ensuciar la lista estática usada por isStatic).
+            .then((cache) => {
+                try {
+                    return caches.open(STATIC_CACHE).then((c) => c.add(BASE_PATH + '/').catch(() => {}));
+                } catch (e) { return Promise.resolve(); }
+            })
             .then(() => self.skipWaiting())
     );
 });
@@ -118,7 +128,7 @@ self.addEventListener('fetch', (event) => {
                 })
                 .catch(() =>
                     caches.match(event.request)
-                        .then((cached) => cached || caches.match(BASE_PATH + '/'))
+                        .then((cached) => cached || caches.match(BASE_PATH + '/offline.html') || caches.match(BASE_PATH + '/'))
                 )
         );
         return;
@@ -156,7 +166,7 @@ self.addEventListener('fetch', (event) => {
                         }
                         // Fallback para páginas HTML cuando está offline
                         if (event.request.headers.get('accept').includes('text/html')) {
-                            return caches.match(BASE_PATH + '/');
+                            return caches.match(BASE_PATH + '/offline.html') || caches.match(BASE_PATH + '/');
                         }
                     });
                 return cachedResponse || fetchPromise;
@@ -200,6 +210,32 @@ async function handleAJAXRequest(request) {
         });
     }
 }
+
+// Precarga del panel del usuario (pedida por sw-register.js): cachea todos los
+// módulos del panel (dashboard, productos, stock, POS…) para poder trabajar
+// offline. El fetch desde el SW conserva las cookies de sesión del contexto,
+// así que las páginas autenticadas se guardan igual que las visitaría el usuario.
+self.addEventListener('message', (event) => {
+    if (!event.data || event.data.type !== 'PRECACHE_PANEL') return;
+    const urls = Array.isArray(event.data.urls) ? event.data.urls : [];
+    if (!urls.length) return;
+    event.waitUntil(
+        caches.open(DYNAMIC_CACHE).then((cache) =>
+            Promise.allSettled(
+                urls.map((u) =>
+                    // No re-descargar lo que ya está en caché (se revalida en
+                    // la siguiente navegación con Network First).
+                    cache.match(u).then((hit) => {
+                        if (hit) return Promise.resolve();
+                        return fetch(u, { credentials: 'same-origin', redirect: 'manual' })
+                            .then((res) => { if (res.ok) cache.put(u, res.clone()); })
+                            .catch(() => {});
+                    }).catch(() => {})
+                )
+            )
+        )
+    );
+});
 
 // Sincronización en background
 self.addEventListener('sync', (event) => {

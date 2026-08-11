@@ -5,6 +5,43 @@
     // Nota: se eliminó el botón flotante "Instalar app" (PWA); el service
     // worker sigue registrándose para el modo offline y las actualizaciones.
 
+    // Páginas del panel del negocio (coinciden con el router del tema).
+    var WS_PANEL_PAGES = ['dashboard','products','locations','suppliers','stock','movements','orders','shifts','workers','permissions','reports','settings','account','appearance','customers','reviews','loyalty','pos','pos-sales','plan'];
+
+    // Base path de la instalación ('' en producción, '/workshop' en local). La
+    // usa offline.html para construir enlaces absolutos hacia las secciones.
+    function wsRememberBase() {
+        try {
+            var base = (WSPWA && WSPWA.swUrl) ? WSPWA.swUrl.replace(/\/sw\.js$/, '') : '';
+            if (base !== undefined) { localStorage.setItem('ws_pwa_base', base); }
+        } catch (e) {}
+    }
+    wsRememberBase();
+
+    // Si la URL actual es un panel, pide al SW que precachee TODOS los módulos
+    // (para trabajar offline) y guarda la URL del panel para la página offline.
+    function wsPrecachePanel() {
+        if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) return;
+        var path = location.pathname;
+        var idx = path.indexOf('panel/');
+        if (idx === -1) return;
+        var base = path.slice(0, idx + 'panel/'.length);
+        var segs = path.slice(idx + 'panel/'.length).split('/').filter(Boolean);
+        if (!segs.length) return;
+        var role = segs[0];
+        var panelBase = location.origin + base + role + '/';
+        // Recordar el panel para la página offline (botón "Volver a tu panel").
+        try {
+            var label = document.title ? document.title.split('·')[0].trim() : 'Tu panel';
+            localStorage.setItem('ws_last_panel', JSON.stringify({ url: panelBase, label: label }));
+        } catch (e) {}
+        // Enviar la lista de módulos al SW para cachearlos con sesión.
+        var urls = WS_PANEL_PAGES.map(function(p) { return panelBase + p + '/'; });
+        try {
+            navigator.serviceWorker.controller.postMessage({ type: 'PRECACHE_PANEL', urls: urls });
+        } catch (e) {}
+    }
+
     // Verificar si el navegador soporta service workers
     if ('serviceWorker' in navigator) {
         // Esperar a que la página cargue completamente
@@ -12,6 +49,14 @@
             navigator.serviceWorker.register(WSPWA.swUrl)
                 .then(function(registration) {
                     console.log('Service Worker registrado con éxito:', registration.scope);
+
+                    // Precargar el panel apenas el SW controle la página.
+                    if (navigator.serviceWorker.controller) {
+                        wsPrecachePanel();
+                    }
+                    navigator.serviceWorker.addEventListener('controllerchange', function() {
+                        wsPrecachePanel();
+                    });
                     
                     // Verificar actualizaciones del service worker
                     registration.addEventListener('updatefound', function() {
