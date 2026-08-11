@@ -9,6 +9,11 @@
         body: new URLSearchParams(Object.assign({ action: path, ws_nonce: WS.nonce }, data || {}))
     }).then(r => r.json());
 
+    // Exponer el helper AJAX globalmente para que los módulos offline
+    // (offline-queue.js, panel-offline.js) puedan reenviar peticiones al
+    // sincronizar la cola.
+    window.$ = $;
+
     /* ---------- Loader global + guard genérico de envíos ---------- */
     // El círculo pulsante SOLO se muestra al navegar entre páginas (clic en un
     // enlace interno), no por cada petición AJAX, para no molestar en cargas

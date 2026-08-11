@@ -97,6 +97,9 @@ function ws_enqueue_assets() {
     // POS offline
     wp_enqueue_script( 'ws-pos-offline', WS_URL . 'assets/js/pos-offline.js', array( 'ws-indexeddb', 'ws-offline-queue' ), WS_VERSION, true );
 
+    // Panel offline completo: cachea lecturas y encola escrituras de TODOS los módulos
+    wp_enqueue_script( 'ws-panel-offline', WS_URL . 'assets/js/panel-offline.js', array( 'ws-theme', 'ws-indexeddb', 'ws-offline-queue' ), WS_VERSION, true );
+
     wp_localize_script( 'ws-theme', 'WS',
         array(
             'ajaxUrl' => admin_url( 'admin-ajax.php' ),
@@ -124,6 +127,43 @@ function ws_pwa_manifest() {
     echo '<meta name="apple-mobile-web-app-capable" content="yes">' . "\n";
     echo '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">' . "\n";
     echo '<link rel="apple-touch-icon" href="' . WS_URL . 'assets/images/icon-192.png">' . "\n";
+}
+
+/**
+ * Datos del manifest PWA (rutas relativas para que funcionen en local y
+ * producción). Se sirve por PHP en /manifest.json con el Content-Type
+ * correcto para que la instalación no falle en hosts que sirven el archivo
+ * estático como HTML.
+ */
+function ws_pwa_manifest_data() {
+    $icons = array(
+        array( 'src' => './wp-content/themes/workshop/assets/images/icon-72.png',  'sizes' => '72x72',   'type' => 'image/png', 'purpose' => 'any' ),
+        array( 'src' => './wp-content/themes/workshop/assets/images/icon-192.png', 'sizes' => '192x192', 'type' => 'image/png', 'purpose' => 'any maskable' ),
+        array( 'src' => './wp-content/themes/workshop/assets/images/icon-512.png', 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'any maskable' ),
+    );
+    return array(
+        'name'             => wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES ),
+        'short_name'       => wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES ),
+        'description'      => __( 'Instala la app para trabajar con pedidos, stock y ventas incluso sin conexión.', 'workshop' ),
+        'id'               => './',
+        'start_url'        => './',
+        'scope'            => './',
+        'display'          => 'standalone',
+        'background_color' => '#ffffff',
+        'theme_color'      => '#4f46e5',
+        'orientation'      => 'portrait',
+        'icons'            => $icons,
+        'categories'       => array( 'business', 'shopping' ),
+        'shortcuts'        => array(
+            array(
+                'name'        => __( 'Ver Tiendas', 'workshop' ),
+                'short_name'  => __( 'Tiendas', 'workshop' ),
+                'description' => __( 'Ver todas las tiendas disponibles', 'workshop' ),
+                'url'         => './',
+                'icons'       => array( array( 'src' => './wp-content/themes/workshop/assets/images/icon-192.png', 'sizes' => '192x192' ) ),
+            ),
+        ),
+    );
 }
 
 // La barra de WordPress solo se muestra al superadmin, no a los roles de negocio.

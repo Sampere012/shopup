@@ -52,6 +52,10 @@ function ws_rewrite_rules() {
     // Registro público de negocios (solo en la raíz, sin prefijo de negocio).
     add_rewrite_rule( '^registro/?$', 'index.php?ws_public=register', 'top' );
 
+    // Manifest PWA servido por PHP (evita que el archivo estático se sirva
+    // como HTML en algunos hosts y rompa la instalación de la app).
+    add_rewrite_rule( '^manifest\.json/?$', 'index.php?ws_public=manifest', 'top' );
+
     // Directorio de tiendas del mercado: /marketplace/ (antes de la landing
     // genérica de negocio, que se comería el slug).
     add_rewrite_rule( '^marketplace/?$', 'index.php?ws_public=stores', 'top' );
@@ -86,7 +90,7 @@ function ws_rewrite_rules() {
  */
 add_action( 'init', 'ws_maybe_flush_rewrite_rules', 20 );
 function ws_maybe_flush_rewrite_rules() {
-    $version = '2026-08-07-site-pages';
+    $version = '2026-08-10-pwa';
     if ( get_option( 'ws_rewrite_rules_version' ) !== $version ) {
         update_option( 'ws_rewrite_rules_version', $version );
         ws_flush_rewrite_rules();
@@ -184,6 +188,14 @@ function ws_handle_public( $public ) {
             exit;
         }
         include WS_PATH . 'templates/register.php';
+        exit;
+    }
+    if ( 'manifest' === $public ) {
+        // Manifest PWA generado dinámicamente con el Content-Type correcto.
+        status_header( 200 );
+        header( 'Content-Type: application/manifest+json; charset=utf-8' );
+        header( 'Cache-Control: public, max-age=3600' );
+        echo wp_json_encode( ws_pwa_manifest_data() );
         exit;
     }
     if ( 'stores' === $public ) {

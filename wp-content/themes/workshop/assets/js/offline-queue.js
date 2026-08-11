@@ -9,7 +9,11 @@
         POS_SALE: 'pos_sale',
         CUSTOMER_CREATE: 'customer_create',
         CUSTOMER_UPDATE: 'customer_update',
-        REVIEW_CREATE: 'review_create'
+        REVIEW_CREATE: 'review_create',
+        // Acción genérica: reenvía CUALQUIER endpoint del panel con su payload
+        // original (action + data). La usa panel-offline.js para el resto de
+        // módulos (productos, stock, pedidos, caja, etc.).
+        GENERIC: 'generic'
     };
 
     // Agregar acción a la cola offline
@@ -126,9 +130,21 @@
                 return await processCustomerUpdate(item.data);
             case QUEUE_ACTIONS.REVIEW_CREATE:
                 return await processReviewCreate(item.data);
+            case QUEUE_ACTIONS.GENERIC:
+                return await processGeneric(item.data);
             default:
                 throw new Error(`Acción desconocida: ${item.action}`);
         }
+    }
+
+    // Procesador genérico: reenvía el endpoint AJAX original con sus datos.
+    async function processGeneric(data) {
+        const action = data && data.action;
+        const payload = data && data.payload ? data.payload : data;
+        if (!action) throw new Error('Acción genérica sin action');
+        const response = await $(action, payload);
+        if (!response.success) throw new Error(response.data?.msg || 'Error al sincronizar');
+        return response;
     }
 
     // Procesadores de acciones específicas

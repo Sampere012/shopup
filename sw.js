@@ -1,5 +1,5 @@
 /* Workshop MultiTienda Service Worker */
-const CACHE_NAME = 'workshop-v6';
+const CACHE_NAME = 'workshop-v7';
 const STATIC_CACHE = 'workshop-static-v6';
 const DYNAMIC_CACHE = 'workshop-dynamic-v6';
 const DATA_CACHE = 'workshop-data-v6';
@@ -21,6 +21,7 @@ const STATIC_ASSETS = [
     BASE_PATH + '/wp-content/themes/workshop/assets/js/offline-ui.js',
     BASE_PATH + '/wp-content/themes/workshop/assets/js/data-sync.js',
     BASE_PATH + '/wp-content/themes/workshop/assets/js/pos-offline.js',
+    BASE_PATH + '/wp-content/themes/workshop/assets/js/panel-offline.js',
     BASE_PATH + '/wp-content/themes/workshop/assets/js/vendor/alpine-collapse.min.js',
     BASE_PATH + '/wp-content/themes/workshop/assets/js/vendor/alpine.min.js',
     BASE_PATH + '/wp-content/themes/workshop/assets/images/icon-72.png',

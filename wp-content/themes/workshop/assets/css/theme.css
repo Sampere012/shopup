@@ -2337,3 +2337,69 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 /* ---------- Fraccionamiento de productos ---------- */
 .ws-fraction-box { padding: 14px 16px; border: 1px dashed #c7d2fe; background: #f5f7ff; border-radius: 12px; }
 .ws-fraction-title { margin: 0 0 4px; font-size: .95em; color: var(--ws-primary-dark); }
+
+/* ---------- Panel: banner modo offline ---------- */
+.ws-panel-offline-banner {
+    position: fixed;
+    left: 50%;
+    bottom: 18px;
+    transform: translateX(-50%);
+    z-index: 9998;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    color: #fff;
+    font-size: 13.5px;
+    font-weight: 500;
+    box-shadow: 0 8px 24px rgba(217, 119, 6, .35);
+    animation: ws-pob-in .35s ease both;
+}
+.ws-panel-offline-banner > .fa-wifi-slash { font-size: 15px; }
+.ws-panel-offline-banner .ws-pob-text strong { font-weight: 700; }
+.ws-panel-offline-banner .ws-offline-queue-indicator {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 5px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, .22);
+    font-size: 11.5px;
+    font-weight: 700;
+}
+.ws-panel-offline-banner .ws-pob-sync {
+    border: 0;
+    background: #fff;
+    color: #b45309;
+    font-weight: 700;
+    font-size: 12.5px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: transform .15s ease, box-shadow .15s ease, opacity .15s ease;
+}
+.ws-panel-offline-banner .ws-pob-sync:hover { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(0, 0, 0, .18); }
+.ws-panel-offline-banner .ws-pob-sync:disabled { opacity: .6; cursor: wait; }
+@keyframes ws-pob-in {
+    from { opacity: 0; transform: translate(-50%, 12px); }
+    to   { opacity: 1; transform: translate(-50%, 0); }
+}
+@media (max-width: 640px) {
+    .ws-panel-offline-banner {
+        left: 12px;
+        right: 12px;
+        transform: none;
+        justify-content: center;
+        flex-wrap: wrap;
+        bottom: 12px;
+    }
+    .ws-panel-offline-banner .ws-pob-sync { margin-left: auto; }
+    @keyframes ws-pob-in {
+        from { opacity: 0; transform: translateY(12px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+}

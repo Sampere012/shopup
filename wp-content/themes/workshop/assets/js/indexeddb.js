@@ -3,7 +3,7 @@
     'use strict';
 
     const DB_NAME = 'WorkshopOfflineDB';
-    const DB_VERSION = 1;
+    const DB_VERSION = 2;
     const STORES = {
         products: 'products',
         customers: 'customers',
@@ -11,7 +11,8 @@
         cart: 'cart',
         pos_sales: 'pos_sales',
         offline_queue: 'offline_queue',
-        sync_status: 'sync_status'
+        sync_status: 'sync_status',
+        ajax_cache: 'ajax_cache'
     };
 
     let db = null;
@@ -73,6 +74,12 @@
 
                 if (!database.objectStoreNames.contains(STORES.sync_status)) {
                     database.createObjectStore(STORES.sync_status, { keyPath: 'key' });
+                }
+
+                if (!database.objectStoreNames.contains(STORES.ajax_cache)) {
+                    const store = database.createObjectStore(STORES.ajax_cache, { keyPath: 'key' });
+                    store.createIndex('action', 'action', { unique: false });
+                    store.createIndex('created_at', 'created_at', { unique: false });
                 }
             };
         });
@@ -227,6 +234,12 @@
         // Estado de sincronización
         setSyncStatus: (key, status) => put(STORES.sync_status, { key, status, updated_at: new Date().toISOString() }),
         getSyncStatus: (key) => get(STORES.sync_status, key),
+
+        // Caché de respuestas AJAX (para el panel offline)
+        cacheAjax: (key, payload) => put(STORES.ajax_cache, Object.assign({ key, created_at: new Date().toISOString() }, payload)),
+        getAjaxCache: (key) => get(STORES.ajax_cache, key),
+        deleteAjaxCache: (key) => deleteItem(STORES.ajax_cache, key),
+        clearAjaxCache: () => clearStore(STORES.ajax_cache),
 
         // Utilidades
         isOnline: () => navigator.onLine,
