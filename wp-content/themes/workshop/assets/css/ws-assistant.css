@@ -186,7 +186,30 @@
     background: #dcfce7; color: #15803d; white-space: nowrap;
 }
 .wsb-badge-stock.is-out { background: #fee2e2; color: #b91c1c; }
-.wsb-where { font-size: .68rem; color: var(--wsb-muted); white-space: nowrap; }
+
+/* Fichas de producto: foto, precio y stock (búsqueda del catálogo) */
+.wsb-product-card {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 13px; text-decoration: none; color: var(--wsb-text);
+    border-bottom: 1px solid #f1f2f6; transition: background .15s ease;
+}
+.wsb-product-card:last-child { border-bottom: 0; }
+.wsb-product-card:hover { background: var(--wsb-primary-light); }
+.wsb-product-thumb {
+    width: 46px; height: 46px; flex-shrink: 0; border-radius: 10px;
+    background: #f1f5f9; border: 1px solid #e5e7eb; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+}
+.wsb-product-thumb i { font-size: 1.1rem; color: #94a3b8; }
+.wsb-product-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.wsb-product-info { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.wsb-product-name { font-size: .84rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wsb-product-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.wsb-product-price { font-size: .82rem; font-weight: 800; color: var(--wsb-primary); }
+.wsb-product-where {
+    font-size: .68rem; color: var(--wsb-muted); display: flex; align-items: center; gap: 4px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
 /* Botón Atajos */
 .wsb-atajos {

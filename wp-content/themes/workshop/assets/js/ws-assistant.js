@@ -235,6 +235,40 @@
         return row;
     }
 
+    // Fichas de producto con foto, precio y stock (búsqueda del catálogo).
+    // Cada item: name, img, price_text, stock_text, in_stock, where, url.
+    function appendProductCards(title, items, opts) {
+        opts = opts || {};
+        var row = document.createElement('div');
+        row.className = 'wsb-msg';
+        var card = document.createElement('div');
+        card.className = 'wsb-card wsb-product-list';
+        var html = '<div class="wsb-card-title">' + escapeHtml(title) + '</div>';
+        (items || []).forEach(function (it) {
+            var thumb = '';
+            if (it.img) {
+                thumb = '<img class="wsb-product-img" src="' + escapeHtml(it.img) + '" alt="' + escapeHtml(it.name) + '" loading="lazy" onerror="this.style.display=\'none\';var n=this.nextElementSibling;if(n){n.style.display=\'flex\';}">';
+            }
+            html += '<a class="wsb-product-card" href="' + escapeHtml(it.url || '#') + '" target="_blank" rel="noopener">' +
+                '<span class="wsb-product-thumb">' + thumb + '<i class="fa-solid fa-box-open"' + (it.img ? ' style="display:none"' : '') + '></i></span>' +
+                '<span class="wsb-product-info">' +
+                    '<span class="wsb-product-name">' + escapeHtml(it.name) + '</span>' +
+                    '<span class="wsb-product-meta">' +
+                        (it.price_text ? '<b class="wsb-product-price">' + escapeHtml(it.price_text) + '</b>' : '') +
+                        (it.stock_text ? '<span class="wsb-badge-stock' + (it.in_stock === false ? ' is-out' : '') + '">' + escapeHtml(it.stock_text) + '</span>' : '') +
+                    '</span>' +
+                    (it.where ? '<span class="wsb-product-where"><i class="fa-solid fa-location-dot"></i> ' + escapeHtml(it.where) + '</span>' : '') +
+                '</span>' +
+            '</a>';
+        });
+        card.innerHTML = html;
+        row.appendChild(card);
+        body.appendChild(row);
+        body.scrollTop = body.scrollHeight;
+        if (opts.chips && opts.chips.length) { appendChips(opts.chips); }
+        return row;
+    }
+
     // Widgets ricos: tarjetas visuales (planes, tiendas, secciones) en vez de
     // solo texto. Cada widget es una columna de items con icono/imagen,
     // titulo, detalle y accion. Los datos llegan del endpoint ws_chatbot_cards.
@@ -443,11 +477,15 @@
                     var rows = list.map(function (it) {
                         return {
                             name: it.name,
-                            meta: (it.price_text || '') + (it.stock_text ? ' <span class="wsb-badge-stock' + (it.in_stock === false ? ' is-out' : '') + '">' + escapeHtml(it.stock_text) + '</span>' : '') + (it.where ? ' <span class="wsb-where">' + escapeHtml(it.where) + '</span>' : ''),
+                            img: it.image || '',
+                            price_text: it.price_text || '',
+                            stock_text: it.stock_text || '',
+                            in_stock: it.in_stock,
+                            where: it.where || '',
                             url: it.url
                         };
                     });
-                    appendCard('Resultados de "' + q + '":', rows, { chips: stores.length ? null : chips });
+                    appendProductCards('Resultados de "' + q + '":', rows, { chips: stores.length ? null : chips });
                 }
                 track('search:' + (list.length ? 'products' : 'stores'));
             } else {

@@ -1993,6 +1993,7 @@ function ws_ajax_chatbot_search() {
                     'where'       => (string) $r->location_name,
                     'url'         => $panel_url,
                     'in_stock'    => (float) $r->qty > 0,
+                    'image'       => (string) ( ! empty( $r->image ) ? ws_image_url( $r->image ) : '' ),
                 );
                 if ( count( $out ) >= $limit ) {
                     break 2;
@@ -2024,7 +2025,7 @@ function ws_ajax_chatbot_search() {
         $like = '%' . $wpdb->esc_like( $q ) . '%';
         foreach ( $locs as $loc ) {
             $rows = $wpdb->get_results( $wpdb->prepare(
-                "SELECT s.qty, p.name, p.sale_price, p.currency FROM {$stock_t} s
+                "SELECT s.qty, p.name, p.sale_price, p.currency, p.image FROM {$stock_t} s
                  INNER JOIN {$prod_t} p ON p.id = s.product_id
                  WHERE s.location_id=%d AND p.name LIKE %s AND s.qty>0
                  ORDER BY p.name ASC LIMIT 3",
@@ -2038,6 +2039,7 @@ function ws_ajax_chatbot_search() {
                     'where'      => (string) $loc->name,
                     'url'        => ws_store_url( $loc, $target ),
                     'in_stock'   => true,
+                    'image'      => (string) ( ! empty( $r->image ) ? ws_image_url( $r->image ) : '' ),
                 );
                 if ( count( $out ) >= $limit ) {
                     break 2;
