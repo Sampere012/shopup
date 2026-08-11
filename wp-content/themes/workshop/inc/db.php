@@ -494,6 +494,14 @@ function ws_db_migrate() {
         $p_cols = $wpdb->get_col( "SHOW COLUMNS FROM {$plans_table}", 0 );
         if ( ! in_array( 'has_chatbot', $p_cols, true ) ) {
             $wpdb->query( "ALTER TABLE {$plans_table} ADD COLUMN has_chatbot TINYINT(1) NOT NULL DEFAULT 0 AFTER limits" );
+            // Valores por defecto para los planes sembrados: la prueba y los
+            // planes Pro/Premium incluyen el chatbot; el Básico no (upsell).
+            $wpdb->query( "UPDATE {$plans_table} SET has_chatbot = CASE slug
+                WHEN 'free-trial' THEN 1
+                WHEN 'pro' THEN 1
+                WHEN 'premium' THEN 1
+                WHEN 'legacy' THEN 1
+                ELSE has_chatbot END" );
         }
     }
 

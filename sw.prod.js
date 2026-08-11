@@ -1,5 +1,5 @@
 /* Workshop MultiTienda Service Worker */
-const CACHE_NAME = 'workshop-v7';
+const CACHE_NAME = 'workshop-v8';
 const STATIC_CACHE = 'workshop-static-v6';
 const DYNAMIC_CACHE = 'workshop-dynamic-v6';
 const DATA_CACHE = 'workshop-data-v6';
@@ -14,6 +14,7 @@ const BASE_PATH = '';
 const STATIC_ASSETS = [
     '/manifest.json',
     '/wp-content/themes/workshop/assets/css/theme.css',
+    '/wp-content/themes/workshop/assets/css/chatbot.css',
     '/wp-content/themes/workshop/assets/js/theme.js',
     '/wp-content/themes/workshop/assets/js/sw-register.js',
     '/wp-content/themes/workshop/assets/js/indexeddb.js',
@@ -22,6 +23,7 @@ const STATIC_ASSETS = [
     '/wp-content/themes/workshop/assets/js/data-sync.js',
     '/wp-content/themes/workshop/assets/js/pos-offline.js',
     '/wp-content/themes/workshop/assets/js/panel-offline.js',
+    '/wp-content/themes/workshop/assets/js/chatbot.js',
     '/wp-content/themes/workshop/assets/js/vendor/alpine-collapse.min.js',
     '/wp-content/themes/workshop/assets/js/vendor/alpine.min.js',
     '/wp-content/themes/workshop/assets/images/icon-72.png',

@@ -151,6 +151,21 @@ class WS_Plans {
     }
 
     /**
+     * Funciones que incluye el plan (atributos booleanos, no límites de
+     * cantidad). Por ahora solo el chatbot del sitio.
+     */
+    public static function features( $plan ) {
+        return array(
+            'chatbot' => self::has_chatbot( $plan ),
+        );
+    }
+
+    /** ¿El plan incluye el asistente (chatbot) del sitio? */
+    public static function has_chatbot( $plan ) {
+        return $plan && (int) ( $plan->has_chatbot ?? 0 ) === 1;
+    }
+
+    /**
      * Crea/actualiza un plan.
      */
     public static function save( $data, $id = 0 ) {
@@ -179,6 +194,7 @@ class WS_Plans {
             'currency'      => sanitize_text_field( $data['currency'] ?? 'USD' ),
             'duration_days' => max( 0, (int) ( $data['duration_days'] ?? 30 ) ),
             'limits'        => wp_json_encode( $limits ),
+            'has_chatbot'   => isset( $data['has_chatbot'] ) ? 1 : 0,
             'is_trial'      => isset( $data['is_trial'] ) ? 1 : 0,
             'is_active'     => isset( $data['is_active'] ) ? 1 : 0,
             'sort_order'    => (int) ( $data['sort_order'] ?? 0 ),
@@ -186,6 +202,7 @@ class WS_Plans {
         // El plan legacy nunca se desactiva ni se muestra.
         if ( 'legacy' === $slug ) {
             $fields['is_active'] = 0;
+            $fields['has_chatbot'] = 1;
         }
         if ( $id ) {
             $wpdb->update( self::table(), $fields, array( 'id' => $id ) );
@@ -236,35 +253,35 @@ class WS_Plans {
                 'description' => __( '7 días gratis para probar tu tienda sin límites de funciones. Al vencer, elige un plan.', 'workshop' ),
                 'price' => 0, 'currency' => 'USD', 'duration_days' => (int) get_option( 'ws_trial_days', 7 ),
                 'limits' => array( 'products' => 25, 'users' => 3, 'pvs' => 2, 'warehouses' => 1, 'suppliers' => 5 ),
-                'is_trial' => 1, 'is_active' => 1, 'sort_order' => 1,
+                'has_chatbot' => 1, 'is_trial' => 1, 'is_active' => 1, 'sort_order' => 1,
             ),
             array(
                 'slug' => 'basic', 'name' => __( 'Básico', 'workshop' ),
                 'description' => __( 'Para negocios pequeños que empiezan a crecer.', 'workshop' ),
                 'price' => 12.99, 'currency' => 'USD', 'duration_days' => 30,
                 'limits' => array( 'products' => 100, 'users' => 5, 'pvs' => 3, 'warehouses' => 2, 'suppliers' => 20 ),
-                'is_trial' => 0, 'is_active' => 1, 'sort_order' => 2,
+                'has_chatbot' => 0, 'is_trial' => 0, 'is_active' => 1, 'sort_order' => 2,
             ),
             array(
                 'slug' => 'pro', 'name' => __( 'Pro', 'workshop' ),
                 'description' => __( 'El plan más popular para negocios en pleno crecimiento.', 'workshop' ),
                 'price' => 29.99, 'currency' => 'USD', 'duration_days' => 30,
                 'limits' => array( 'products' => 500, 'users' => 15, 'pvs' => 10, 'warehouses' => 5, 'suppliers' => 100 ),
-                'is_trial' => 0, 'is_active' => 1, 'sort_order' => 3,
+                'has_chatbot' => 1, 'is_trial' => 0, 'is_active' => 1, 'sort_order' => 3,
             ),
             array(
                 'slug' => 'premium', 'name' => __( 'Premium', 'workshop' ),
                 'description' => __( 'Todo lo que tu empresa necesita, sin preocuparte por los límites.', 'workshop' ),
                 'price' => 59.99, 'currency' => 'USD', 'duration_days' => 30,
                 'limits' => array( 'products' => 2000, 'users' => 50, 'pvs' => 30, 'warehouses' => 15, 'suppliers' => 500 ),
-                'is_trial' => 0, 'is_active' => 1, 'sort_order' => 4,
+                'has_chatbot' => 1, 'is_trial' => 0, 'is_active' => 1, 'sort_order' => 4,
             ),
             array(
                 'slug' => 'legacy', 'name' => __( 'Ilimitado (legacy)', 'workshop' ),
                 'description' => __( 'Plan interno del negocio principal del sitio.', 'workshop' ),
                 'price' => 0, 'currency' => 'USD', 'duration_days' => 0,
                 'limits' => array( 'products' => 0, 'users' => 0, 'pvs' => 0, 'warehouses' => 0, 'suppliers' => 0 ),
-                'is_trial' => 0, 'is_active' => 0, 'sort_order' => 99,
+                'has_chatbot' => 1, 'is_trial' => 0, 'is_active' => 0, 'sort_order' => 99,
             ),
         );
         foreach ( $seed as $plan ) {
@@ -276,6 +293,7 @@ class WS_Plans {
                 'currency'      => $plan['currency'],
                 'duration_days' => $plan['duration_days'],
                 'limits'        => wp_json_encode( $plan['limits'] ),
+                'has_chatbot'   => $plan['has_chatbot'],
                 'is_trial'      => $plan['is_trial'],
                 'is_active'     => $plan['is_active'],
                 'sort_order'    => $plan['sort_order'],
@@ -752,6 +770,16 @@ function ws_status_label( $status ) {
         'suspended' => __( 'Suspendido', 'workshop' ),
     );
     return $labels[ $status ] ?? $status;
+}
+
+/**
+ * ¿El plan actual del negocio incluye el chatbot del sitio?
+ * Sirve para decidir si el asistente se activa dentro del panel de negocio.
+ */
+function ws_biz_has_chatbot( $biz = null ) {
+    $biz  = $biz ? $biz : ws_current_business();
+    $data = ws_subscription_data( $biz );
+    return WS_Plans::has_chatbot( $data['plan'] );
 }
 
 /* -------------------------------------------------------------------------

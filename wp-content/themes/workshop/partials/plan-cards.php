@@ -51,6 +51,12 @@ $pending      = ! empty( $data['upgrade_pending'] );
                         ) ); ?>
                     </li>
                 <?php endforeach; ?>
+                <li>
+                    <i class="fa-solid <?php echo WS_Plans::has_chatbot( $p ) ? 'fa-check' : 'fa-xmark'; ?>"></i>
+                    <?php echo esc_html( WS_Plans::has_chatbot( $p )
+                        ? __( 'Asistente chatbot en tu panel', 'workshop' )
+                        : __( 'Sin chatbot (mejora con upgrade)', 'workshop' ) ); ?>
+                </li>
             </ul>
             <?php if ( $current ) : ?>
                 <span class="ws-btn ws-btn-secondary ws-btn-block" disabled><i class="fa-solid fa-check"></i> <?php esc_html_e( 'Plan actual', 'workshop' ); ?></span>

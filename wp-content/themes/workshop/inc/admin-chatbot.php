@@ -1,0 +1,437 @@
+<?php
+/**
+ * Administración del asistente (chatbot) desde wp-admin.
+ *
+ * El administrador del sitio gestiona el bot sin tocar código:
+ *  - Conocimiento: preguntas/respuestas (patrones + respuesta + enlace) que
+ *    el bot responde ANTES que sus intenciones internas. Añadir/editar/borrar.
+ *  - Mensajes: textos del widget (bienvenidas, fallback, upsell del plan…).
+ *  - Comportamiento: mostrar/ocultar en público y en el panel.
+ *  - Analítica: qué intenciones se usan más (mejora continua).
+ *
+ * @package Workshop
+ */
+
+defined( 'ABSPATH' ) || exit;
+
+add_action( 'admin_menu', 'ws_chatbot_admin_menu', 30 );
+function ws_chatbot_admin_menu() {
+    add_submenu_page(
+        'ws-permissions',
+        __( 'Asistente', 'workshop' ),
+        __( 'Asistente', 'workshop' ),
+        'manage_options',
+        'ws-chatbot',
+        'ws_admin_page_chatbot'
+    );
+}
+
+/** Página principal con pestañas. */
+function ws_admin_page_chatbot() {
+    $tab = isset( $_GET['tab'] ) ? sanitize_key( $_GET['tab'] ) : 'knowledge';
+    if ( ! in_array( $tab, array( 'knowledge', 'messages', 'behavior', 'stats' ), true ) ) {
+        $tab = 'knowledge';
+    }
+
+    // Guardado
+    if ( isset( $_POST['ws_chatbot_nonce'] ) && wp_verify_nonce( $_POST['ws_chatbot_nonce'], 'ws_chatbot_save' ) ) {
+        if ( 'knowledge' === $tab ) {
+            ws_chatbot_save_knowledge( $_POST );
+        } elseif ( 'messages' === $tab ) {
+            ws_chatbot_save_messages( $_POST );
+        } elseif ( 'behavior' === $tab ) {
+            ws_chatbot_save_behavior( $_POST );
+        } elseif ( 'stats' === $tab && ! empty( $_POST['ws_chatbot_reset_stats'] ) ) {
+            delete_option( 'ws_chatbot_stats' );
+            echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__( 'Analítica restablecida.', 'workshop' ) . '</p></div>';
+        }
+    }
+
+    $tabs = array(
+        'knowledge' => __( 'Conocimiento', 'workshop' ),
+        'messages'  => __( 'Mensajes', 'workshop' ),
+        'behavior'  => __( 'Comportamiento', 'workshop' ),
+        'stats'     => __( 'Analítica', 'workshop' ),
+    );
+
+    $kb = get_option( 'ws_chatbot_knowledge', ws_chatbot_default_knowledge() );
+    $kb = is_array( $kb ) ? $kb : array();
+    ?>
+    <div class="wrap ws-admin-chatbot">
+        <h1><span class="dashicons dashicons-format-chat" style="color:#4f46e5"></span> <?php esc_html_e( 'Asistente (chatbot del sitio)', 'workshop' ); ?></h1>
+        <p class="description"><?php esc_html_e( 'El bot responde primero con esta base de conocimiento, luego con sus intenciones por rol. Edítalo aquí sin tocar código.', 'workshop' ); ?></p>
+
+        <nav class="nav-tab-wrapper" style="margin:14px 0">
+            <?php foreach ( $tabs as $key => $label ) : ?>
+                <a href="<?php echo esc_url( admin_url( 'admin.php?page=ws-chatbot&tab=' . $key ) ); ?>" class="nav-tab<?php echo $tab === $key ? ' nav-tab-active' : ''; ?>"><?php echo esc_html( $label ); ?></a>
+            <?php endforeach; ?>
+        </nav>
+
+        <?php if ( 'knowledge' === $tab ) : ?>
+            <?php ws_chatbot_admin_knowledge( $kb ); ?>
+        <?php elseif ( 'messages' === $tab ) : ?>
+            <?php ws_chatbot_admin_messages_form(); ?>
+        <?php elseif ( 'behavior' === $tab ) : ?>
+            <?php ws_chatbot_admin_behavior_form(); ?>
+        <?php else : ?>
+            <?php ws_chatbot_admin_stats(); ?>
+        <?php endif; ?>
+    </div>
+    <style>
+        .ws-admin-chatbot .ws-kb-table { border-collapse: collapse; width: 100%; background: #fff; }
+        .ws-admin-chatbot .ws-kb-table th, .ws-admin-chatbot .ws-kb-table td { border: 1px solid #dcdcde; padding: 8px 10px; text-align: left; vertical-align: top; }
+        .ws-admin-chatbot .ws-kb-table th { background: #f6f7f7; }
+        .ws-admin-chatbot .ws-kb-patterns { color: #6b7280; font-size: .86em; }
+        .ws-admin-chatbot .ws-kb-item-form { background: #fff; border: 1px solid #dcdcde; padding: 14px; margin-top: 14px; max-width: 780px; }
+        .ws-admin-chatbot .ws-kb-item-form label { display: block; font-weight: 600; margin: 10px 0 4px; }
+        .ws-admin-chatbot .ws-kb-item-form input[type=text], .ws-admin-chatbot .ws-kb-item-form textarea, .ws-admin-chatbot .ws-kb-item-form select { width: 100%; max-width: 520px; }
+        .ws-admin-chatbot .ws-kb-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+        .ws-admin-chatbot .ws-kb-help { color: #787c82; font-size: .85em; font-weight: 400; margin-top: 2px; }
+        .ws-admin-chatbot .ws-stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 14px 0; }
+        .ws-admin-chatbot .ws-stat-card { background: #fff; border: 1px solid #dcdcde; border-radius: 8px; padding: 14px; text-align: center; }
+        .ws-admin-chatbot .ws-stat-card strong { display: block; font-size: 1.6em; color: #4f46e5; }
+        .ws-admin-chatbot .ws-stat-card span { color: #6b7280; font-size: .85em; }
+    </style>
+    <?php
+}
+
+/* -------------------------------------------------------------------------
+ * Pestaña Conocimiento
+ * ---------------------------------------------------------------------- */
+
+function ws_chatbot_save_knowledge( $post ) {
+    $action = sanitize_key( $post['ws_kb_action'] ?? '' );
+    $kb     = get_option( 'ws_chatbot_knowledge', ws_chatbot_default_knowledge() );
+    $kb     = is_array( $kb ) ? $kb : array();
+
+    if ( 'delete' === $action ) {
+        $id  = sanitize_key( $post['ws_kb_id'] ?? '' );
+        $kb  = array_values( array_filter( $kb, function ( $it ) use ( $id ) {
+            return (string) ( $it['id'] ?? '' ) !== $id;
+        } ) );
+        update_option( 'ws_chatbot_knowledge', $kb );
+        echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__( 'Pregunta eliminada.', 'workshop' ) . '</p></div>';
+        return;
+    }
+
+    if ( 'toggle' === $action ) {
+        $id = sanitize_key( $post['ws_kb_id'] ?? '' );
+        foreach ( $kb as &$it ) {
+            if ( (string) ( $it['id'] ?? '' ) === $id ) {
+                $it['active'] = empty( $it['active'] ) ? 1 : 0;
+                break;
+            }
+        }
+        unset( $it );
+        update_option( 'ws_chatbot_knowledge', $kb );
+        echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__( 'Estado actualizado.', 'workshop' ) . '</p></div>';
+        return;
+    }
+
+    $patterns = array();
+    foreach ( preg_split( '/\r\n|\r|\n/', (string) ( $post['ws_kb_patterns'] ?? '' ) ) as $line ) {
+        $line = trim( $line );
+        if ( '' !== $line ) {
+            $patterns[] = $line;
+        }
+    }
+    if ( empty( $patterns ) || '' === trim( (string) ( $post['ws_kb_answer'] ?? '' ) ) ) {
+        echo '<div class="notice notice-error is-dismissible"><p>' . esc_html__( 'Faltan patrones o la respuesta.', 'workshop' ) . '</p></div>';
+        return;
+    }
+
+    $item = array(
+        'id'          => sanitize_key( $post['ws_kb_id'] ?? '' ),
+        'patterns'    => array_slice( $patterns, 0, 30 ),
+        'answer'      => sanitize_textarea_field( $post['ws_kb_answer'] ),
+        'link_target' => sanitize_key( $post['ws_kb_link_target'] ?? '' ),
+        'link_label'  => sanitize_text_field( $post['ws_kb_link_label'] ?? '' ),
+        'link_icon'   => sanitize_text_field( $post['ws_kb_link_icon'] ?? '' ),
+        'active'      => ! empty( $post['ws_kb_active'] ) ? 1 : 0,
+    );
+
+    if ( '' === $item['id'] || 'new' === $item['id'] ) {
+        $item['id'] = 'kb-' . substr( md5( wp_json_encode( $item ) . uniqid( '', true ) ), 0, 8 );
+        $kb[] = $item;
+    } else {
+        foreach ( $kb as &$it ) {
+            if ( (string) ( $it['id'] ?? '' ) === $item['id'] ) {
+                $it = $item;
+                break;
+            }
+        }
+        unset( $it );
+    }
+    update_option( 'ws_chatbot_knowledge', $kb );
+    echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__( 'Conocimiento guardado.', 'workshop' ) . '</p></div>';
+}
+
+function ws_chatbot_admin_knowledge( $kb ) {
+    $editing = null;
+    if ( isset( $_GET['edit'] ) ) { // Solo lectura de la URL para editar
+        $eid = sanitize_key( $_GET['edit'] );
+        foreach ( $kb as $it ) {
+            if ( (string) ( $it['id'] ?? '' ) === $eid ) {
+                $editing = $it;
+                break;
+            }
+        }
+    }
+    ?>
+    <table class="ws-kb-table">
+        <thead>
+            <tr>
+                <th style="width:34px"><?php esc_html_e( 'Activo', 'workshop' ); ?></th>
+                <th><?php esc_html_e( 'Preguntas (patrones)', 'workshop' ); ?></th>
+                <th><?php esc_html_e( 'Respuesta', 'workshop' ); ?></th>
+                <th style="width:120px"><?php esc_html_e( 'Enlace', 'workshop' ); ?></th>
+                <th style="width:120px"><?php esc_html_e( 'Acciones', 'workshop' ); ?></th>
+            </tr>
+        </thead>
+        <tbody>
+        <?php if ( empty( $kb ) ) : ?>
+            <tr><td colspan="5"><em><?php esc_html_e( 'Aún no hay preguntas configuradas. Añade la primera abajo.', 'workshop' ); ?></em></td></tr>
+        <?php endif; ?>
+        <?php foreach ( $kb as $it ) : ?>
+            <tr>
+                <td>
+                    <form method="post" style="display:inline">
+                        <?php wp_nonce_field( 'ws_chatbot_save', 'ws_chatbot_nonce' ); ?>
+                        <input type="hidden" name="ws_kb_action" value="toggle">
+                        <input type="hidden" name="ws_kb_id" value="<?php echo esc_attr( $it['id'] ); ?>">
+                        <button type="submit" class="button button-small" title="<?php echo empty( $it['active'] ) ? esc_attr__( 'Activar', 'workshop' ) : esc_attr__( 'Desactivar', 'workshop' ); ?>">
+                            <?php echo empty( $it['active'] ) ? '❌' : '✅'; ?>
+                        </button>
+                    </form>
+                </td>
+                <td class="ws-kb-patterns"><?php echo esc_html( implode( ' · ', array_slice( (array) $it['patterns'], 0, 4 ) ) . ( count( (array) $it['patterns'] ) > 4 ? ' …' : '' ) ); ?></td>
+                <td><?php echo esc_html( wp_trim_words( (string) $it['answer'], 22 ) ); ?></td>
+                <td><?php echo $it['link_target'] ? '<code>' . esc_html( $it['link_target'] ) . '</code>' : '—'; ?></td>
+                <td>
+                    <a class="button button-small" href="<?php echo esc_url( admin_url( 'admin.php?page=ws-chatbot&tab=knowledge&edit=' . $it['id'] ) ); ?>"><?php esc_html_e( 'Editar', 'workshop' ); ?></a>
+                    <form method="post" style="display:inline" onsubmit="return confirm('<?php echo esc_js( __( '¿Eliminar esta pregunta?', 'workshop' ) ); ?>');">
+                        <?php wp_nonce_field( 'ws_chatbot_save', 'ws_chatbot_nonce' ); ?>
+                        <input type="hidden" name="ws_kb_action" value="delete">
+                        <input type="hidden" name="ws_kb_id" value="<?php echo esc_attr( $it['id'] ); ?>">
+                        <button type="submit" class="button button-small"><?php esc_html_e( 'Borrar', 'workshop' ); ?></button>
+                    </form>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+
+    <?php ws_chatbot_admin_kb_form( $editing ); ?>
+    <?php
+}
+
+function ws_chatbot_admin_kb_form( $editing ) {
+    $targets = array(
+        ''                   => __( '— Sin enlace —', 'workshop' ),
+        'register'           => __( 'Registro de negocio', 'workshop' ),
+        'stores'             => __( 'Tiendas del mercado', 'workshop' ),
+        'ayuda'              => __( 'Página de Ayuda', 'workshop' ),
+        'contacto'           => __( 'Página de Contacto', 'workshop' ),
+        'market'             => __( 'Portada del mercado', 'workshop' ),
+        'panel:dashboard'    => __( 'Panel: Inicio', 'workshop' ),
+        'panel:products'     => __( 'Panel: Productos', 'workshop' ),
+        'panel:orders'       => __( 'Panel: Pedidos', 'workshop' ),
+        'panel:stock'        => __( 'Panel: Stock', 'workshop' ),
+        'panel:pos'          => __( 'Panel: Vender (POS)', 'workshop' ),
+        'panel:pos-sales'    => __( 'Panel: Ventas POS', 'workshop' ),
+        'panel:customers'    => __( 'Panel: Clientes', 'workshop' ),
+        'panel:suppliers'    => __( 'Panel: Proveedores', 'workshop' ),
+        'panel:workers'      => __( 'Panel: Trabajadores', 'workshop' ),
+        'panel:reports'      => __( 'Panel: Reportes', 'workshop' ),
+        'panel:loyalty'      => __( 'Panel: Fidelización', 'workshop' ),
+        'panel:reviews'      => __( 'Panel: Valoraciones', 'workshop' ),
+        'panel:appearance'   => __( 'Panel: Tu sitio', 'workshop' ),
+        'panel:plan'         => __( 'Panel: Mi plan', 'workshop' ),
+    );
+    $item = $editing ? $editing : array(
+        'id' => 'new', 'patterns' => array(), 'answer' => '',
+        'link_target' => '', 'link_label' => '', 'link_icon' => '', 'active' => 1,
+    );
+    ?>
+    <form method="post" class="ws-kb-item-form">
+        <?php wp_nonce_field( 'ws_chatbot_save', 'ws_chatbot_nonce' ); ?>
+        <input type="hidden" name="ws_kb_action" value="save">
+        <input type="hidden" name="ws_kb_id" value="<?php echo esc_attr( $item['id'] ); ?>">
+        <h2><?php echo $editing ? esc_html__( 'Editar pregunta', 'workshop' ) : esc_html__( 'Añadir nueva pregunta', 'workshop' ); ?></h2>
+
+        <label><?php esc_html_e( 'Patrones (frases que activan esta respuesta)', 'workshop' ); ?></label>
+        <textarea name="ws_kb_patterns" rows="3" placeholder="<?php esc_attr_e( 'Una frase por línea. Ej:&#10;como comprar&#10;hacer un pedido', 'workshop' ); ?>"><?php echo esc_textarea( implode( "\n", (array) $item['patterns'] ) ); ?></textarea>
+        <p class="ws-kb-help"><?php esc_html_e( 'El bot responde con esta respuesta si el usuario escribe cualquiera de estas frases (coincidencia parcial).', 'workshop' ); ?></p>
+
+        <label><?php esc_html_e( 'Respuesta del bot', 'workshop' ); ?></label>
+        <textarea name="ws_kb_answer" rows="3" style="width:100%"><?php echo esc_textarea( (string) $item['answer'] ); ?></textarea>
+
+        <div class="ws-kb-grid">
+            <div>
+                <label><?php esc_html_e( 'Enlace (opcional)', 'workshop' ); ?></label>
+                <select name="ws_kb_link_target">
+                    <?php foreach ( $targets as $val => $label ) : ?>
+                        <option value="<?php echo esc_attr( $val ); ?>" <?php selected( $item['link_target'], $val ); ?>><?php echo esc_html( $label ); ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div>
+                <label><?php esc_html_e( 'Texto del botón', 'workshop' ); ?></label>
+                <input type="text" name="ws_kb_link_label" value="<?php echo esc_attr( $item['link_label'] ); ?>" placeholder="<?php esc_attr_e( 'Ej: Ver tiendas', 'workshop' ); ?>">
+                <p class="ws-kb-help"><?php esc_html_e( 'Icono FontAwesome (opcional): fa-store, fa-arrow-pointer…', 'workshop' ); ?></p>
+                <input type="text" name="ws_kb_link_icon" value="<?php echo esc_attr( $item['link_icon'] ); ?>" placeholder="fa-arrow-pointer">
+            </div>
+        </div>
+
+        <p>
+            <label><input type="checkbox" name="ws_kb_active" value="1" <?php checked( ! empty( $item['active'] ), 1 ); ?>> <?php esc_html_e( 'Activa', 'workshop' ); ?></label>
+        </p>
+        <p>
+            <button type="submit" class="button button-primary"><?php esc_html_e( 'Guardar pregunta', 'workshop' ); ?></button>
+            <?php if ( $editing ) : ?>
+                <a class="button" href="<?php echo esc_url( admin_url( 'admin.php?page=ws-chatbot&tab=knowledge' ) ); ?>"><?php esc_html_e( 'Cancelar', 'workshop' ); ?></a>
+            <?php endif; ?>
+        </p>
+    </form>
+    <?php
+}
+
+/* -------------------------------------------------------------------------
+ * Pestaña Mensajes
+ * ---------------------------------------------------------------------- */
+
+function ws_chatbot_save_messages( $post ) {
+    $keys = array(
+        'title', 'subtitle', 'placeholder', 'typing', 'open',
+        'welcomePublic', 'welcomeGuest', 'welcomePanel', 'welcomeNewUser',
+        'welcomeLocked', 'lockedBody', 'goPlan', 'atajosTitle', 'noAtajos',
+        'productHint', 'stockHint', 'ordersHint', 'registerHook', 'fallback',
+        'storeTeaser',
+    );
+    $messages = array();
+    foreach ( $keys as $k ) {
+        $v = sanitize_textarea_field( $post[ 'ws_msg_' . $k ] ?? '' );
+        if ( '' !== $v ) {
+            $messages[ $k ] = $v;
+        }
+    }
+    $opt = get_option( 'ws_chatbot_config', array() );
+    $opt = is_array( $opt ) ? $opt : array();
+    $opt['messages'] = $messages;
+    update_option( 'ws_chatbot_config', $opt );
+    echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__( 'Mensajes guardados.', 'workshop' ) . '</p></div>';
+}
+
+function ws_chatbot_admin_messages_form() {
+    $admin  = ws_chatbot_admin_settings();
+    $msgs   = array_merge( ws_chatbot_strings(), $admin['messages'] );
+    $fields = array(
+        'title'          => __( 'Título del widget', 'workshop' ),
+        'subtitle'       => __( 'Subtítulo (estado)', 'workshop' ),
+        'placeholder'    => __( 'Placeholder del campo', 'workshop' ),
+        'welcomePublic'  => __( 'Bienvenida pública', 'workshop' ),
+        'welcomeGuest'   => __( 'Bienvenida visitante sin sesión', 'workshop' ),
+        'welcomePanel'   => __( 'Bienvenida en el panel', 'workshop' ),
+        'welcomeNewUser' => __( 'Bienvenida cliente con sesión', 'workshop' ),
+        'welcomeLocked'  => __( 'Plan sin chatbot (título)', 'workshop' ),
+        'lockedBody'     => __( 'Plan sin chatbot (texto)', 'workshop' ),
+        'goPlan'         => __( 'Botón "ver planes" (upsell)', 'workshop' ),
+        'atajosTitle'    => __( 'Título de atajos', 'workshop' ),
+        'noAtajos'       => __( 'Intro de atajos', 'workshop' ),
+        'registerHook'   => __( 'Frase de conversión al registro', 'workshop' ),
+        'fallback'       => __( 'Respuesta cuando no entiende', 'workshop' ),
+        'storeTeaser'    => __( 'Sugerencia dentro de una tienda', 'workshop' ),
+    );
+    ?>
+    <form method="post" style="max-width:720px;background:#fff;border:1px solid #dcdcde;padding:16px">
+        <?php wp_nonce_field( 'ws_chatbot_save', 'ws_chatbot_nonce' ); ?>
+        <?php foreach ( $fields as $key => $label ) : ?>
+            <p>
+                <label for="msg-<?php echo esc_attr( $key ); ?>" style="font-weight:600"><?php echo esc_html( $label ); ?></label><br>
+                <textarea id="msg-<?php echo esc_attr( $key ); ?>" name="ws_msg_<?php echo esc_attr( $key ); ?>" rows="2" style="width:100%;margin-top:4px"><?php echo esc_textarea( $msgs[ $key ] ?? '' ); ?></textarea>
+            </p>
+        <?php endforeach; ?>
+        <p><button type="submit" class="button button-primary"><?php esc_html_e( 'Guardar mensajes', 'workshop' ); ?></button></p>
+    </form>
+    <?php
+}
+
+/* -------------------------------------------------------------------------
+ * Pestaña Comportamiento
+ * ---------------------------------------------------------------------- */
+
+function ws_chatbot_save_behavior( $post ) {
+    $opt = get_option( 'ws_chatbot_config', array() );
+    $opt = is_array( $opt ) ? $opt : array();
+    $opt['enabled_public'] = ! empty( $post['ws_enabled_public'] ) ? 1 : 0;
+    $opt['enabled_panel']  = ! empty( $post['ws_enabled_panel'] ) ? 1 : 0;
+    update_option( 'ws_chatbot_config', $opt );
+    echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__( 'Comportamiento guardado.', 'workshop' ) . '</p></div>';
+}
+
+function ws_chatbot_admin_behavior_form() {
+    $admin = ws_chatbot_admin_settings();
+    ?>
+    <form method="post" style="max-width:720px;background:#fff;border:1px solid #dcdcde;padding:16px">
+        <?php wp_nonce_field( 'ws_chatbot_save', 'ws_chatbot_nonce' ); ?>
+        <p>
+            <label style="font-weight:600">
+                <input type="checkbox" name="ws_enabled_public" value="1" <?php checked( $admin['enabled_public'], 1 ); ?>>
+                <?php esc_html_e( 'Mostrar el asistente en el sitio público (visitantes y clientes)', 'workshop' ); ?>
+            </label>
+        </p>
+        <p>
+            <label style="font-weight:600">
+                <input type="checkbox" name="ws_enabled_panel" value="1" <?php checked( $admin['enabled_panel'], 1 ); ?>>
+                <?php esc_html_e( 'Mostrar el asistente en el panel de negocio (si el plan lo incluye; si no, muestra el aviso de mejora)', 'workshop' ); ?>
+            </label>
+        </p>
+        <p class="description"><?php esc_html_e( 'Recuerda: en el panel el bot asiste solo si el plan del negocio incluye chatbot (Planes → checkbox "Incluye el asistente"). Visitantes y nuevos usuarios siempre reciben asistencia.', 'workshop' ); ?></p>
+        <p><button type="submit" class="button button-primary"><?php esc_html_e( 'Guardar comportamiento', 'workshop' ); ?></button></p>
+    </form>
+    <?php
+}
+
+/* -------------------------------------------------------------------------
+ * Pestaña Analítica
+ * ---------------------------------------------------------------------- */
+
+function ws_chatbot_admin_stats() {
+    $log = get_option( 'ws_chatbot_stats', array() );
+    $log = is_array( $log ) ? $log : array();
+    $total = (int) ( $log['_total'] ?? 0 );
+    $last  = (string) ( $log['_last'] ?? '' );
+
+    $rows = array();
+    foreach ( $log as $key => $count ) {
+        if ( 0 === strpos( (string) $key, '_' ) ) {
+            continue;
+        }
+        $rows[ $key ] = (int) $count;
+    }
+    arsort( $rows );
+    ?>
+    <div class="ws-stats-grid">
+        <div class="ws-stat-card"><strong><?php echo esc_html( number_format_i18n( $total ) ); ?></strong><span><?php esc_html_e( 'Interacciones totales', 'workshop' ); ?></span></div>
+        <div class="ws-stat-card"><strong><?php echo esc_html( number_format_i18n( count( $rows ) ) ); ?></strong><span><?php esc_html_e( 'Intenciones distintas', 'workshop' ); ?></span></div>
+        <div class="ws-stat-card"><strong><?php echo esc_html( $last ? mysql2date( 'd/m/Y H:i', $last ) : '—' ); ?></strong><span><?php esc_html_e( 'Última interacción', 'workshop' ); ?></span></div>
+    </div>
+
+    <table class="ws-kb-table" style="max-width:720px">
+        <thead><tr><th><?php esc_html_e( 'Intención', 'workshop' ); ?></th><th style="width:120px"><?php esc_html_e( 'Usos', 'workshop' ); ?></th></tr></thead>
+        <tbody>
+        <?php if ( empty( $rows ) ) : ?>
+            <tr><td colspan="2"><em><?php esc_html_e( 'Aún no hay interacciones registradas.', 'workshop' ); ?></em></td></tr>
+        <?php endif; ?>
+        <?php foreach ( $rows as $key => $count ) : ?>
+            <tr><td><code><?php echo esc_html( $key ); ?></code></td><td><?php echo esc_html( number_format_i18n( $count ) ); ?></td></tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+
+    <form method="post" style="margin-top:14px" onsubmit="return confirm('<?php echo esc_js( __( '¿Restablecer toda la analítica?', 'workshop' ) ); ?>');">
+        <?php wp_nonce_field( 'ws_chatbot_save', 'ws_chatbot_nonce' ); ?>
+        <button type="submit" name="ws_chatbot_reset_stats" value="1" class="button"><?php esc_html_e( 'Restablecer analítica', 'workshop' ); ?></button>
+    </form>
+    <?php
+}

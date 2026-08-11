@@ -289,11 +289,8 @@ get_header();
             </template>
         </div>
     </div>
-    <!-- Botón flotante de ayuda (siempre visible; se oculta con el tutorial abierto). -->
-    <button type="button" class="ws-panel-help-fab" @click="openTutorial()" x-show="!open && !tourActive" x-cloak aria-label="<?php esc_attr_e( 'Ayuda', 'workshop' ); ?>">
-        <i class="fa-solid fa-circle-question"></i>
-        <span><?php esc_html_e( 'Ayuda', 'workshop' ); ?></span>
-    </button>
+    <!-- La ayuda del panel ahora la da el asistente (chatbot): botón flotante
+         propio con recorridos guiados, atajos por rol y preguntas frecuentes. -->
 
     <!-- ============ TOUR GUIADO: spotlight sobre la sección actual ============ -->
     <div class="ws-tour" x-show="tourActive" x-cloak x-transition.opacity role="dialog" aria-modal="true" aria-label="<?php esc_attr_e( 'Recorrido guiado', 'workshop' ); ?>">

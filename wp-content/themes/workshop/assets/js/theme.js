@@ -1616,6 +1616,12 @@
                         this.view = 'welcome';
                     });
                 }
+                // El asistente (chatbot) puede abrir el recorrido guiado.
+                window.addEventListener('ws-open-tutorial', () => {
+                    this.open = true;
+                    this.view = 'list';
+                    this.currentKey = '';
+                });
             },
             openTutorial() {
                 this.open = true;

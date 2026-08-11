@@ -98,6 +98,9 @@ function ws_admin_page_plans() {
                             }
                             echo esc_html( implode( ' · ', $parts ) );
                             ?>
+                            <?php if ( WS_Plans::has_chatbot( $p ) ) : ?>
+                                <br><span style="color:#3b82f6"><i class="fa-solid fa-robot"></i> <?php esc_html_e( 'Chatbot', 'workshop' ); ?></span>
+                            <?php endif; ?>
                         </td>
                         <td>
                             <?php if ( (int) $p->is_trial ) : ?><span class="dashicons dashicons-megaphone" style="color:#7c3aed"></span> <?php esc_html_e( 'Prueba', 'workshop' ); ?><?php endif; ?>
@@ -194,6 +197,7 @@ function ws_plan_edit_form( $p = null ) {
             <tr>
                 <th scope="row"><?php esc_html_e( 'Opciones', 'workshop' ); ?></th>
                 <td>
+                    <label><input type="checkbox" name="has_chatbot" value="1" <?php checked( $p && WS_Plans::has_chatbot( $p ), 1 ); ?>> <i class="fa-solid fa-robot"></i> <?php esc_html_e( 'Incluye el asistente (chatbot) del sitio para su panel', 'workshop' ); ?></label><br>
                     <label><input type="checkbox" name="is_trial" value="1" <?php checked( $p && (int) $p->is_trial, 1 ); ?>> <?php esc_html_e( 'Es la prueba gratis (se asigna al registrarse)', 'workshop' ); ?></label><br>
                     <label><input type="checkbox" name="is_active" value="1" <?php checked( ! $p || (int) $p->is_active, 1 ); ?>> <?php esc_html_e( 'Activo (visible en el front)', 'workshop' ); ?></label>
                 </td>
