@@ -74,13 +74,18 @@ function ws_chatbot_config() {
     $admin = ws_chatbot_admin_settings();
     $show  = $in_panel ? (bool) $admin['enabled_panel'] : (bool) $admin['enabled_public'];
 
+    // El router guarda en ws_location el objeto de la ubicación (store.php lo
+    // usa como $location->id); aquí solo necesitamos el slug para el widget.
+    $ws_loc   = get_query_var( 'ws_location' );
+    $loc_slug = is_object( $ws_loc ) ? (string) ( $ws_loc->slug ?? '' ) : (string) $ws_loc;
+
     $ctx = array(
         'inPanel' => $in_panel,
         'role'    => $is_admin && ! $role ? 'admin' : $role,
         'logged'  => $logged,
         'bizName' => ws_site_name(),
         'bizSlug' => $slug,
-        'locSlug' => (string) get_query_var( 'ws_location' ),
+        'locSlug' => $loc_slug,
         'chatbot' => $chatbot,
         'planName'=> $plan_name,
         'home'    => $home,
