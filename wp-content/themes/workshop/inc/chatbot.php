@@ -1252,7 +1252,16 @@ function ws_chatbot_run_tasks() {
         if ( (int) ( $t['biz_id'] ?? 0 ) !== $biz_id || 'done' === ( $t['status'] ?? '' ) || (int) $t['at'] > $now ) {
             continue;
         }
-        $result = ws_chatbot_build_report( (string) ( $t['type'] ?? 'summary' ), 1 );
+        try {
+            $result = ws_chatbot_build_report( (string) ( $t['type'] ?? 'summary' ), 1 );
+        } catch ( \Throwable $e ) {
+            if ( function_exists( 'ws_log_error' ) ) {
+                ws_log_error( 'Fallo al ejecutar tarea programada: ' . $e->getMessage(), array( 'task' => (string) $t['id'] ) );
+            }
+            $tasks[ $i ]['status'] = 'done';
+            $ran++;
+            continue;
+        }
         $tasks[ $i ]['last_result'] = $result['text'];
         $tasks[ $i ]['last_run']    = current_time( 'mysql' );
         ws_chatbot_notify_user( (int) $t['user_id'], '🤖 ' . $result['title'], $result['text'], 'chatbot_task_' . $t['id'] );
@@ -1421,6 +1430,9 @@ function ws_security_log( $event, $detail = '' ) {
 add_action( 'wp_login_failed', 'ws_chatbot_login_failed', 10, 1 );
 function ws_chatbot_login_failed( $username ) {
     $ip = ws_security_log( 'Intento de acceso fallido', sanitize_user( $username ) );
+    if ( function_exists( 'ws_log_warning' ) ) {
+        ws_log_warning( 'Intento de acceso fallido: ' . sanitize_user( $username ), array( 'ip' => $ip ) );
+    }
     $rk = 'ws_sec_' . md5( $ip );
     $n  = (int) get_transient( $rk ) + 1;
     set_transient( $rk, $n, 10 * MINUTE_IN_SECONDS );
@@ -1763,9 +1775,7 @@ function ws_ajax_chatbot_llm() {
         'messages'    => array_merge( array( array( 'role' => 'system', 'content' => $system ) ), $history, array( array( 'role' => 'user', 'content' => mb_substr( $text, 0, 1000 ) ) ) ),
         'max_tokens'  => 400,
         'temperature' => 0.5,
-    );
-
-    $resp = wp_remote_post( 'https://openrouter.ai/api/v1/chat/completions', array(
+    );        $resp = wp_remote_post( 'https://openrouter.ai/api/v1/chat/completions', array(
         'timeout' => 25,
         'headers' => array(
             'Authorization' => 'Bearer ' . $key,
@@ -1774,6 +1784,9 @@ function ws_ajax_chatbot_llm() {
         'body'    => wp_json_encode( $body ),
     ) );
     if ( is_wp_error( $resp ) ) {
+        if ( function_exists( 'ws_log_error' ) ) {
+            ws_log_error( 'LLM (OpenRouter) no disponible: ' . $resp->get_error_message() );
+        }
         wp_send_json_error( array( 'msg' => __( 'La IA no está disponible ahora.', 'workshop' ) ) );
     }
     $code = (int) wp_remote_retrieve_response_code( $resp );
@@ -1781,6 +1794,9 @@ function ws_ajax_chatbot_llm() {
     $text = trim( (string) ( $json['choices'][0]['message']['content'] ?? '' ) );
     if ( $code >= 400 || '' === $text ) {
         $err = (string) ( $json['error']['message'] ?? __( 'La IA no respondió.', 'workshop' ) );
+        if ( function_exists( 'ws_log_error' ) ) {
+            ws_log_error( 'LLM (OpenRouter) respondió HTTP ' . $code . ': ' . mb_substr( $err, 0, 200 ) );
+        }
         wp_send_json_error( array( 'msg' => mb_substr( $err, 0, 200 ) ) );
     }
 

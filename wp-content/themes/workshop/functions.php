@@ -48,6 +48,7 @@ require_once WS_PATH . 'inc/site-pages.php';
 require_once WS_PATH . 'inc/tutorial.php';
 require_once WS_PATH . 'inc/chatbot.php';
 require_once WS_PATH . 'inc/admin-chatbot.php';
+require_once WS_PATH . 'inc/logs.php';
 require_once WS_PATH . 'inc/admin.php';
 require_once WS_PATH . 'inc/admin-users.php';
 require_once WS_PATH . 'inc/admin-plans.php';
