@@ -41,11 +41,34 @@ function ws_chatbot_assets() {
     wp_localize_script( 'ws-chatbot', 'WSBOT', $conf );
 }
 
+// Burbuja del asistente en TODO wp-admin (solo para el administrador del sitio):
+// así las alertas de errores de la app (logs) le llegan al chat sin ir a verlas.
+add_action( 'admin_enqueue_scripts', 'ws_chatbot_admin_assets' );
+function ws_chatbot_admin_assets() {
+    if ( ! current_user_can( 'manage_options' ) ) {
+        return;
+    }
+    $conf = ws_chatbot_config( true );
+    if ( empty( $conf['show'] ) ) {
+        return;
+    }
+    // FontAwesome para los iconos del widget dentro de wp-admin.
+    wp_enqueue_style( 'ws-fontawesome', 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css', array(), '6.5.1' );
+    wp_enqueue_style( 'ws-chatbot', WS_URL . 'assets/css/ws-assistant.css', array(), WS_VERSION );
+    wp_enqueue_script( 'ws-chatbot', WS_URL . 'assets/js/ws-assistant.js', array(), WS_VERSION, true );
+    wp_localize_script( 'ws-chatbot', 'WSBOT', $conf );
+    // El widget debe quedar por encima de la barra superior de wp-admin, pero
+    // el overlay SIEMPRE por debajo de la ventana del chat (100000 < 100001).
+    wp_add_inline_style( 'ws-chatbot', '#wpadminbar~#wsb-overlay{z-index:100000}#wpadminbar~#wsb-root{z-index:100001}body.wsb-chat-open{overflow:hidden}' );
+}
+
 /**
  * Conexión al sistema de mensajes (usa el mismo AJAX del tema).
  */
-function ws_chatbot_config() {
-    $in_panel = '' !== (string) get_query_var( 'ws_role' );
+function ws_chatbot_config( $in_admin = false ) {
+    // En wp-admin no existen los query vars del panel; se fuerza el modo panel
+    // para que el widget se comporte como asistente de negocio del admin.
+    $in_panel = $in_admin ? true : '' !== (string) get_query_var( 'ws_role' );
     $role     = ws_user_role();
     $is_admin = current_user_can( 'manage_options' );
     $logged   = is_user_logged_in();
@@ -72,7 +95,9 @@ function ws_chatbot_config() {
     // Por defecto el bot se muestra en público y en el panel; en el panel, si
     // el plan incluye chatbot asiste y si no emite el aviso de upgrade.
     $admin = ws_chatbot_admin_settings();
-    $show  = $in_panel ? (bool) $admin['enabled_panel'] : (bool) $admin['enabled_public'];
+    // En wp-admin la burbuja siempre se muestra al administrador del sitio
+    // (quiere ver las alertas de errores sin ir a buscarlas).
+    $show  = $in_admin ? true : ( $in_panel ? (bool) $admin['enabled_panel'] : (bool) $admin['enabled_public'] );
 
     // El router guarda en ws_location el objeto de la ubicación (store.php lo
     // usa como $location->id); aquí solo necesitamos el slug para el widget.
@@ -88,6 +113,9 @@ function ws_chatbot_config() {
         'locSlug' => $loc_slug,
         'chatbot' => $chatbot,
         'planName'=> $plan_name,
+        // Enlace directo al visor de logs (solo admin de WP): lo usa el widget
+        // para el chip "Ver Logs" cuando llega una alerta de error.
+        'logsUrl' => $is_admin ? admin_url( 'admin.php?page=ws-logs' ) : '',
         'home'    => $home,
         'userId'  => get_current_user_id(),
         // WhatsApp del admin del sitio (derivación a humano cuando el bot
@@ -949,7 +977,8 @@ function ws_chatbot_faq_knowledge() {
  */
 function ws_chatbot_knowledge_config() {
     $out       = array();
-    $has_role  = (bool) ws_user_role();
+    // Miembros de negocio y el admin del sitio (burbuja en wp-admin) ven todo.
+    $has_role  = (bool) ws_user_role() || current_user_can( 'manage_options' );
     foreach ( ws_chatbot_knowledge() as $item ) {
         // Los ítems que enlazan al panel (requieren sesión de negocio) se
         // ocultan a visitantes: el bot público orienta a comprar o registrarse.
@@ -1316,7 +1345,9 @@ function ws_ajax_chatbot_report() {
     if ( ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
         wp_send_json_error( array( 'msg' => __( 'Sesión expirada.', 'workshop' ) ) );
     }
-    if ( ! ws_user_role() ) {
+    // Miembros de negocio y el administrador del sitio (wp-admin) pueden pedir
+    // reportes; el admin de WP ve sobre todo el de logs de la app.
+    if ( ! ws_user_role() && ! current_user_can( 'manage_options' ) ) {
         wp_send_json_error( array( 'msg' => __( 'Solo para negocios.', 'workshop' ) ) );
     }
     $type = sanitize_key( $_POST['type'] ?? 'summary' );

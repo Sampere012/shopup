@@ -336,6 +336,7 @@ function ws_notifications_for_user( $user_id = 0, $limit = 40 ) {
             'title'    => $r->title,
             'message'  => $r->message,
             'link'     => $r->link,
+            'ref_key'  => (string) $r->ref_key,
             'is_read'  => (int) $r->is_read,
             'date'     => mysql2date( 'd/m/Y H:i', $r->created_at ),
             'time'     => human_time_diff( strtotime( $r->created_at ), current_time( 'timestamp' ) ) . ' ' . __( 'atrás', 'workshop' ),

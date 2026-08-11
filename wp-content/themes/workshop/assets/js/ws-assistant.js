@@ -1326,7 +1326,13 @@
         btn.classList.toggle('has-badge', !!n);
     }
 
-    // En el panel: avisa de pedidos nuevos y muestra el contador de no leídas.
+    // Evita repetir el aviso del mismo error incluso tras recargar la página.
+    var lastLogAlert = getF('wsb_log_alert_seen') || '';
+    function rememberLogAlert(key) { lastLogAlert = key; setF('wsb_log_alert_seen', key); }
+
+    // En el panel y en wp-admin: muestra el badge, avisa de pedidos nuevos y
+    // — lo más importante — el bot abre SOLO cuando llega un error de la app
+    // (logs) o un evento de seguridad, sin que el admin tenga que preguntar.
     function checkNotifications() {
         if (!isPanel || locked) { return; }
         api('ws_notifications_list', {}, function (json) {
@@ -1337,12 +1343,30 @@
             var hasNew = items.some(function (n) { return !n.is_read && (n.type === 'order_new' || n.type === 'order_pending'); });
             if (hasNew && !open && !getF('wsb_pro_alert')) {
                 setF('wsb_pro_alert', '1');
+                var ordersUrl = C.shortcuts && C.shortcuts.panel && C.shortcuts.panel.orders && C.shortcuts.panel.orders.url;
                 window.setTimeout(function () {
                     setOpen(true);
                     if (!body.children.length) { boot(); }
                     appendMsg('🔔 Tienes pedidos nuevos esperando tu revisión.', false);
-                    appendChips([{ label: 'Ver pedidos', url: C.shortcuts.panel.orders.url, icon: 'fa-cart-shopping' }]);
+                    if (ordersUrl) { appendChips([{ label: 'Ver pedidos', url: ordersUrl, icon: 'fa-cart-shopping' }]); }
                 }, 600);
+            }
+            // Errores de la app (ref_key ws_log_*) y alertas de seguridad
+            // (sec_alert_*): el bot avisa automáticamente al admin de WP.
+            var logErr = items.filter(function (n) {
+                return !n.is_read && n.ref_key && (n.ref_key.indexOf('ws_log_') === 0 || n.ref_key.indexOf('sec_alert_') === 0);
+            })[0];
+            if (logErr && !open && logErr.ref_key !== lastLogAlert) {
+                rememberLogAlert(logErr.ref_key);
+                window.setTimeout(function () {
+                    setOpen(true);
+                    if (!body.children.length) { boot(); }
+                    appendMsg((logErr.title ? logErr.title + ': ' : '⚠️ ') + logErr.message, false);
+                    var chips = [];
+                    if (C.logsUrl) { chips.push({ label: 'Ver Logs', url: C.logsUrl, icon: 'fa-file-lines' }); }
+                    chips.push({ label: 'Reporte de logs', icon: 'fa-chart-line', send: 'reporte de logs' });
+                    appendChips(chips);
+                }, 800);
             }
         });
     }
