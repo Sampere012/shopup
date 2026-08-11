@@ -1228,7 +1228,7 @@ function ws_chatbot_knowledge_extras() {
 
         // ---------- El propio asistente ----------
         $p( 'bot-que-puede', array( 'que puedes hacer', 'que sabe hacer el bot', 'que me puedes ayudar', 'tus funciones', 'capacidades del asistente' ), 'Puedo: crear, editar y eliminar productos (varios a la vez), reponer stock, aceptar o rechazar pedidos, crear clientes, registrar ventas en el POS, buscar productos, darte reportes de ventas/stock/equipo/seguridad, programar reportes para más tarde o cada día, y responderte las dudas frecuentes. Solo dime qué necesitas.', '', 'Ver atajos', 'fa-robot' ),
-        $p( 'bot-bulk', array( 'crear varios productos a la vez', 'productos en lote', 'borrar varios productos', 'editar varios productos', 'crear muchos productos' ), 'Para tareas en lote escríbeme los nombres separados por comas o por líneas. Por ejemplo: "crea los productos: Harina 1kg, Azúcar 1kg, Sal" y los creo todos con el mismo precio.', '', 'Probar', 'fa-layer-group' ),
+        $p( 'bot-bulk', array( 'crear varios productos a la vez', 'productos en lote', 'borrar varios productos', 'editar varios productos', 'crear muchos productos' ), 'Para tareas en lote escríbeme los nombres separados por comas o por líneas, y también puedes darle el precio y el stock a cada uno separados por comas en el mismo orden. Por ejemplo: "crea los productos: Harina 1kg, Azúcar 1kg, Sal" y cuando te pregunte el precio escribe "150, 180, 200" y el stock "10, 5, 8". Si pones menos precios que productos, el último se aplica a los restantes; si pones más, se ignoran los sobrantes.', '', 'Probar', 'fa-layer-group' ),
     );
 }
 

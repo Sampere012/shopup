@@ -778,6 +778,44 @@
         return low === 'si' || low === 'sí' || low === 'ok' || low === 'confirmar' || low === 'dale' || low === 'confirmo';
     }
 
+    // Convierte una lista separada por comas/punto y coma/saltos de línea en un
+    // array de números >= 0 (ignora vacíos e inválidos).
+    function parseNumList(value) {
+        return String(value).split(/[,;\n]/)
+            .map(function (s) { return s.trim(); })
+            .filter(Boolean)
+            .map(function (s) { return parseFloat(s.replace(',', '.').replace(/[^\d.]/g, '')); })
+            .filter(function (n) { return !isNaN(n) && n >= 0; });
+    }
+
+    // Alinea una lista de valores al número de productos: si hay MENOS valores
+    // que productos se repite el ÚLTIMO para los restantes; si hay MÁS, se
+    // ignoran los sobrantes (solo se toman hasta el último que iguala a los
+    // productos).
+    function alignVals(list, count) {
+        if (!list.length) { return []; }
+        var out = [];
+        for (var i = 0; i < count; i++) { out.push(list[Math.min(i, list.length - 1)]); }
+        return out;
+    }
+
+    // Resumen legible del lote de productos con sus precios y stock mínimos.
+    function productNewSummary(d) {
+        var names = d.names || [d.name];
+        var prices = d.prices || [d.sale_price || 0];
+        var mins = d.mins || [d.min_stock || 0];
+        var samePrice = prices.every(function (v) { return v === prices[0]; });
+        var sameMin = mins.every(function (v) { return v === mins[0]; });
+        if (names.length > 1 && (!samePrice || !sameMin)) {
+            return '¿Confirmas crear ' + names.length + ' productos? ' + names.map(function (nm, i) {
+                return nm + ' → ' + formatNum(prices[i]) + (mins[i] ? ' (mín ' + mins[i] + ')' : '');
+            }).join(' · ');
+        }
+        return names.length > 1
+            ? '¿Confirmas crear ' + names.length + ' productos (' + names.join(', ') + ') a ' + formatNum(prices[0]) + ' cada uno' + (sameMin && mins[0] ? ' (mín ' + mins[0] + ')' : '') + '?'
+            : '¿Confirmas crear el producto "' + (d.name || names[0]) + '" a ' + formatNum(prices[0]) + (mins[0] ? ' (mín ' + mins[0] + ')' : '') + '?';
+    }
+
     // Busca productos en el panel y ofrece elegir con chips.
     function pickFromSearch(q, onPick) {
         var t = showTyping();
@@ -997,18 +1035,32 @@
                 if (!d.names.length) { ask('Escribe al menos un nombre:', [], 'action:product_new:name'); return; }
                 d.name = d.names[0];
                 p.step = 'price';
-                ask(d.names.length > 1 ? 'Perfecto, crearé ' + d.names.length + ' productos (' + d.names.join(', ') + '). ¿Qué precio de venta tienen? (uno para todos, ej: 150):' : '¿Cuál es el precio de venta? (ej: 150):', [], 'action:product_new:price');
+                ask(d.names.length > 1 ? 'Perfecto, crearé ' + d.names.length + ' productos (' + d.names.join(', ') + '). ¿Qué precio de venta tiene cada uno? Escríbelos separados por comas en el mismo orden (ej: 150, 180, 200) o uno solo para todos (ej: 150):' : '¿Cuál es el precio de venta? (ej: 150):', [], 'action:product_new:price');
             } else if (p.step === 'price') {
-                var pr = parseFloat(value.replace(',', '.').replace(/[^\d.]/g, ''));
-                if (isNaN(pr) || pr < 0) { ask('Escribe un precio válido (ej: 150):', [], 'action:product_new:price'); return; }
-                d.sale_price = pr;
+                // Un producto: la coma es separador decimal (150,50 → 150.50).
+                // Varios productos: la coma separa el precio de cada uno (150, 180, 200).
+                var rawPrices = d.names.length === 1
+                    ? [parseFloat(value.replace(',', '.').replace(/[^\d.]/g, ''))]
+                    : parseNumList(value);
+                var pricesOk = rawPrices.filter(function (n) { return !isNaN(n) && n >= 0; });
+                if (!pricesOk.length) {
+                    ask('Escribe un precio válido (ej: 150)' + (d.names.length > 1 ? ' o varios separados por comas en el mismo orden (ej: 150, 180, 200):' : ':'), [], 'action:product_new:price');
+                    return;
+                }
+                d.prices = alignVals(pricesOk, d.names.length);
+                if (d.mins && d.mins.length) {
+                    // El stock ya se precargó en la frase one-shot: confirmar directo.
+                    p.step = 'confirm';
+                    confirmAsk(productNewSummary(d), 'action:product_new:confirm');
+                    return;
+                }
                 p.step = 'min';
-                ask(d.names.length > 1 ? '¿Stock mínimo para recibir avisos? (0 si no quieres, aplica a todos):' : '¿Stock mínimo para recibir avisos? (0 si no quieres):', [], 'action:product_new:min');
+                ask(d.names.length > 1 ? '¿Stock mínimo para recibir avisos? (0 si no quieres; también puedes poner uno por producto separado por comas, ej: 10, 5, 8):' : '¿Stock mínimo para recibir avisos? (0 si no quieres):', [], 'action:product_new:min');
             } else if (p.step === 'min') {
-                var mn = parseFloat(value.replace(',', '.').replace(/[^\d.]/g, ''));
-                d.min_stock = isNaN(mn) ? 0 : mn;
+                var minVals = parseNumList(value);
+                d.mins = alignVals(minVals.length ? minVals : [0], d.names.length);
                 p.step = 'confirm';
-                confirmAsk(d.names.length > 1 ? '¿Confirmas crear ' + d.names.length + ' productos (' + d.names.join(', ') + ') a ' + formatNum(d.sale_price) + ' cada uno?' : '¿Confirmas crear el producto "' + d.name + '" a ' + formatNum(d.sale_price) + '?', 'action:product_new:confirm');
+                confirmAsk(productNewSummary(d), 'action:product_new:confirm');
             } else if (p.step === 'confirm') {
                 if (confirmYes(low)) { p.step = 'execute'; executeFlow(); }
                 else { ask('Escribe "confirmar" para continuar o "cancelar" para salir:', [], 'action:confirm:again'); }
@@ -1246,14 +1298,21 @@
 
         if (p.flow === 'product_new') {
             var names = (d.names && d.names.length) ? d.names : [d.name];
+            var prices = d.prices && d.prices.length ? d.prices : [d.sale_price || 0];
+            var mins = d.mins && d.mins.length ? d.mins : [d.min_stock || 0];
+            var pi = 0;
             execSeq(names, function (n, next) {
-                api('ws_save_product', { name: n, sale_price: String(d.sale_price), min_stock: String(d.min_stock || 0) }, next);
+                var idx = pi++;
+                var pr = prices[Math.min(idx, prices.length - 1)];
+                var mn = mins[Math.min(idx, mins.length - 1)];
+                api('ws_save_product', { name: n, sale_price: String(pr), min_stock: String(mn || 0) }, next);
             }, function (okCount, firstErr) {
                 pendingAction = null;
                 if (okCount > 0) {
                     setMem('product_new', names.join(', '));
+                    var samePrice = prices.every(function (v) { return v === prices[0]; });
                     reply(okCount === names.length
-                        ? '¡Listo! ✅ Creé ' + okCount + ' producto(s) a ' + formatNum(d.sale_price) + ' cada uno.'
+                        ? '¡Listo! ✅ Creé ' + okCount + ' producto(s)' + (samePrice ? ' a ' + formatNum(prices[0]) + ' cada uno' : ' con sus precios') + '.'
                         : 'Se crearon ' + okCount + ' de ' + names.length + ' productos.' + (firstErr ? ' ' + firstErr : ''), [{ label: 'Ver productos', url: C.shortcuts.panel.products.url, icon: 'fa-boxes-stacked' }], 'action:product_new:ok');
                 } else {
                     reply(firstErr || 'No se pudo crear ningún producto. Revisa los límites de tu plan.', [{ label: 'Reintentar', icon: 'fa-rotate', send: 'crear producto' }], 'action:product_new:error');
@@ -1421,7 +1480,61 @@
     }
 
     function startFlow(name) {
-        if (name === 'product_new') { pendingAction = { flow: 'product_new', step: 'name', data: {} }; ask('Perfecto, creo el producto por ti. ¿Cómo se llama? (si son varios, sepáralos con comas)', [], 'action:product_new:name'); }
+        if (name === 'product_new') {
+            pendingAction = { flow: 'product_new', step: 'name', data: {} };
+            // One-shot: "crea los productos: Harina 1kg, Azúcar, Sal" precarga los
+            // nombres y salta directo a pedir precios. Si la frase además trae
+            // precios ("a 150, 180") y/o stock ("con stock 10, 5"), se precargan.
+            var bulk = String(lastUserText || '').match(/(?:crea|crear)\s+los\s+productos\s*:?\s*([^]+)/i);
+            if (bulk) {
+                var rawNames = bulk[1];
+                // Stock al final de la frase: "... con stock 10, 5, 8" / "... stock 10, 5".
+                var stM = rawNames.match(/(?:con\s+)?(?:stock|mínimo|minimo)\s*:?\s*([\d.,\s]+?)\s*$/i);
+                var preStocks = [];
+                if (stM) {
+                    preStocks = parseNumList(stM[1]);
+                    rawNames = rawNames.slice(0, rawNames.length - stM[0].length).trim();
+                }
+                // Precios al final: "... a 150, 180, 200" / "... precios 150, 180".
+                var prM = rawNames.match(/(?:a|precios?)\s*:?\s*([\d.,\s]+?)\s*$/i);
+                var prePrices = [];
+                if (prM) {
+                    // Coma seguida de espacio = lista (150, 180). Coma pegada al
+                    // dígito = separador decimal (150,50 → 150.50).
+                    var pRaw = prM[1].trim();
+                    var isList = /,[\s\n;]/.test(pRaw) || /[\s;\n]/.test(pRaw.replace(/,/g, ''));
+                    if (!isList) {
+                        var oneP = parseFloat(pRaw.replace(',', '.').replace(/[^\d.]/g, ''));
+                        if (!isNaN(oneP) && oneP >= 0) { prePrices = [oneP]; }
+                    } else {
+                        prePrices = parseNumList(pRaw);
+                    }
+                    rawNames = rawNames.slice(0, rawNames.length - prM[0].length).trim().replace(/[,\s]+$/, '');
+                }
+                var preNames = rawNames.split(/[,;\n]/).map(function (s) { return s.trim(); }).filter(Boolean);
+                if (preNames.length) {
+                    pendingAction.data.names = preNames;
+                    pendingAction.data.name = preNames[0];
+                    pendingAction.data.prices = prePrices.length ? alignVals(prePrices, preNames.length) : [];
+                    pendingAction.data.mins = preStocks.length ? alignVals(preStocks, preNames.length) : [];
+                    pendingAction.step = 'price';
+                    if (prePrices.length && preStocks.length) {
+                        // Ambos precargados: confirmar directo. El step debe ser
+                        // 'confirm' para que escribir "confirmar" funcione igual
+                        // que tocar el chip (no re-procesar la rama min).
+                        pendingAction.step = 'confirm';
+                        confirmAsk(productNewSummary(pendingAction.data), 'action:product_new:confirm');
+                    } else if (prePrices.length) {
+                        pendingAction.step = 'min';
+                        ask(preNames.length > 1 ? '¿Stock mínimo para recibir avisos? (0 si no quieres; también puedes poner uno por producto separado por comas, ej: 10, 5, 8):' : '¿Stock mínimo para recibir avisos? (0 si no quieres):', [], 'action:product_new:min');
+                    } else {
+                        ask('Perfecto, crearé ' + preNames.length + ' productos (' + preNames.join(', ') + '). ¿Qué precio de venta tiene cada uno? Escríbelos separados por comas en el mismo orden (ej: 150, 180, 200) o uno solo para todos (ej: 150):', [], 'action:product_new:price');
+                    }
+                    return;
+                }
+            }
+            ask('Perfecto, creo el producto por ti. ¿Cómo se llama? (si son varios, sepáralos con comas)', [], 'action:product_new:name');
+        }
         else if (name === 'product_edit') { pendingAction = { flow: 'product_edit', step: 'pick', data: {} }; ask('¿Qué producto quieres editar? Escríbelo (o varios separados por comas para el mismo cambio):', [], 'action:edit:pick'); }
         else if (name === 'product_delete') { pendingAction = { flow: 'product_delete', step: 'pick', data: {} }; ask('¿Qué producto quieres eliminar? Escríbelo (o varios separados por comas):', [], 'action:delete:pick'); }
         else if (name === 'report') { reportFlow('ask'); }
@@ -1441,7 +1554,7 @@
     /* ------------------------------------------------------------------ */
 
     var ACTION_PHRASES = [
-        ['product_new', ['crea un producto', 'crear un producto', 'quiero crear un producto', 'nuevo producto', 'agregar un producto', 'agregar producto', 'crear producto', 'dar de alta un producto', 'añadir producto', 'añadir un producto']],
+        ['product_new', ['crea los productos', 'crear los productos', 'crea un producto', 'crear un producto', 'quiero crear un producto', 'nuevo producto', 'agregar un producto', 'agregar producto', 'crear producto', 'dar de alta un producto', 'añadir producto', 'añadir un producto']],
         ['product_edit', ['editar producto', 'edita el producto', 'editar un producto', 'cambiar precio', 'cambiar el precio', 'actualizar producto', 'modificar producto', 'cambiar nombre del producto']],
         ['product_delete', ['borrar producto', 'eliminar producto', 'quitar producto', 'borra el producto', 'elimina el producto', 'borrar un producto', 'eliminar un producto', 'dar de baja un producto']],
         ['restock', ['reponer stock', 'reponer inventario', 'entrada de stock', 'entrada de mercancia', 'agregar stock', 'meter stock', 'agregar existencias', 'reponer existencias']],
