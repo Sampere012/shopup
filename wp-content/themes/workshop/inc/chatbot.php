@@ -14,9 +14,13 @@
  * - Administrador del sitio: siempre ve el asistente de panel.
  *
  * La interacción (intenciones, atajos y proactividad) vive en
- * assets/js/chatbot.js; aquí se calcula la configuración por rol/plan y se
- * localiza la variable WSBOT. El historial de intenciones se registra en la
- * opción ws_chatbot_stats para alimentar la mejora continua.
+ * assets/js/ws-assistant.js; aquí se calcula la configuración por rol/plan y
+ * se localiza la variable WSBOT. El historial de intenciones se registra en
+ * la opción ws_chatbot_stats para alimentar la mejora continua.
+ *
+ * NOTA: los assets se llaman ws-assistant.css/.js (no chatbot.*) porque el
+ * WAF de InfinityFree bloquea con 403 cualquier archivo estático cuyo nombre
+ * contenga "chatbot" (rompía el widget en producción).
  *
  * @package Workshop
  */
@@ -32,8 +36,8 @@ function ws_chatbot_assets() {
     if ( ! $conf['show'] ) {
         return;
     }
-    wp_enqueue_style( 'ws-chatbot', WS_URL . 'assets/css/chatbot.css', array(), WS_VERSION );
-    wp_enqueue_script( 'ws-chatbot', WS_URL . 'assets/js/chatbot.js', array(), WS_VERSION, true );
+    wp_enqueue_style( 'ws-chatbot', WS_URL . 'assets/css/ws-assistant.css', array(), WS_VERSION );
+    wp_enqueue_script( 'ws-chatbot', WS_URL . 'assets/js/ws-assistant.js', array(), WS_VERSION, true );
     wp_localize_script( 'ws-chatbot', 'WSBOT', $conf );
 }
 
