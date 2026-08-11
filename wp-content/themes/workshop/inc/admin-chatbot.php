@@ -365,6 +365,8 @@ function ws_chatbot_save_behavior( $post ) {
     $opt = is_array( $opt ) ? $opt : array();
     $opt['enabled_public'] = ! empty( $post['ws_enabled_public'] ) ? 1 : 0;
     $opt['enabled_panel']  = ! empty( $post['ws_enabled_panel'] ) ? 1 : 0;
+    $opt['llm_key']        = sanitize_text_field( $post['ws_llm_key'] ?? '' );
+    $opt['llm_model']      = sanitize_text_field( $post['ws_llm_model'] ?? 'openrouter/auto' );
     update_option( 'ws_chatbot_config', $opt );
     echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__( 'Comportamiento guardado.', 'workshop' ) . '</p></div>';
 }
@@ -387,6 +389,31 @@ function ws_chatbot_admin_behavior_form() {
             </label>
         </p>
         <p class="description"><?php esc_html_e( 'Recuerda: en el panel el bot asiste solo si el plan del negocio incluye chatbot (Planes → checkbox "Incluye el asistente"). Visitantes y nuevos usuarios siempre reciben asistencia.', 'workshop' ); ?></p>
+
+        <hr style="margin:18px 0">
+        <h2><?php esc_html_e( 'IA opcional (conversación libre)', 'workshop' ); ?></h2>
+        <p class="description"><?php esc_html_e( 'Cuando el bot no entiende una frase, puede responder con un modelo de IA vía OpenRouter. La clave se guarda solo en el servidor (nunca llega al navegador) y se consume por interacción no resuelta.', 'workshop' ); ?></p>
+        <p>
+            <label for="ws-llm-key" style="font-weight:600"><?php esc_html_e( 'Clave de OpenRouter (API key)', 'workshop' ); ?></label><br>
+            <input type="password" id="ws-llm-key" name="ws_llm_key" value="<?php echo esc_attr( $admin['llm_key'] ); ?>" style="width:100%;max-width:420px;margin-top:4px" autocomplete="off" placeholder="sk-or-v1-…">
+            <span class="ws-kb-help"><?php esc_html_e( 'La consigues gratis en openrouter.ai → API Keys. Sin clave, el bot usa solo sus respuestas internas.', 'workshop' ); ?></span>
+        </p>
+        <p>
+            <label for="ws-llm-model" style="font-weight:600"><?php esc_html_e( 'Modelo', 'workshop' ); ?></label><br>
+            <select id="ws-llm-model" name="ws_llm_model" style="max-width:420px;margin-top:4px">
+                <?php
+                $models = array(
+                    'openrouter/auto'          => __( 'openrouter/auto (elige el mejor según la consulta)', 'workshop' ),
+                    'meta-llama/llama-3.1-8b-instruct:free' => __( 'Llama 3.1 8B (gratuito)', 'workshop' ),
+                    'meta-llama/llama-3.3-70b-instruct'     => __( 'Llama 3.3 70B (potente)', 'workshop' ),
+                    'openai/gpt-4o-mini'       => 'GPT-4o mini',
+                    'anthropic/claude-3.5-haiku' => 'Claude 3.5 Haiku',
+                );
+                foreach ( $models as $val => $label ) : ?>
+                    <option value="<?php echo esc_attr( $val ); ?>" <?php selected( $admin['llm_model'], $val ); ?>><?php echo esc_html( $label ); ?></option>
+                <?php endforeach; ?>
+            </select>
+        </p>
         <p><button type="submit" class="button button-primary"><?php esc_html_e( 'Guardar comportamiento', 'workshop' ); ?></button></p>
     </form>
     <?php
@@ -410,12 +437,24 @@ function ws_chatbot_admin_stats() {
         $rows[ $key ] = (int) $count;
     }
     arsort( $rows );
+    $fallback = (int) ( $log['public:fallback'] ?? 0 ) + (int) ( $log['panel:fallback'] ?? 0 );
+    $flows    = 0;
+    foreach ( $rows as $key => $count ) {
+        if ( 0 === strpos( (string) $key, 'action:' ) || 0 === strpos( (string) $key, 'llm:' ) ) {
+            $flows += (int) $count;
+        }
+    }
     ?>
     <div class="ws-stats-grid">
         <div class="ws-stat-card"><strong><?php echo esc_html( number_format_i18n( $total ) ); ?></strong><span><?php esc_html_e( 'Interacciones totales', 'workshop' ); ?></span></div>
         <div class="ws-stat-card"><strong><?php echo esc_html( number_format_i18n( count( $rows ) ) ); ?></strong><span><?php esc_html_e( 'Intenciones distintas', 'workshop' ); ?></span></div>
+        <div class="ws-stat-card"><strong><?php echo esc_html( number_format_i18n( $fallback ) ); ?></strong><span><?php esc_html_e( 'Sin respuesta (fallback)', 'workshop' ); ?></span></div>
+        <div class="ws-stat-card"><strong><?php echo esc_html( number_format_i18n( $flows ) ); ?></strong><span><?php esc_html_e( 'Acciones/IA ejecutadas', 'workshop' ); ?></span></div>
         <div class="ws-stat-card"><strong><?php echo esc_html( $last ? mysql2date( 'd/m/Y H:i', $last ) : '—' ); ?></strong><span><?php esc_html_e( 'Última interacción', 'workshop' ); ?></span></div>
     </div>
+    <?php if ( $fallback > 0 ) : ?>
+        <p class="ws-kb-help"><?php esc_html_e( 'Las frases que caen en "fallback" son oportunidades de entrenamiento: conviértelas en preguntas de la pestaña Conocimiento (o activa la IA en Comportamiento) para que el bot las resuelva.', 'workshop' ); ?></p>
+    <?php endif; ?>
 
     <table class="ws-kb-table" style="max-width:720px">
         <thead><tr><th><?php esc_html_e( 'Intención', 'workshop' ); ?></th><th style="width:120px"><?php esc_html_e( 'Usos', 'workshop' ); ?></th></tr></thead>

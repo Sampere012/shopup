@@ -80,6 +80,16 @@ function ws_chatbot_config() {
         'chatbot' => $chatbot,
         'planName'=> $plan_name,
         'home'    => $home,
+        'userId'  => get_current_user_id(),
+        // WhatsApp del admin del sitio (derivación a humano cuando el bot
+        // no resuelve). Se pasa al widget solo para construir el enlace.
+        'whatsapp'=> ws_admin_whatsapp_number(),
+        // IA opcional (OpenRouter vía proxy PHP): el widget solo sabe si está
+        // activa y qué modelo usar; la clave nunca viaja al navegador.
+        'llm'     => array(
+            'enabled' => '' !== trim( (string) $admin['llm_key'] ),
+            'model'   => (string) $admin['llm_model'],
+        ),
     );
 
     $shortcuts = array(
@@ -264,6 +274,10 @@ function ws_chatbot_admin_settings() {
         'enabled_public' => 1,
         'enabled_panel'  => 1,
         'messages'       => array(),
+        // IA opcional: clave de OpenRouter + modelo. La clave NUNCA sale del
+        // servidor; el widget solo pregunta al proxy PHP ws_chatbot_llm.
+        'llm_key'        => '',
+        'llm_model'      => 'openrouter/auto',
     );
     $opt = get_option( 'ws_chatbot_config', array() );
     $opt = is_array( $opt ) ? $opt : array();
@@ -271,6 +285,8 @@ function ws_chatbot_admin_settings() {
         'enabled_public' => isset( $opt['enabled_public'] ) ? (int) $opt['enabled_public'] : $defaults['enabled_public'],
         'enabled_panel'  => isset( $opt['enabled_panel'] ) ? (int) $opt['enabled_panel'] : $defaults['enabled_panel'],
         'messages'       => isset( $opt['messages'] ) && is_array( $opt['messages'] ) ? $opt['messages'] : array(),
+        'llm_key'        => isset( $opt['llm_key'] ) ? (string) $opt['llm_key'] : '',
+        'llm_model'      => ! empty( $opt['llm_model'] ) ? (string) $opt['llm_model'] : $defaults['llm_model'],
     );
     return $out;
 }
@@ -555,12 +571,15 @@ function ws_ajax_chatbot_search() {
         foreach ( array_slice( ws_user_location_ids(), 0, 5 ) as $lid ) {
             foreach ( WS_Stock::stock_rows( array( 'location_id' => $lid, 'search' => $q, 'limit' => 4 ) ) as $r ) {
                 $out[] = array(
-                    'name'       => (string) $r->name,
-                    'price_text' => number_format_i18n( (float) $r->sale_price, 2 ) . ' ' . ( $r->currency ? $r->currency : '€' ),
-                    'stock_text' => (float) $r->qty > 0 ? sprintf( __( 'Stock: %s', 'workshop' ), number_format_i18n( (float) $r->qty, 2 ) ) : __( 'Agotado', 'workshop' ),
-                    'where'      => (string) $r->location_name,
-                    'url'        => $panel_url,
-                    'in_stock'   => (float) $r->qty > 0,
+                    'id'          => (int) $r->product_id,
+                    'location_id' => (int) $r->location_id,
+                    'name'        => (string) $r->name,
+                    'price'       => (float) $r->sale_price,
+                    'price_text'  => number_format_i18n( (float) $r->sale_price, 2 ) . ' ' . ( $r->currency ? $r->currency : '€' ),
+                    'stock_text'  => (float) $r->qty > 0 ? sprintf( __( 'Stock: %s', 'workshop' ), number_format_i18n( (float) $r->qty, 2 ) ) : __( 'Agotado', 'workshop' ),
+                    'where'       => (string) $r->location_name,
+                    'url'         => $panel_url,
+                    'in_stock'    => (float) $r->qty > 0,
                 );
                 if ( count( $out ) >= $limit ) {
                     break 2;
@@ -693,4 +712,180 @@ function ws_ajax_chatbot_track() {
     $log['_last']       = current_time( 'mysql' );
     update_option( 'ws_chatbot_stats', $log );
     wp_send_json_success();
+}
+
+/* -------------------------------------------------------------------------
+ * Acciones desde el chat (Fase 2): contexto para los formularios guiados
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Contexto mínimo para ejecutar acciones en el panel: id del usuario, moneda
+ * y sus ubicaciones con el estado de caja (para reponer stock o vender POS).
+ */
+add_action( 'wp_ajax_ws_chatbot_meta', 'ws_ajax_chatbot_meta' );
+function ws_ajax_chatbot_meta() {
+    if ( ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Sesión expirada.', 'workshop' ) ) );
+    }
+    $role = ws_user_role();
+    if ( ! $role ) {
+        wp_send_json_error( array( 'msg' => __( 'Acciones disponibles solo para negocios.', 'workshop' ) ) );
+    }
+    $locs = array();
+    foreach ( ws_user_locations() as $l ) {
+        $locs[] = array(
+            'id'        => (int) $l->id,
+            'name'      => (string) $l->name,
+            'open_cash' => (bool) WS_POS::get_open_cash( (int) $l->id ),
+        );
+    }
+    wp_send_json_success( array(
+        'user_id'   => get_current_user_id(),
+        'currency'  => ws_currency_symbol(),
+        'locations' => $locs,
+    ) );
+}
+
+/**
+ * Productos más vendidos del negocio (POS + pedidos) para recomendar en el chat.
+ */
+add_action( 'wp_ajax_ws_chatbot_top', 'ws_ajax_chatbot_top' );
+function ws_ajax_chatbot_top() {
+    if ( ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Sesión expirada.', 'workshop' ) ) );
+    }
+    $role = ws_user_role();
+    if ( ! $role ) {
+        wp_send_json_error( array( 'msg' => __( 'Disponible solo para negocios.', 'workshop' ) ) );
+    }
+    $loc_ids = ws_user_location_ids();
+    if ( empty( $loc_ids ) ) {
+        wp_send_json_success( array( 'products' => array() ) );
+    }
+
+    global $wpdb;
+    $ph   = implode( ',', array_fill( 0, count( $loc_ids ), '%d' ) );
+    $args = array_map( 'intval', $loc_ids );
+    $ps_t = ws_table_name( 'pos_sales' );
+    $pi_t = ws_table_name( 'pos_sale_items' );
+    $o_t  = ws_table_name( 'orders' );
+    $oi_t = ws_table_name( 'order_items' );
+
+    $rows = $wpdb->get_results( $wpdb->prepare(
+        "SELECT product_id, product_name, SUM(qty) AS qty, SUM(qty*price) AS total FROM (
+            SELECT pi.product_id, pi.product_name, pi.qty, pi.price
+            FROM {$pi_t} pi INNER JOIN {$ps_t} ps ON ps.id = pi.sale_id
+            WHERE ps.location_id IN ({$ph}) AND ps.status = 'completed'
+            UNION ALL
+            SELECT oi.product_id, oi.product_name, oi.qty, oi.price
+            FROM {$oi_t} oi INNER JOIN {$o_t} o ON o.id = oi.order_id
+            WHERE o.location_id IN ({$ph}) AND o.status IN ('accepted','completed')
+        ) t GROUP BY product_id, product_name ORDER BY qty DESC LIMIT 5",
+        ...$args
+    ) );
+
+    $out = array();
+    foreach ( (array) $rows as $r ) {
+        $out[] = array(
+            'name'  => (string) $r->product_name,
+            'qty'   => (float) $r->qty,
+            'total' => (float) $r->total,
+        );
+    }
+    wp_send_json_success( array( 'products' => $out, 'currency' => ws_currency_symbol() ) );
+}
+
+/* -------------------------------------------------------------------------
+ * IA opcional (Fase 3): proxy a OpenRouter desde PHP.
+ *
+ * El motor Node.js que se barajó no es viable en hosting compartido
+ * (InfinityFree), así que el "cerebro" es un endpoint PHP del propio tema:
+ * el admin pega su clave de OpenRouter en wp-admin > Asistente >
+ * Comportamiento, y cuando el bot no entiende una frase la deriva a la IA
+ * manteniendo el historial breve de la conversación.
+ * ---------------------------------------------------------------------- */
+
+add_action( 'wp_ajax_ws_chatbot_llm', 'ws_ajax_chatbot_llm' );
+add_action( 'wp_ajax_nopriv_ws_chatbot_llm', 'ws_ajax_chatbot_llm' );
+function ws_ajax_chatbot_llm() {
+    if ( ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Sesión expirada.', 'workshop' ) ) );
+    }
+    $admin = ws_chatbot_admin_settings();
+    $key   = trim( (string) $admin['llm_key'] );
+    if ( '' === $key ) {
+        wp_send_json_error( array( 'msg' => __( 'La IA no está configurada.', 'workshop' ) ) );
+    }
+    // El nonce es público (el widget corre para visitantes): la clave del admin
+    // no puede exponerse a spam. Límite sencillo por IP: 60 llamadas / 10 min.
+    // Se respeta la IP real si el sitio va detrás de Cloudflare u otro proxy
+    // (si no, REMOTE_ADDR sería la IP del proxy y todos compartirían el límite).
+    $ip = (string) ( $_SERVER['HTTP_CF_CONNECTING_IP'] ?? '' );
+    if ( '' === $ip && ! empty( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) {
+        $ip = trim( (string) explode( ',', (string) $_SERVER['HTTP_X_FORWARDED_FOR'] )[0] );
+    }
+    if ( '' === $ip ) {
+        $ip = (string) ( $_SERVER['REMOTE_ADDR'] ?? '' );
+    }
+    $rk = 'ws_llm_' . md5( $ip );
+    $n  = (int) get_transient( $rk );
+    if ( $n >= 60 ) {
+        wp_send_json_error( array( 'msg' => __( 'Has alcanzado el límite de consultas por un momento. Inténtalo luego.', 'workshop' ) ) );
+    }
+    set_transient( $rk, $n + 1, 10 * MINUTE_IN_SECONDS );
+
+    $text = sanitize_textarea_field( wp_unslash( $_POST['text'] ?? '' ) );
+    if ( '' === trim( $text ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Escribe algo para consultar.', 'workshop' ) ) );
+    }
+
+    // Historial breve (solo user/assistant, acotado) para dar contexto.
+    $history = array();
+    foreach ( (array) json_decode( wp_unslash( $_POST['history'] ?? '[]' ), true ) as $m ) {
+        $role    = ( 'assistant' === ( $m['role'] ?? '' ) ) ? 'assistant' : 'user';
+        $content = (string) ( $m['content'] ?? '' );
+        if ( '' !== trim( $content ) ) {
+            $history[] = array( 'role' => $role, 'content' => mb_substr( $content, 0, 600 ) );
+        }
+    }
+    $history = array_slice( $history, -6 );
+
+    $system = 'Eres el asistente virtual de ShopUp, un mercado de tiendas locales donde cada negocio tiene su propia tienda online y panel de gestión. ' .
+        'Los VISITANTES buscan productos, quieren saber cómo comprar, cómo seguir un pedido, devoluciones y envíos; invítalos a registrarse gratis para montar su negocio. ' .
+        'Los NEGOCIOS gestionan en su panel: productos, stock (entradas/salidas/transferencias), pedidos (aceptar/rechazar), ventas POS con caja, clientes (CRM), trabajadores con roles, reportes y planes. ' .
+        'El bot puede crear/editar/eliminar productos, reponer stock, aceptar pedidos, crear clientes y registrar ventas si el usuario lo pide. ' .
+        'Responde en español, breve y con tono amable (algún emoji). Si te piden algo fuera de estas capacidades, sugiere contactar soporte por la página de Contacto o WhatsApp.';
+
+    $body = array(
+        'model'       => (string) $admin['llm_model'],
+        'messages'    => array_merge( array( array( 'role' => 'system', 'content' => $system ) ), $history, array( array( 'role' => 'user', 'content' => mb_substr( $text, 0, 1000 ) ) ) ),
+        'max_tokens'  => 400,
+        'temperature' => 0.5,
+    );
+
+    $resp = wp_remote_post( 'https://openrouter.ai/api/v1/chat/completions', array(
+        'timeout' => 25,
+        'headers' => array(
+            'Authorization' => 'Bearer ' . $key,
+            'Content-Type'  => 'application/json',
+        ),
+        'body'    => wp_json_encode( $body ),
+    ) );
+    if ( is_wp_error( $resp ) ) {
+        wp_send_json_error( array( 'msg' => __( 'La IA no está disponible ahora.', 'workshop' ) ) );
+    }
+    $code = (int) wp_remote_retrieve_response_code( $resp );
+    $json = json_decode( wp_remote_retrieve_body( $resp ), true );
+    $text = trim( (string) ( $json['choices'][0]['message']['content'] ?? '' ) );
+    if ( $code >= 400 || '' === $text ) {
+        $err = (string) ( $json['error']['message'] ?? __( 'La IA no respondió.', 'workshop' ) );
+        wp_send_json_error( array( 'msg' => mb_substr( $err, 0, 200 ) ) );
+    }
+
+    $log  = get_option( 'ws_chatbot_stats', array() );
+    $log  = is_array( $log ) ? $log : array();
+    $log['llm:used'] = (int) ( $log['llm:used'] ?? 0 ) + 1;
+    update_option( 'ws_chatbot_stats', $log );
+
+    wp_send_json_success( array( 'text' => $text ) );
 }

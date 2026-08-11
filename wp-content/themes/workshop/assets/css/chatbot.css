@@ -39,11 +39,13 @@
 
 /* Badge de novedad */
 #wsb-button .wsb-badge {
-    position: absolute; top: 2px; right: 2px; width: 14px; height: 14px;
-    border-radius: 50%; background: #ef4444; border: 2px solid #fff;
-    display: none;
+    position: absolute; top: 2px; right: 2px; min-width: 14px; height: 14px;
+    border-radius: 999px; background: #ef4444; border: 2px solid #fff;
+    display: none; font-size: .58rem; line-height: 12px; text-align: center;
+    padding: 0 3px; color: #fff; font-weight: 700;
 }
-#wsb-button.wsb-unseen .wsb-badge { display: block; }
+#wsb-button.wsb-unseen .wsb-badge,
+#wsb-button.has-badge .wsb-badge { display: block; }
 
 /* ---------- Teaser (burbuja de bienvenida) ---------- */
 #wsb-teaser {
@@ -224,3 +226,19 @@
     #wsb-button { width: 56px; height: 56px; margin-left: auto; }
     #wsb-teaser { right: 68px; max-width: 200px; }
 }
+
+/* ---------- Fase 2: chips de acción, elección y confirmación ---------- */
+.wsb-chip-pick { border-style: dashed; }
+.wsb-chip-success {
+    background: #dcfce7; border-color: #86efac; color: #166534;
+}
+.wsb-chip-success i { color: #16a34a; }
+.wsb-chip-danger {
+    background: #fee2e2; border-color: #fca5a5; color: #991b1b;
+}
+.wsb-chip-danger i { color: #dc2626; }
+.wsb-chip-success:hover { background: #bbf7d0; box-shadow: 0 4px 10px rgba(22, 163, 74, .18); }
+.wsb-chip-danger:hover { background: #fecaca; box-shadow: 0 4px 10px rgba(220, 38, 38, .18); }
+
+/* Totales destacados dentro de las tarjetas del chat */
+.wsb-card .wsb-card-item-meta b { color: var(--wsb-primary); }

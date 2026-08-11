@@ -112,7 +112,7 @@
         chips.forEach(function (chip) {
             var b = document.createElement('button');
             b.type = 'button';
-            b.className = 'wsb-chip';
+            b.className = 'wsb-chip' + (chip.cls ? ' ' + chip.cls : '');
             b.innerHTML = '<i class="fa-solid ' + (chip.icon || 'fa-arrow-pointer') + '" aria-hidden="true"></i> <span></span>';
             if (chip.label) { b.querySelector('span').textContent = chip.label; }
             if (chip.click) {
@@ -160,6 +160,8 @@
         window.setTimeout(function () {
             if (t && t.parentNode) { body.removeChild(t); }
             appendMsg(text, false);
+            chatHistory.push({ role: 'assistant', content: text });
+            if (chatHistory.length > 20) { chatHistory = chatHistory.slice(-20); }
             if (chips && chips.length) { appendChips(chips); }
         }, 450 + Math.min(500, text.length * 8));
     }
@@ -170,6 +172,9 @@
 
     var lastUserText = '';
     var pendingAsk = null; // {type:'search'} | {type:'order_number'} | {type:'order_phone', number}
+    var pendingAction = null; // {flow, step, data} — formularios guiados del panel
+    var mem = { lastAction: '', lastEntity: '', count: 0 };
+    var chatHistory = [];
 
     function escapeHtml(s) {
         return String(s == null ? '' : s)
@@ -316,6 +321,7 @@
     }
 
     function handlePending(value) {
+        if (pendingAction) { handlePendingAction(value); return; }
         var low = value.toLowerCase();
         if (low.indexOf('cancelar') > -1 || low.indexOf('salir') > -1 || low === 'nada' || low === 'no' || low === 'olvidalo' || low === 'olvídalo') {
             pendingAsk = null;
@@ -341,6 +347,636 @@
             busy = false;
             checkOrder(p.number, value);
         }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Fase 2: el bot EJECUTA acciones del panel (formularios guiados)      */
+    /* ------------------------------------------------------------------ */
+
+    function setMem(action, entity) {
+        mem.lastAction = action;
+        mem.lastEntity = entity || '';
+        mem.count = (mem.count || 0) + 1;
+        try { setF('wsb_mem', JSON.stringify(mem)); } catch (e) {}
+    }
+
+    function loadMem() {
+        try {
+            var raw = getF('wsb_mem');
+            if (raw) {
+                var parsed = JSON.parse(raw);
+                if (parsed && typeof parsed === 'object') { mem = parsed; }
+            }
+        } catch (e) {}
+    }
+
+    function cancelFlow() {
+        pendingAction = null;
+        reply('Entendido, lo dejamos ahí. ¿Algo más?', chipsFor(isPanel ? ['atajos'] : ['marketplace', 'ayuda', 'contacto']), 'action:cancel');
+        busy = false;
+    }
+
+    // Arranca un flujo solo si no hay otro en curso (evita estados solapados).
+    function startFlowGuard(name) {
+        if (pendingAction || pendingAsk) {
+            reply('Ya tienes una acción en curso. Escríbela o "cancelar" para empezar otra.', [], 'action:busy');
+            busy = false;
+            return;
+        }
+        startFlow(name);
+    }
+
+    function ask(text, chips, intent) {
+        reply(text, chips || [], intent);
+        busy = false;
+    }
+
+    // Pide confirmación con chips Sí/No (las acciones destructivas la exigen).
+    function confirmAsk(text, intent) {
+        reply(text, [
+            { label: 'Sí, confirmar', cls: 'wsb-chip-success', icon: 'fa-check', click: function () { pendingAction.step = 'execute'; executeFlow(); } },
+            { label: 'No, cancelar', cls: 'wsb-chip-danger', icon: 'fa-xmark', click: cancelFlow }
+        ], intent);
+        busy = false;
+    }
+
+    function confirmYes(low) {
+        return low === 'si' || low === 'sí' || low === 'ok' || low === 'confirmar' || low === 'dale' || low === 'confirmo';
+    }
+
+    // Busca productos en el panel y ofrece elegir con chips.
+    function pickFromSearch(q, onPick) {
+        var t = showTyping();
+        api('ws_chatbot_search', { q: q }, function (json) {
+            removeTyping(t);
+            if (!json || !json.success || !(json.data && json.data.products && json.data.products.length)) {
+                reply('No encontré "' + q + '" en tu inventario. Prueba con otra palabra o escribe cancelar.', [{ label: 'Cancelar', cls: 'wsb-chip-danger', icon: 'fa-xmark', click: cancelFlow }], 'action:pick:none');
+                busy = false;
+                return;
+            }
+            var seen = {};
+            var rows = [];
+            (json.data.products || []).forEach(function (r) {
+                if (!seen[r.id]) { seen[r.id] = 1; rows.push(r); }
+            });
+            reply('¿Cuál de estos?', rows.slice(0, 6).map(function (r) {
+                return {
+                    label: r.name + (r.price_text ? ' · ' + r.price_text : ''),
+                    cls: 'wsb-chip-pick',
+                    icon: 'fa-box',
+                    click: function () { onPick(r); }
+                };
+            }), 'action:pick:list');
+            busy = false;
+        });
+    }
+
+    function handlePendingAction(value) {
+        var low = String(value || '').toLowerCase();
+        if (low.indexOf('cancelar') > -1 || low === 'no' || low === 'nada' || low === 'salir' || low.indexOf('olvid') > -1) {
+            if (pendingAction.step === 'confirm') { cancelFlow(); return; }
+            pendingAction = null;
+            reply('No hay problema. ¿Te ayudo con otra cosa?', chipsFor(isPanel ? ['atajos'] : ['marketplace', 'ayuda', 'contacto']), 'cancel');
+            busy = false;
+            return;
+        }
+        var p = pendingAction;
+        var d = p.data;
+
+        if (p.flow === 'product_new') {
+            if (p.step === 'name') {
+                if (!value.trim()) { ask('El nombre no puede quedar vacío:', [], 'action:product_new:name'); return; }
+                d.name = value;
+                p.step = 'price';
+                ask('¿Cuál es el precio de venta? (ej: 150):', [], 'action:product_new:price');
+            } else if (p.step === 'price') {
+                var pr = parseFloat(value.replace(',', '.').replace(/[^\d.]/g, ''));
+                if (isNaN(pr) || pr < 0) { ask('Escribe un precio válido (ej: 150):', [], 'action:product_new:price'); return; }
+                d.sale_price = pr;
+                p.step = 'min';
+                ask('¿Stock mínimo para recibir avisos? (0 si no quieres):', [], 'action:product_new:min');
+            } else if (p.step === 'min') {
+                var mn = parseFloat(value.replace(',', '.').replace(/[^\d.]/g, ''));
+                d.min_stock = isNaN(mn) ? 0 : mn;
+                p.step = 'confirm';
+                confirmAsk('¿Confirmas crear el producto "' + d.name + '" a ' + formatNum(d.sale_price) + '?', 'action:product_new:confirm');
+            } else if (p.step === 'confirm') {
+                if (confirmYes(low)) { p.step = 'execute'; executeFlow(); }
+                else { ask('Escribe "confirmar" para continuar o "cancelar" para salir:', [], 'action:confirm:again'); }
+            }
+            return;
+        }
+
+        if (p.flow === 'product_edit') {
+            if (p.step === 'pick') {
+                pickFromSearch(value, function (r) {
+                    d.product = r;
+                    p.step = 'field';
+                    ask('¿Qué quieres cambiar de "' + r.name + '"?', [
+                        { label: 'Nombre', cls: 'wsb-chip-pick', icon: 'fa-font', click: function () { d.field = 'name'; p.step = 'value'; ask('Escribe el nuevo nombre:', [], 'action:edit:name'); } },
+                        { label: 'Precio de venta', cls: 'wsb-chip-pick', icon: 'fa-tag', click: function () { d.field = 'price'; p.step = 'value'; ask('Escribe el nuevo precio (ej: 150):', [], 'action:edit:price'); } }
+                    ], 'action:edit:field');
+                });
+            } else if (p.step === 'field') {
+                if (low === '1' || low === 'nombre' || low === 'name') { d.field = 'name'; p.step = 'value'; ask('Escribe el nuevo nombre:', [], 'action:edit:name'); }
+                else if (low === '2' || low === 'precio' || low === 'price' || low.indexOf('precio') > -1) { d.field = 'price'; p.step = 'value'; ask('Escribe el nuevo precio (ej: 150):', [], 'action:edit:price'); }
+                else { ask('Elige 1) Nombre o 2) Precio de venta:', [], 'action:edit:field'); }
+            } else if (p.step === 'value') {
+                if (d.field === 'name') {
+                    if (!value.trim()) { ask('El nombre no puede quedar vacío:', [], 'action:edit:name'); return; }
+                    d.value = value;
+                    p.step = 'confirm';
+                    confirmAsk('¿Confirmas cambiar el nombre a "' + value + '"?', 'action:edit:confirm');
+                } else {
+                    var vp = parseFloat(value.replace(',', '.').replace(/[^\d.]/g, ''));
+                    if (isNaN(vp) || vp < 0) { ask('Precio inválido. Escribe el nuevo precio (ej: 150):', [], 'action:edit:price'); return; }
+                    d.value = vp;
+                    p.step = 'confirm';
+                    confirmAsk('¿Confirmas el nuevo precio ' + formatNum(vp) + '?', 'action:edit:confirm');
+                }
+            } else if (p.step === 'confirm') {
+                if (confirmYes(low)) { p.step = 'execute'; executeFlow(); }
+                else { ask('Escribe "confirmar" para continuar o "cancelar" para salir:', [], 'action:confirm:again'); }
+            }
+            return;
+        }
+
+        if (p.flow === 'product_delete') {
+            if (p.step === 'pick') {
+                pickFromSearch(value, function (r) {
+                    d.product = r;
+                    p.step = 'confirm';
+                    confirmAsk('⚠️ Vas a ELIMINAR "' + r.name + '" para siempre. ¿Confirmas?', 'action:delete:confirm');
+                });
+            } else if (p.step === 'confirm') {
+                if (confirmYes(low)) { p.step = 'execute'; executeFlow(); }
+                else { ask('Escribe "confirmar" para continuar o "cancelar" para salir:', [], 'action:confirm:again'); }
+            }
+            return;
+        }
+
+        if (p.flow === 'restock') {
+            if (p.step === 'pick') {
+                pickFromSearch(value, function (r) {
+                    d.product = r;
+                    if (d.meta.locations.length > 1) {
+                        p.step = 'loc';
+                        ask('¿En qué tienda entra el stock?', d.meta.locations.map(function (l) {
+                            return { label: l.name, cls: 'wsb-chip-pick', icon: 'fa-store', click: function () { d.location = l; p.step = 'qty'; ask('¿Cuántas unidades de "' + r.name + '" entran?', [], 'action:restock:qty'); } };
+                        }), 'action:restock:loc');
+                    } else {
+                        d.location = d.meta.locations[0];
+                        p.step = 'qty';
+                        ask('¿Cuántas unidades de "' + r.name + '" entran en ' + d.location.name + '?', [], 'action:restock:qty');
+                    }
+                });
+            } else if (p.step === 'loc') {
+                var li = parseInt(low, 10);
+                if (!isNaN(li) && d.meta.locations[li - 1]) { d.location = d.meta.locations[li - 1]; p.step = 'qty'; ask('¿Cuántas unidades entran en ' + d.location.name + '?', [], 'action:restock:qty'); }
+                else { ask('Elige una tienda de la lista (número):', [], 'action:restock:loc'); }
+            } else if (p.step === 'qty') {
+                var q = parseFloat(value.replace(',', '.'));
+                if (isNaN(q) || q <= 0) { ask('Cantidad inválida. ¿Cuántas unidades entran?', [], 'action:restock:qty'); return; }
+                d.qty = q;
+                p.step = 'confirm';
+                confirmAsk('¿Confirmas entrada de ' + q + ' uds de "' + d.product.name + '" en ' + d.location.name + '?', 'action:restock:confirm');
+            } else if (p.step === 'confirm') {
+                if (confirmYes(low)) { p.step = 'execute'; executeFlow(); }
+                else { ask('Escribe "confirmar" para continuar o "cancelar" para salir:', [], 'action:confirm:again'); }
+            }
+            return;
+        }
+
+        if (p.flow === 'order_accept' || p.flow === 'order_reject') {
+            if (p.step === 'pick') {
+                var found = null;
+                (d.list || []).forEach(function (o) {
+                    if (!found && (String(o.number) === value.trim() || String(o.id) === value.trim())) { found = o; }
+                });
+                if (found) { pickOrder(p.flow === 'order_accept' ? 'accept' : 'reject', found); }
+                else { ask('Escribe el número del pedido (ej: 12) o toca un chip:', [], 'action:order:pick'); }
+            } else if (p.step === 'confirm') {
+                if (confirmYes(low)) { p.step = 'execute'; executeFlow(); }
+                else { ask('Escribe "confirmar" para continuar o "cancelar" para salir:', [], 'action:confirm:again'); }
+            }
+            return;
+        }
+
+        if (p.flow === 'customer_new') {
+            if (p.step === 'name') {
+                if (!value.trim()) { ask('El nombre no puede quedar vacío:', [], 'action:customer:name'); return; }
+                d.name = value;
+                p.step = 'phone';
+                ask('¿Teléfono? (opcional, ej: 5xxxxxxx o escribe "ninguno"):', [], 'action:customer:phone');
+            } else if (p.step === 'phone') {
+                d.phone = (low === 'ninguno' || low === 'ningun' || low === 'no') ? '' : value;
+                p.step = 'confirm';
+                confirmAsk('¿Confirmas crear el cliente "' + d.name + '"' + (d.phone ? ' · ' + d.phone : '') + '?', 'action:customer:confirm');
+            } else if (p.step === 'confirm') {
+                if (confirmYes(low)) { p.step = 'execute'; executeFlow(); }
+                else { ask('Escribe "confirmar" para continuar o "cancelar" para salir:', [], 'action:confirm:again'); }
+            }
+            return;
+        }
+
+        if (p.flow === 'pos_cart') {
+            if (p.step === 'pick') {
+                pickFromSearch(value, addToPosCart);
+            } else if (p.step === 'qty') {
+                var q2 = parseFloat(value.replace(',', '.'));
+                if (isNaN(q2) || q2 <= 0) { ask('Cantidad inválida. ¿Cuántas unidades?', [], 'action:pos:qty'); return; }
+                var r = d.tmp;
+                var cur = d.cart.filter(function (it) { return it.product_id === r.id; })[0];
+                if (cur) { cur.qty += q2; } else { d.cart.push({ product_id: r.id, product_name: r.name, qty: q2, price: r.price }); }
+                p.step = 'more';
+                var tot = d.cart.reduce(function (a, it) { return a + it.qty * it.price; }, 0);
+                ask('Agregado ✅ Llevas ' + d.cart.length + ' producto(s), total ' + formatNum(tot) + ' ' + (d.meta.currency || '') + '. ¿Seguimos?', [
+                    { label: 'Agregar otro', cls: 'wsb-chip-pick', icon: 'fa-plus', click: function () { p.step = 'pick'; ask('¿Qué otro producto vendes? Escríbelo:', [], 'action:pos:pick'); } },
+                    { label: 'Finalizar venta', cls: 'wsb-chip-success', icon: 'fa-flag-checkered', click: function () { p.step = 'confirm'; showPosSummary(); } },
+                    { label: 'Cancelar', cls: 'wsb-chip-danger', icon: 'fa-xmark', click: cancelFlow }
+                ], 'action:pos:more');
+            } else if (p.step === 'more') {
+                if (low === 'finalizar' || low === 'terminar' || low === 'cobrar' || low === 'listo') { p.step = 'confirm'; showPosSummary(); }
+                else if (low === 'agregar otro' || low === 'agregar') { p.step = 'pick'; ask('¿Qué otro producto vendes?', [], 'action:pos:pick'); }
+                else { p.step = 'pick'; pickFromSearch(value, addToPosCart); }
+            } else if (p.step === 'confirm') {
+                if (confirmYes(low)) { p.step = 'execute'; executeFlow(); }
+                else { ask('Escribe "confirmar" para continuar o "cancelar" para salir:', [], 'action:confirm:again'); }
+            }
+            return;
+        }
+    }
+
+    function addToPosCart(r) {
+        var p = pendingAction;
+        var d = p.data;
+        d.tmp = r;
+        p.step = 'qty';
+        var cur = d.cart.filter(function (it) { return it.product_id === r.id; })[0];
+        ask((cur ? 'Ya tienes "' + cur.product_name + '" en la venta. ' : '') + '¿Cuántas unidades de "' + r.name + '"?', [], 'action:pos:qty');
+    }
+
+    function showPosSummary() {
+        var d = pendingAction.data;
+        var rows = d.cart.map(function (it) {
+            return { name: it.product_name, meta: it.qty + ' × ' + formatNum(it.price) + ' = <b>' + formatNum(it.qty * it.price) + '</b>', url: '#' };
+        });
+        var total = d.cart.reduce(function (a, it) { return a + it.qty * it.price; }, 0);
+        appendCard('Resumen de la venta (' + d.locName + '):', rows, {});
+        var t = showTyping();
+        window.setTimeout(function () {
+            removeTyping(t);
+            appendMsg('Total a cobrar: ' + formatNum(total) + ' ' + (d.meta.currency || '') + ' (efectivo).', false);
+            appendChips([
+                { label: 'Confirmar venta', cls: 'wsb-chip-success', icon: 'fa-check', click: function () { pendingAction.step = 'execute'; executeFlow(); } },
+                { label: 'Cancelar', cls: 'wsb-chip-danger', icon: 'fa-xmark', click: cancelFlow }
+            ]);
+        }, 550);
+        busy = false;
+    }
+
+    function executeFlow() {
+        var p = pendingAction;
+        if (!p) { busy = false; return; }
+        // Evita el doble envío si se pulsa "Confirmar" dos veces.
+        if (p.executing) { return; }
+        p.executing = true;
+        var d = p.data;
+
+        if (p.flow === 'product_new') {
+            api('ws_save_product', { name: d.name, sale_price: String(d.sale_price), min_stock: String(d.min_stock || 0) }, function (json) {
+                if (json && json.success) {
+                    setMem('product_new', d.name);
+                    pendingAction = null;
+                    reply('¡Listo! Producto creado ✅ "' + d.name + '" quedó en tu catálogo.', [{ label: 'Ver productos', url: C.shortcuts.panel.products.url, icon: 'fa-boxes-stacked' }], 'action:product_new:ok');
+                } else {
+                    pendingAction = null;
+                    reply(((json && json.data && json.data.msg) || 'No se pudo crear el producto.') + ' Revisa los límites de tu plan e inténtalo de nuevo.', [{ label: 'Reintentar', icon: 'fa-rotate', send: 'crear producto' }], 'action:product_new:error');
+                }
+                busy = false;
+            });
+        } else if (p.flow === 'product_edit') {
+            var payload = { id: d.product.id };
+            if (d.field === 'name') { payload.name = d.value; } else { payload.sale_price = String(d.value); }
+            api('ws_save_product', payload, function (json) {
+                if (json && json.success) {
+                    setMem('product_edit', d.product.name);
+                    pendingAction = null;
+                    reply('Producto actualizado ✅', [{ label: 'Ver productos', url: C.shortcuts.panel.products.url, icon: 'fa-boxes-stacked' }], 'action:product_edit:ok');
+                } else {
+                    pendingAction = null;
+                    reply((json && json.data && json.data.msg) || 'No se pudo actualizar el producto.', [], 'action:product_edit:error');
+                }
+                busy = false;
+            });
+        } else if (p.flow === 'product_delete') {
+            api('ws_delete_product', { id: d.product.id }, function (json) {
+                if (json && json.success) {
+                    setMem('product_delete', d.product.name);
+                    pendingAction = null;
+                    reply('Producto eliminado ✅ "' + d.product.name + '" ya no está en tu catálogo.', [], 'action:product_delete:ok');
+                } else {
+                    pendingAction = null;
+                    reply((json && json.data && json.data.msg) || 'No se pudo eliminar el producto.', [], 'action:product_delete:error');
+                }
+                busy = false;
+            });
+        } else if (p.flow === 'restock') {
+            api('ws_stock_move', { type: 'entrada', product_id: d.product.id, location_id: d.location.id, qty: String(d.qty) }, function (json) {
+                if (json && json.success) {
+                    setMem('restock', d.product.name + ' +' + d.qty);
+                    pendingAction = null;
+                    reply('Entrada registrada ✅ ' + d.qty + ' uds de "' + d.product.name + '" en ' + d.location.name + '. Stock actual: ' + formatNum((json.data && json.data.qty) || 0) + '.', [{ label: 'Ver stock', url: C.shortcuts.panel.stock.url, icon: 'fa-warehouse' }], 'action:restock:ok');
+                } else {
+                    pendingAction = null;
+                    reply((json && json.data && json.data.msg) || 'No se pudo registrar la entrada.', [], 'action:restock:error');
+                }
+                busy = false;
+            });
+        } else if (p.flow === 'order_accept') {
+            api('ws_order_accept', { id: d.order.id }, function (json) {
+                pendingAction = null;
+                reply((json && json.success) ? 'Pedido Nº ' + d.order.number + ' aceptado ✅ (el stock se descuenta automáticamente).' : ((json && json.data && json.data.msg) || 'No se pudo aceptar el pedido.'), [{ label: 'Ver pedidos', url: C.shortcuts.panel.orders.url, icon: 'fa-cart-shopping' }], 'action:order_accept');
+                busy = false;
+            });
+        } else if (p.flow === 'order_reject') {
+            api('ws_order_reject', { id: d.order.id }, function (json) {
+                pendingAction = null;
+                reply((json && json.success) ? 'Pedido Nº ' + d.order.number + ' rechazado.' : ((json && json.data && json.data.msg) || 'No se pudo rechazar el pedido.'), [{ label: 'Ver pedidos', url: C.shortcuts.panel.orders.url, icon: 'fa-cart-shopping' }], 'action:order_reject');
+                busy = false;
+            });
+        } else if (p.flow === 'customer_new') {
+            api('ws_customers_save', { name: d.name, phone: d.phone || '' }, function (json) {
+                if (json && json.success) {
+                    setMem('customer_new', d.name);
+                    pendingAction = null;
+                    reply('Cliente creado ✅ "' + d.name + '" quedó en tu CRM.', [{ label: 'Ver clientes', url: C.shortcuts.panel.customers.url, icon: 'fa-users' }], 'action:customer_new:ok');
+                } else {
+                    pendingAction = null;
+                    reply((json && json.data && json.data.msg) || 'No se pudo crear el cliente.', [], 'action:customer_new:error');
+                }
+                busy = false;
+            });
+        } else if (p.flow === 'pos_cart') {
+            var subtotal = d.cart.reduce(function (a, it) { return a + it.qty * it.price; }, 0);
+            api('ws_pos_sale_save', {
+                location_id: d.loc,
+                seller_id: d.meta.user_id,
+                currency: d.meta.currency || '',
+                subtotal: String(subtotal),
+                discount: '0',
+                total: String(subtotal),
+                payment_method: 'cash',
+                cash_amount: String(subtotal),
+                transfer_amount: '0',
+                transfer_number: '',
+                items: JSON.stringify(d.cart.map(function (it) { return { product_id: it.product_id, product_name: it.product_name, qty: it.qty, price: it.price, discount: 0, subtotal: it.qty * it.price }; }))
+            }, function (json) {
+                if (json && json.success) {
+                    setMem('pos_cart', d.cart.length + ' items');
+                    pendingAction = null;
+                    reply('Venta registrada ✅ Nº ' + (json.data && json.data.sale_id) + ' por ' + formatNum(subtotal) + ' ' + (d.meta.currency || '') + '. El stock se descontó al momento.', [{ label: 'Ver ventas', url: C.shortcuts.panel.posSales.url, icon: 'fa-receipt' }, { label: 'Nueva venta', icon: 'fa-cash-register', send: 'registrar venta' }], 'action:pos_cart:ok');
+                } else {
+                    pendingAction = null;
+                    reply((json && json.data && json.data.msg) || 'No se pudo registrar la venta.', [{ label: 'Abrir POS', url: C.shortcuts.panel.pos.url, icon: 'fa-cash-register' }], 'action:pos_cart:error');
+                }
+                busy = false;
+            });
+        }
+    }
+
+    // Arranques de los flujos
+    function flowRestockStart() {
+        api('ws_chatbot_meta', {}, function (json) {
+            if (!json || !json.success || !(json.data && json.data.locations.length)) {
+                reply((json && json.data && json.data.msg) || 'No tienes tiendas asignadas.', [], 'action:restock:noloc');
+                busy = false;
+                return;
+            }
+            pendingAction = { flow: 'restock', step: 'pick', data: { meta: json.data } };
+            ask('¿Qué producto quieres reponer? Escríbelo y te muestro coincidencias:', [], 'action:restock:pick');
+        });
+    }
+
+    function flowOrderStart(kind) {
+        api('ws_order_list', { status: 'pending' }, function (json) {
+            var list = (json && json.success && json.data && json.data.orders) || [];
+            if (!list.length) {
+                reply('No tienes pedidos pendientes ahora mismo 👌', [], 'action:order:none');
+                busy = false;
+                return;
+            }
+            pendingAction = { flow: kind === 'accept' ? 'order_accept' : 'order_reject', step: 'pick', data: { list: list } };
+            ask('Tienes ' + list.length + ' pedido(s) pendiente(s). ¿Cuál ' + (kind === 'accept' ? 'aceptas' : 'rechazas') + '?', list.slice(0, 6).map(function (o) {
+                return { label: 'Nº ' + o.number + ' · ' + (o.customer_name || 'Cliente') + ' · ' + formatNum(o.total), cls: 'wsb-chip-pick', icon: 'fa-cart-shopping', click: function () { pickOrder(kind, o); } };
+            }), 'action:order:list');
+        });
+    }
+
+    function pickOrder(kind, o) {
+        pendingAction = { flow: kind === 'accept' ? 'order_accept' : 'order_reject', step: 'confirm', data: { order: o } };
+        confirmAsk(kind === 'accept' ? '¿Confirmas ACEPTAR el pedido Nº ' + o.number + '? (se descuenta el stock)' : '¿Confirmas RECHAZAR el pedido Nº ' + o.number + '?', 'action:order:confirm');
+    }
+
+    function flowCustomerStart() {
+        pendingAction = { flow: 'customer_new', step: 'name', data: {} };
+        ask('Perfecto, creo el cliente por ti. ¿Cómo se llama?', [], 'action:customer:name');
+    }
+
+    function flowPosStart() {
+        api('ws_chatbot_meta', {}, function (json) {
+            if (!json || !json.success || !json.data) { reply('No pude iniciar la venta.', [], 'action:pos:meta'); busy = false; return; }
+            var meta = json.data;
+            if (!meta.locations.length) { reply('No tienes tiendas asignadas para vender.', [], 'action:pos:noloc'); busy = false; return; }
+            var open = meta.locations.filter(function (l) { return l.open_cash; });
+            if (!open.length) {
+                reply('Para registrar una venta necesitas la caja abierta en alguna tienda. Te llevo al POS para abrirla:', [{ label: 'Abrir caja (POS)', url: C.shortcuts.panel.pos.url, icon: 'fa-cash-register' }], 'action:pos:nocash');
+                busy = false;
+                return;
+            }
+            pendingAction = { flow: 'pos_cart', step: 'pick', data: { meta: meta, loc: open[0].id, locName: open[0].name, cart: [] } };
+            ask('Venta en "' + open[0].name + '" (caja abierta ✅). ¿Qué producto vendes? Escríbelo:', [], 'action:pos:pick');
+        });
+    }
+
+    function startFlow(name) {
+        if (name === 'product_new') { pendingAction = { flow: 'product_new', step: 'name', data: {} }; ask('Perfecto, creo el producto por ti. ¿Cómo se llama?', [], 'action:product_new:name'); }
+        else if (name === 'product_edit') { pendingAction = { flow: 'product_edit', step: 'pick', data: {} }; ask('¿Qué producto quieres editar? Escríbelo y te muestro coincidencias:', [], 'action:edit:pick'); }
+        else if (name === 'product_delete') { pendingAction = { flow: 'product_delete', step: 'pick', data: {} }; ask('¿Qué producto quieres eliminar? Escríbelo:', [], 'action:delete:pick'); }
+        else if (name === 'restock') { flowRestockStart(); }
+        else if (name === 'order_accept') { flowOrderStart('accept'); }
+        else if (name === 'order_reject') { flowOrderStart('reject'); }
+        else if (name === 'customer_new') { flowCustomerStart(); }
+        else if (name === 'pos_cart') { flowPosStart(); }
+        else if (name === 'top') { doTop(); }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Fase 3-5: multi-intención, IA opcional, proactividad y analítica     */
+    /* ------------------------------------------------------------------ */
+
+    var ACTION_PHRASES = [
+        ['product_new', ['crea un producto', 'crear un producto', 'quiero crear un producto', 'nuevo producto', 'agregar un producto', 'agregar producto', 'crear producto', 'dar de alta un producto', 'añadir producto', 'añadir un producto']],
+        ['product_edit', ['editar producto', 'edita el producto', 'editar un producto', 'cambiar precio', 'cambiar el precio', 'actualizar producto', 'modificar producto', 'cambiar nombre del producto']],
+        ['product_delete', ['borrar producto', 'eliminar producto', 'quitar producto', 'borra el producto', 'elimina el producto', 'borrar un producto', 'eliminar un producto', 'dar de baja un producto']],
+        ['restock', ['reponer stock', 'reponer inventario', 'entrada de stock', 'entrada de mercancia', 'agregar stock', 'meter stock', 'agregar existencias', 'reponer existencias']],
+        ['order_accept', ['aceptar pedido', 'acepta el pedido', 'aceptar un pedido', 'confirmar pedido', 'acepta pedido', 'aceptar orden']],
+        ['order_reject', ['rechazar pedido', 'rechaza el pedido', 'rechazar un pedido', 'rechazar orden']],
+        ['customer_new', ['crear cliente', 'nuevo cliente', 'agregar cliente', 'crear un cliente', 'dar de alta un cliente', 'registrar un cliente']],
+        ['pos_cart', ['registrar venta', 'registrar una venta', 'vender ahora', 'hacer una venta', 'vender en el pos', 'cobrar ahora', 'vender']],
+        ['top', ['recomiendame', 'recomiéndame', 'que vende mas', 'qué vende más', 'mas vendido', 'más vendido', 'productos mas vendidos', 'top ventas', 'lo que mas se vende', 'que productos se venden mas']]
+    ];
+
+    // Frases imperativas de acción: ganan a la base de conocimiento (el bot
+    // ejecuta en lugar de solo explicar). Solo aplica en el panel con plan.
+    function matchAction(text) {
+        if (!isPanel || locked) { return null; }
+        var low = String(text || '').toLowerCase();
+        var best = null, bestLen = 0;
+        ACTION_PHRASES.forEach(function (pair) {
+            var key = pair[0];
+            (pair[1] || []).forEach(function (k) {
+                if (low.indexOf(k) > -1 && k.length > bestLen) { best = key; bestLen = k.length; }
+            });
+        });
+        return best;
+    }
+
+    function waLink(w) {
+        if (/^https?:\/\//i.test(w)) { return w; }
+        return 'https://wa.me/' + String(w).replace(/[^\d]/g, '');
+    }
+    function whatsappChip() {
+        var w = String(C.whatsapp || '').trim();
+        return w ? { label: 'Hablar por WhatsApp', url: waLink(w), icon: 'fa-brands fa-whatsapp', newTab: true, track: 'escalate:whatsapp' } : null;
+    }
+
+    // Fallback con derivación en caliente (WhatsApp/contacto) en vez de solo enlaces.
+    function fallbackReply() {
+        var chips = [];
+        var wa = whatsappChip();
+        if (wa) { chips.push(wa); }
+        chips.push(contactChip());
+        chips = chips.concat(chipsFor(isPanel ? ['atajos'] : ['marketplace', 'ayuda']).filter(Boolean));
+        reply(S.fallback, chips, 'fallback');
+    }
+
+    // IA opcional: cuando el admin configuró OpenRouter, la frase no resuelta
+    // se deriva al proxy PHP (la clave nunca viaja al navegador).
+    function doLLM(text) {
+        var t = showTyping();
+        api('ws_chatbot_llm', { text: text, history: JSON.stringify(chatHistory.slice(-6)) }, function (json) {
+            removeTyping(t);
+            if (json && json.success && json.data && json.data.text) {
+                appendMsg(json.data.text, false);
+                chatHistory.push({ role: 'assistant', content: json.data.text });
+                track('llm:used');
+            } else {
+                fallbackReply();
+            }
+            busy = false;
+        });
+    }
+
+    // Recomendaciones reales (Fase 5): lo más vendido del negocio.
+    function doTop() {
+        var t = showTyping();
+        api('ws_chatbot_top', {}, function (json) {
+            removeTyping(t);
+            if (!json || !json.success || !(json.data && json.data.products && json.data.products.length)) {
+                reply('Aún no hay suficientes ventas para recomendarte. ¡Vende un poco y vuelve! 😉', [], 'top:none');
+                busy = false;
+                return;
+            }
+            var rows = json.data.products.map(function (p) {
+                return { name: p.name, meta: '<b>' + formatNum(p.qty) + '</b> uds · ' + formatNum(p.total) + ' ' + escapeHtml(json.data.currency || ''), url: C.shortcuts.panel.reports.url };
+            });
+            appendCard('Tus productos más vendidos:', rows, { chips: [{ label: 'Ver reportes', url: C.shortcuts.panel.reports.url, icon: 'fa-chart-line' }] });
+            track('top:shown');
+            busy = false;
+        });
+    }
+
+    // Multi-intención: "crea un producto y dime el stock" se ejecuta en secuencia.
+    function splitIntents(text) {
+        var parts = String(text || '').split(/\s+(?:y|además|también)\s+/i);
+        if (parts.length < 2) { return null; }
+        var ok = [];
+        parts.forEach(function (p) {
+            p = p.trim();
+            if (!p) { return; }
+            if (matchAction(p) || resolveIntent(p)) { ok.push(p); }
+        });
+        return ok.length >= 2 ? ok : null;
+    }
+
+    function respondTo(text) {
+        var act = matchAction(text);
+        if (act) { startFlowGuard(act); return; }
+        var intent = resolveIntent(text);
+        if (intent && intent.knowledge) { runKnowledge(intent.knowledge); }
+        else if (intent) { intent.run(); }
+        else { fallbackReply(); }
+    }
+
+    function runQueue(list, i) {
+        i = i || 0;
+        if (i >= list.length) { busy = false; return; }
+        var text = list[i];
+        var delay = 450 + Math.min(600, text.length * 12);
+        window.setTimeout(function () {
+            busy = false;
+            respondTo(text);
+            if (pendingAsk || pendingAction) { return; }
+            runQueue(list, i + 1);
+        }, delay);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Proactividad (Fase 4): notificaciones en el panel y carrito público  */
+    /* ------------------------------------------------------------------ */
+
+    function setBadge(n) {
+        var b = btn.querySelector('.wsb-badge');
+        if (b) { b.textContent = n > 99 ? '99+' : (n ? String(n) : ''); }
+        btn.classList.toggle('has-badge', !!n);
+    }
+
+    // En el panel: avisa de pedidos nuevos y muestra el contador de no leídas.
+    function checkNotifications() {
+        if (!isPanel || locked) { return; }
+        api('ws_notifications_list', {}, function (json) {
+            if (!json || !json.success) { return; }
+            var unread = (json.data && json.data.unread) || 0;
+            setBadge(unread);
+            var items = (json.data && json.data.items) || [];
+            var hasNew = items.some(function (n) { return !n.is_read && (n.type === 'order_new' || n.type === 'order_pending'); });
+            if (hasNew && !open && !getF('wsb_pro_alert')) {
+                setF('wsb_pro_alert', '1');
+                window.setTimeout(function () {
+                    setOpen(true);
+                    if (!body.children.length) { boot(); }
+                    appendMsg('🔔 Tienes pedidos nuevos esperando tu revisión.', false);
+                    appendChips([{ label: 'Ver pedidos', url: C.shortcuts.panel.orders.url, icon: 'fa-cart-shopping' }]);
+                }, 600);
+            }
+        });
+    }
+
+    // Visitantes con carrito: el bot se adelanta al terminar el pedido.
+    function cartItemsCount() {
+        try {
+            for (var i = 0; i < ls.length; i++) {
+                var k = ls.key(i);
+                if (k && k.indexOf('ws_cart_') === 0) {
+                    var raw = ls.getItem(k);
+                    if (!raw) { continue; }
+                    var c = JSON.parse(raw);
+                    if (c && Array.isArray(c.cartItems) && c.cartItems.length) { return c.cartItems.length; }
+                }
+            }
+        } catch (e) {}
+        return 0;
     }
 
     var actions = {
@@ -574,22 +1210,30 @@
         appendMsg(value, true);
         busy = true;
         lastUserText = value;
+        chatHistory.push({ role: 'user', content: value });
+        if (chatHistory.length > 20) { chatHistory = chatHistory.slice(-20); }
 
-        // Flujo conversacional pendiente (buscar / seguimiento de pedido).
-        if (pendingAsk) {
-            handlePending(value);
+        // Flujo conversacional pendiente (búsqueda, pedido o acción guiada).
+        if (pendingAction) { handlePendingAction(value); return; }
+        if (pendingAsk) { handlePending(value); return; }
+
+        // Multi-intención: "crea un producto y dime el stock" → en secuencia.
+        var multi = splitIntents(value);
+        if (multi && multi.length >= 2) {
+            appendMsg('¡Claro! Hago las dos cosas 👇', false);
+            runQueue(multi, 0);
             return;
         }
 
+        var act = matchAction(value);
         var intent = resolveIntent(value);
         var delay = 350 + Math.min(600, value.length * 12);
         window.setTimeout(function () {
-            if (intent && intent.knowledge) { runKnowledge(intent.knowledge); }
-            else if (intent) { intent.run(); }
-            else {
-                reply(S.fallback, chipsFor(isPanel ? ['atajos'] : ['marketplace', 'ayuda', 'contacto']), 'fallback');
-            }
-            busy = false;
+            if (act) { busy = false; startFlowGuard(act); return; }
+            if (intent && intent.knowledge) { busy = false; runKnowledge(intent.knowledge); }
+            else if (intent) { busy = false; intent.run(); }
+            else if (C.llm && C.llm.enabled) { doLLM(value); } // busy queda activo hasta la respuesta
+            else { busy = false; fallbackReply(); }
         }, delay);
     }
 
@@ -647,6 +1291,14 @@
             appendChips([{ label: S.goPlan, url: C.urls.plan, icon: 'fa-crown', track: 'upsell:plan' }]);
             return;
         }
+        // Proactividad pública: carrito con productos → adelantarse al cierre.
+        if (!isPanel) {
+            var cartN = cartItemsCount();
+            if (cartN > 0) {
+                appendMsg('Veo que tienes ' + cartN + ' producto(s) en tu carrito 🛒. ¿Quieres terminar tu pedido?', false);
+                appendChips([{ label: 'Cómo comprar', icon: 'fa-cart-shopping', send: 'como compro' }, { label: 'Ver tiendas', url: C.urls.stores, icon: 'fa-store' }]);
+            }
+        }
         if (isPanel) {
             reply(S.welcomePanel, [
                 { label: 'Resumen del día', icon: 'fa-gauge-high', send: 'resumen' },
@@ -654,6 +1306,15 @@
                 { label: 'Abrir caja', icon: 'fa-cash-register', send: 'abrir caja' },
                 { label: 'Recorrido guiado', icon: 'fa-location-arrow', send: 'recorrido' }
             ], 'boot:panel');
+            // Memoria de sesión: retoma donde quedó la última vez.
+            if (mem && mem.lastAction && mem.lastEntity) {
+                var resumeChip = mem.lastAction === 'product_new' ? { label: 'Seguir con "' + mem.lastEntity + '"', icon: 'fa-rotate', send: 'crear producto' }
+                    : mem.lastAction === 'restock' ? { label: 'Seguir reponiendo', icon: 'fa-rotate', send: 'reponer stock' }
+                    : mem.lastAction === 'pos_cart' ? { label: 'Registrar otra venta', icon: 'fa-cash-register', send: 'registrar venta' }
+                    : null;
+                appendMsg('La última vez estuvimos con "' + mem.lastEntity + '" ✨ ¿Seguimos con eso o prefieres otra cosa?', false);
+                appendChips(resumeChip ? [resumeChip, { label: 'Otra cosa', icon: 'fa-bolt', send: 'atajos' }] : [{ label: 'Otra cosa', icon: 'fa-bolt', send: 'atajos' }]);
+            }
         } else if (!C.logged) {
             reply(S.welcomeGuest + ' ' + S.registerHook, [
                 { label: 'Buscar producto', icon: 'fa-magnifying-glass', send: 'buscar' },
@@ -694,5 +1355,15 @@
     window.setTimeout(pulse, 2200);
     if (getF('wsb_intro_v1') === null) {
         setF('wsb_intro_v1', '1');
+    }
+
+    // Memoria de sesión: carga lo último que se hizo (para retomar en el saludo).
+    loadMem();
+
+    // Proactividad del panel: revisa notificaciones al cargar y cada minuto
+    // (pedidos nuevos abren el bot con el aviso; el badge muestra las no leídas).
+    if (isPanel && !locked) {
+        checkNotifications();
+        window.setInterval(checkNotifications, 60000);
     }
 })();
