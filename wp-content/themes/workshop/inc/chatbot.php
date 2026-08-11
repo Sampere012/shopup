@@ -222,12 +222,96 @@ function ws_chatbot_page_context() {
                 'url'   => $s['url'],
             );
         }
+        // Página concreta de wp-admin donde está (admin.php?page=ws-*): el bot
+        // sabe si el admin está en Logs, Negocios, Usuarios, Planes…
+        $admin_page = isset( $_GET['page'] ) ? sanitize_key( $_GET['page'] ) : '';
+        if ( '' === $admin_page && function_exists( 'get_current_screen' ) ) {
+            $screen = get_current_screen();
+            $admin_page = $screen ? (string) $screen->id : '';
+        }
+        $admin_pages = array(
+            'dashboard'      => array(
+                __( 'Escritorio de WordPress', 'workshop' ),
+                __( 'Estás en el escritorio de WordPress, la base de toda la plataforma.', 'workshop' ),
+                __( 'Desde aquí accedes a todo: Logs, Negocios, Usuarios, Planes y la configuración del asistente.', 'workshop' ),
+                array( 'logs', 'businesses', 'users', 'plans' ),
+            ),
+            'ws-logs'        => array(
+                __( 'Logs del sistema', 'workshop' ),
+                __( 'Estás en el visor de Logs: aquí se registra todo lo que pasa en la plataforma (errores, advertencias e información).', 'workshop' ),
+                __( 'Puedo explicarte cada nivel de log, ayudarte a interpretar un error o generarte el reporte del día. Revisa la mini-gráfica para ver errores por día.', 'workshop' ),
+                array( 'logs', 'businesses', 'chatbot' ),
+            ),
+            'ws-businesses'  => array(
+                __( 'Negocios', 'workshop' ),
+                __( 'Estás administrando los negocios de la plataforma: crearlos, editarlos o cambiar su estado.', 'workshop' ),
+                __( 'Puedo guiarte para crear un negocio, explicarte los campos o decirte cómo ver sus tiendas y rating.', 'workshop' ),
+                array( 'businesses', 'users', 'subscriptions' ),
+            ),
+            'ws-users'       => array(
+                __( 'Accesos y usuarios', 'workshop' ),
+                __( 'Estás gestionando los accesos: asignas roles de negocio (dueño, almacenero, vendedor) a los usuarios.', 'workshop' ),
+                __( 'Te explico qué puede hacer cada rol o cómo asignar un usuario a un negocio.', 'workshop' ),
+                array( 'users', 'businesses', 'permissions' ),
+            ),
+            'ws-plans'       => array(
+                __( 'Planes', 'workshop' ),
+                __( 'Estás en los Planes: precios, duración, límites y qué incluye cada suscripción.', 'workshop' ),
+                __( 'Te explico cómo crear un plan, qué límites configurar o cómo activar el asistente en un plan.', 'workshop' ),
+                array( 'plans', 'subscriptions', 'chatbot' ),
+            ),
+            'ws-subscriptions'=> array(
+                __( 'Suscripciones', 'workshop' ),
+                __( 'Estás viendo las suscripciones activas: qué plan tiene cada negocio y hasta cuándo.', 'workshop' ),
+                __( 'Te ayudo a revisar suscripciones, ver cuáles vencen pronto o renovar un negocio.', 'workshop' ),
+                array( 'subscriptions', 'plans', 'businesses' ),
+            ),
+            'ws-marketplace' => array(
+                __( 'Mercado', 'workshop' ),
+                __( 'Estás en el Mercado: cómo se listan los negocios y sus tiendas para los visitantes.', 'workshop' ),
+                __( 'Te explico cómo se ordena el mercado o cómo llegan los negocios a la portada.', 'workshop' ),
+                array( 'marketplace', 'businesses', 'pages' ),
+            ),
+            'ws-site-pages'  => array(
+                __( 'Páginas y pie', 'workshop' ),
+                __( 'Estás editando las páginas del sitio (Ayuda, Contacto, Acerca de) y el pie de página.', 'workshop' ),
+                __( 'Te recuerdo que el FAQ de Ayuda alimenta al asistente: cuantas más preguntas, mejor responde.', 'workshop' ),
+                array( 'pages', 'chatbot', 'marketplace' ),
+            ),
+            'ws-chatbot'     => array(
+                __( 'Asistente (configuración)', 'workshop' ),
+                __( 'Estás configurando el asistente: comportamiento, conocimiento, IA opcional y lo que aprendió.', 'workshop' ),
+                __( 'Te explico cada pestaña: Comportamiento, Conocimiento, Aprender, Mensajes, Estadísticas y la IA.', 'workshop' ),
+                array( 'chatbot', 'logs', 'plans' ),
+            ),
+            'ws-smtp'        => array(
+                __( 'Correo SMTP', 'workshop' ),
+                __( 'Estás configurando el correo SMTP de la plataforma (los emails que se envían al sistema).', 'workshop' ),
+                __( 'Te ayudo con los campos del servidor SMTP o a verificar que el envío funcione.', 'workshop' ),
+                array( 'smtp', 'users', 'chatbot' ),
+            ),
+            'ws-permissions' => array(
+                __( 'Permisos de roles', 'workshop' ),
+                __( 'Estás definiendo qué puede hacer cada rol (dueño, almacenero, vendedor) en el panel del negocio.', 'workshop' ),
+                __( 'Te explico la matriz de permisos o qué capacidades conviene activar por rol.', 'workshop' ),
+                array( 'permissions', 'users', 'businesses' ),
+            ),
+        );
+        if ( isset( $admin_pages[ $admin_page ] ) ) {
+            list( $at, $ad, $ah, $alinks ) = $admin_pages[ $admin_page ];
+        } else {
+            $at = __( 'Panel de administración del sistema', 'workshop' );
+            $ad = __( 'Estás en el panel de administración: controlas toda la plataforma, no un negocio en particular.', 'workshop' );
+            $ah = __( 'Puedo ayudarte con los logs, los negocios, los usuarios, los planes y la configuración del asistente.', 'workshop' );
+            $alinks = array( 'logs', 'businesses', 'users', 'plans', 'chatbot' );
+        }
         return array(
-            'key'      => 'wp-admin',
-            'label'    => __( 'Panel de administración', 'workshop' ),
-            'title'    => __( 'Panel de administración del sistema', 'workshop' ),
-            'desc'     => __( 'Estás en el panel de administración: controlas toda la plataforma, no un negocio en particular.', 'workshop' ),
-            'hint'     => __( 'Puedo ayudarte con los logs, los negocios, los usuarios, los planes y la configuración del asistente.', 'workshop' ),
+            'key'      => 'wp-admin' . ( '' !== $admin_page ? ':' . $admin_page : '' ),
+            'label'    => $at,
+            'title'    => $at,
+            'desc'     => $ad,
+            'hint'     => $ah,
+            'links'    => $alinks,
             'sections' => $sec,
         );
     }
@@ -305,11 +389,58 @@ function ws_chatbot_page_context() {
             'account'      => __( 'Mi cuenta', 'workshop' ),
             'plan'         => __( 'Mi plan', 'workshop' ),
         );
+        // "Qué puedes hacer aquí" por módulo: descripción útil y atajos
+        // relevantes (ids de ws_chatbot_panel_shortcuts) para ofrecer chips.
+        $mod_desc = array(
+            'dashboard'   => __( 'Aquí ves el resumen del día: ventas de hoy, pedidos pendientes, stock bajo y productos activos.', 'workshop' ),
+            'products'    => __( 'Gestionas tu catálogo: crear, editar o eliminar productos y controlar precios.', 'workshop' ),
+            'locations'   => __( 'Administras tus puntos de venta o tiendas.', 'workshop' ),
+            'suppliers'   => __( 'Llevas tus proveedores y las compras de mercancía.', 'workshop' ),
+            'stock'       => __( 'Controlas el inventario: entradas, salidas y transferencias entre tus tiendas.', 'workshop' ),
+            'movements'   => __( 'Revisas el historial de movimientos de inventario.', 'workshop' ),
+            'orders'      => __( 'Gestionas los pedidos de tus clientes: aceptar, completar o cancelar.', 'workshop' ),
+            'shifts'      => __( 'Administras los turnos de caja de tus trabajadores.', 'workshop' ),
+            'workers'     => __( 'Gestionas tu equipo: trabajadores, roles y permisos.', 'workshop' ),
+            'customers'   => __( 'Llevas tu base de clientes (CRM).', 'workshop' ),
+            'pos'         => __( 'Aquí vendes: el punto de venta con tu caja y carrito.', 'workshop' ),
+            'pos-sales'   => __( 'Revisas las ventas registradas en el punto de venta.', 'workshop' ),
+            'reviews'     => __( 'Ves las valoraciones que recibe tu tienda.', 'workshop' ),
+            'loyalty'     => __( 'Gestionas la fidelización y recompensas de clientes.', 'workshop' ),
+            'permissions' => __( 'Ajustas los permisos de cada rol en tu negocio.', 'workshop' ),
+            'reports'     => __( 'Aquí están tus reportes y estadísticas de ventas.', 'workshop' ),
+            'appearance'  => __( 'Personalizas la apariencia de tu tienda pública.', 'workshop' ),
+            'settings'    => __( 'Configuras los datos de tu negocio.', 'workshop' ),
+            'account'     => __( 'Administras tu cuenta de usuario.', 'workshop' ),
+            'plan'        => __( 'Revisas tu plan actual y sus límites.', 'workshop' ),
+        );
+        $mod_links = array(
+            'dashboard'  => array( 'productNew', 'orders', 'stock', 'pos' ),
+            'products'   => array( 'productNew', 'products', 'stock' ),
+            'locations'  => array( 'stock', 'products' ),
+            'suppliers'  => array( 'suppliers', 'stock' ),
+            'stock'      => array( 'stock', 'productNew', 'products' ),
+            'movements'  => array( 'stock', 'reports' ),
+            'orders'     => array( 'orders', 'customers' ),
+            'shifts'     => array( 'pos', 'workers' ),
+            'workers'    => array( 'workers', 'dashboard' ),
+            'customers'  => array( 'customers', 'orders' ),
+            'pos'        => array( 'pos', 'posSales', 'customers' ),
+            'pos-sales'  => array( 'posSales', 'pos', 'reports' ),
+            'reviews'    => array( 'reviews', 'dashboard' ),
+            'loyalty'    => array( 'loyalty', 'customers' ),
+            'permissions'=> array( 'workers', 'dashboard' ),
+            'reports'    => array( 'reports', 'posSales' ),
+            'appearance' => array( 'dashboard', 'products' ),
+            'settings'   => array( 'dashboard', 'plan' ),
+            'account'    => array( 'dashboard', 'plan' ),
+            'plan'       => array( 'plan', 'dashboard' ),
+        );
         $title = $labels[ $module ] ?? __( 'Panel de tu negocio', 'workshop' );
         $out['label'] = $title;
         $out['title'] = $title;
-        $out['desc']  = sprintf( __( 'Estás en el módulo %s del panel de tu negocio.', 'workshop' ), $title );
-        $out['hint']  = sprintf( __( 'Puedo ayudarte con este módulo o explicarte cómo se usa. También puedo generarte reportes, reponer stock o crear productos.', 'workshop' ), $title );
+        $out['desc']  = sprintf( __( 'Estás en %s. ', 'workshop' ), $title ) . ( $mod_desc[ $module ] ?? __( 'Gestionas este módulo de tu negocio.', 'workshop' ) );
+        $out['hint']  = __( 'Puedo guiarte en este módulo paso a paso, explicarte cada botón o llevarte a otra sección.', 'workshop' );
+        $out['links'] = array_values( array_unique( array_merge( array( $module ), $mod_links[ $module ] ?? array() ) ) );
         // La sección de planes apunta al módulo del panel.
         $out['sections']['planes']['url'] = ws_panel_url( $role ? $role : 'owner', 'plan', $biz );
     } elseif ( 'store' === $key ) {

@@ -360,14 +360,53 @@
 
     // Contexto de la página actual: explica dónde está el usuario con datos
     // reales (C.page) y le ofrece navegar a otras secciones.
+    // Saludo con contexto de página según el rol: admin del sistema → página de
+    // wp-admin; panel del negocio → módulo actual. Devuelve {msg, chips, track}.
+    function pageGreeting() {
+        var p = C.page || {};
+        if (isSysAdmin) {
+            var spMsg = p.title ? ('Estás en ' + p.title + '. ') : '';
+            spMsg += (p.desc ? p.desc + ' ' : '') + (p.hint || '');
+            var spChips = (p.links && p.links.length ? chipsFor(p.links) : chipsFor(['logs', 'businesses', 'users', 'plans', 'chatbot']))
+                .concat([{ label: 'Guía del sistema', icon: 'fa-list-ol', send: 'guia del panel' }]);
+            return { msg: spMsg || S.welcomeSysAdmin, chips: spChips, track: 'boot:sysadmin' + (p.key || '') };
+        }
+        if (isPanel) {
+            var bpIsModule = String(p.key || '').indexOf('panel:') === 0;
+            var bpMsg = bpIsModule && p.title
+                ? ('Estás en ' + p.title + '. ' + (p.desc ? p.desc + ' ' : ''))
+                : (S.welcomePanel + ' ');
+            bpMsg += bpIsModule ? (p.hint || 'Dime qué quieres hacer y te ayudo.') : 'Dime qué quieres hacer (crear producto, pedidos, stock, reportes…) y te llevo.';
+            var bpChips = bpIsModule && p.links && p.links.length
+                ? chipsFor(p.links.slice(0, 5)).concat([{ label: 'Guía de ' + p.title, icon: 'fa-list-ol', send: 'guia del panel' }])
+                : [
+                    { label: 'Resumen del día', icon: 'fa-gauge-high', send: 'resumen' },
+                    { label: 'Crear producto', icon: 'fa-plus', send: 'crear producto' },
+                    { label: 'Abrir caja', icon: 'fa-cash-register', send: 'abrir caja' },
+                    { label: 'Guía del panel', icon: 'fa-list-ol', send: 'guia del panel' },
+                    { label: 'Ver tiendas', icon: 'fa-store', send: 'ver tiendas' }
+                ];
+            return { msg: bpMsg, chips: bpChips, track: 'boot:panel' + (p.key || '') };
+        }
+        return null;
+    }
+
     function doPageContext() {
         var p = C.page || {};
         if (!p.key) { reply('No sé exactamente en qué sección estás ahora, pero puedo ayudarte con lo que necesites.', chipsFor(['marketplace', 'ayuda', 'contacto']), 'page:none'); return; }
         var msg = (p.desc ? p.desc + ' ' : '') + (p.hint || '');
-        reply(msg, (p.sections ? Object.keys(p.sections).slice(0, 6).map(function (k) {
-            var s = p.sections[k];
-            return { label: s.label, url: s.url, icon: s.icon };
-        }) : []), 'page:' + p.key);
+        // En el panel: chips de acciones del módulo (links) primero; en público
+        // las secciones del sitio para navegar.
+        var chips = [];
+        if (p.links && p.links.length) {
+            chips = chipsFor(p.links.slice(0, 6));
+        } else if (p.sections) {
+            chips = Object.keys(p.sections).slice(0, 6).map(function (k) {
+                var s = p.sections[k];
+                return { label: s.label, url: s.url, icon: s.icon };
+            });
+        }
+        reply(msg, chips, 'page:' + p.key);
     }
 
     function doSearch(q) {
@@ -1548,10 +1587,9 @@
             keys: ['hola', 'buenas', 'hey', 'hi', 'saludo', 'que tal', 'holi', 'hello', 'buen dia', 'buenas tardes'],
             run: function () {
                 if (locked) { actions.locked.run(); return; }
-                if (isSysAdmin) {
-                    reply(S.welcomeSysAdmin || S.welcomePanel, chipsFor(['logs', 'businesses', 'users', 'plans', 'chatbot']), 'greeting:sysadmin');
-                } else if (isPanel) {
-                    reply(S.welcomePanel, chipsFor(['productNew', 'orders', 'stock', 'plan']), 'greeting');
+                if (isSysAdmin || isPanel) {
+                    var g = pageGreeting();
+                    reply(g.msg, g.chips, g.track || 'greeting');
                 } else if (!C.logged) {
                     reply(S.welcomeGuest + ' ' + S.registerHook, [registerChip(), chipsFor(['marketplace', 'ayuda'])[0]].filter(Boolean), 'greeting');
                 } else {
@@ -1934,19 +1972,14 @@
                 appendChips([{ label: 'Cómo comprar', icon: 'fa-cart-shopping', send: 'como compro' }, { label: 'Ver tiendas', url: C.urls.stores, icon: 'fa-store' }]);
             }
         }
-        if (isSysAdmin) {
-            // Admin del SISTEMA: controla la plataforma, no un negocio.
-            reply(S.welcomeSysAdmin || S.welcomePanel, chipsFor(['logs', 'businesses', 'users', 'plans', 'subscriptions', 'chatbot']), 'boot:sysadmin');
-        } else if (isPanel) {
-            reply(S.welcomePanel, [
-                { label: 'Resumen del día', icon: 'fa-gauge-high', send: 'resumen' },
-                { label: 'Crear producto', icon: 'fa-plus', send: 'crear producto' },
-                { label: 'Abrir caja', icon: 'fa-cash-register', send: 'abrir caja' },
-                { label: 'Guía del panel', icon: 'fa-list-ol', send: 'guia del panel' },
-                { label: 'Ver tiendas', icon: 'fa-store', send: 'ver tiendas' }
-            ], 'boot:panel');
-            // Memoria de sesión: retoma donde quedó la última vez.
-            if (mem && mem.lastAction && mem.lastEntity) {
+        if (isSysAdmin || isPanel) {
+            // Contexto de página según el rol: el bot dice DÓNDE estás (módulo
+            // del panel o página de wp-admin), QUÉ puedes hacer y te ofrece
+            // chips del módulo + la guía (C.page con desc/links por página).
+            var pg = pageGreeting();
+            reply(pg.msg, pg.chips, pg.track);
+            // Memoria de sesión (solo panel de negocio): retoma lo último.
+            if (isPanel && !isSysAdmin && mem && mem.lastAction && mem.lastEntity) {
                 var resumeChip = mem.lastAction === 'product_new' ? { label: 'Seguir con "' + mem.lastEntity + '"', icon: 'fa-rotate', send: 'crear producto' }
                     : mem.lastAction === 'restock' ? { label: 'Seguir reponiendo', icon: 'fa-rotate', send: 'reponer stock' }
                     : mem.lastAction === 'pos_cart' ? { label: 'Registrar otra venta', icon: 'fa-cash-register', send: 'registrar venta' }
