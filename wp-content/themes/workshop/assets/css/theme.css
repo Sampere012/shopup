@@ -2297,6 +2297,43 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-modal-cash { max-width: 420px; }
 .ws-badge-fraction { background: #ede9fe; color: #6b21a8; margin: 2px 0; }
 
+/* ---------- POS: insignia de modo offline ---------- */
+.ws-offline-mode-badge {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 6px 12px; border-radius: 999px; font-size: .78rem; font-weight: 700;
+    background: #fef3c7; color: #92400e; border: 1px solid #fcd34d;
+}
+.ws-offline-mode-badge i { color: #d97706; }
+
+/* ---------- PWA: botón de instalación ---------- */
+#ws-pwa-install {
+    position: fixed; right: 20px; bottom: 20px; z-index: 9999;
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 20px; border: none; border-radius: 14px; cursor: pointer;
+    background: linear-gradient(135deg, #4f46e5, #7c3aed); color: #fff;
+    box-shadow: 0 10px 30px rgba(79, 70, 229, .4);
+    font-family: inherit; text-align: left;
+    opacity: 0; transform: translateY(16px) scale(.95); pointer-events: none;
+    transition: opacity .3s ease, transform .3s cubic-bezier(.34, 1.56, .64, 1), box-shadow .2s ease;
+}
+#ws-pwa-install.ws-pwa-install-visible { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
+#ws-pwa-install:hover { box-shadow: 0 14px 36px rgba(79, 70, 229, .5); transform: translateY(-2px) scale(1.02); }
+#ws-pwa-install > i {
+    width: 40px; height: 40px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+    background: rgba(255, 255, 255, .18); border-radius: 11px; font-size: 1.05rem;
+    animation: ws-pwa-bounce 2s ease-in-out infinite;
+}
+.ws-pwa-install-text { display: flex; flex-direction: column; line-height: 1.2; }
+.ws-pwa-install-text strong { font-size: .95rem; font-weight: 800; }
+.ws-pwa-install-text small { font-size: .75rem; opacity: .85; }
+@keyframes ws-pwa-bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-3px); }
+}
+@media (max-width: 520px) {
+    #ws-pwa-install { right: 12px; bottom: 12px; left: 12px; justify-content: center; }
+}
+
 /* ---------- Fraccionamiento de productos ---------- */
 .ws-fraction-box { padding: 14px 16px; border: 1px dashed #c7d2fe; background: #f5f7ff; border-radius: 12px; }
 .ws-fraction-title { margin: 0 0 4px; font-size: .95em; color: var(--ws-primary-dark); }

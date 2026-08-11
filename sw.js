@@ -1,26 +1,32 @@
 /* Workshop MultiTienda Service Worker */
-const CACHE_NAME = 'workshop-v5';
-const STATIC_CACHE = 'workshop-static-v5';
-const DYNAMIC_CACHE = 'workshop-dynamic-v5';
-const DATA_CACHE = 'workshop-data-v5';
+const CACHE_NAME = 'workshop-v6';
+const STATIC_CACHE = 'workshop-static-v6';
+const DYNAMIC_CACHE = 'workshop-dynamic-v6';
+const DATA_CACHE = 'workshop-data-v6';
 
 // URLs estáticas para cachear inmediatamente
-// El SW se sirve desde /workshop/sw.js, así que los paths root-relativos
-// deben llevar el prefijo /workshop para cachear esta instalación y no la
-// raíz del servidor.
+// El SW se sirve desde /workshop/sw.js (local) o /sw.js (producción), así que
+// los paths root-relativos deben llevar el prefijo BASE_PATH de la instalación.
 // NOTA: la portada (BASE_PATH + '/') NO se lista aquí: es contenido dinámico
 // (mercado de negocios) y se sirve con Network First para que los cambios del
 // admin (qué negocios se muestran) se reflejen en la siguiente carga.
 const BASE_PATH = '/workshop';
 const STATIC_ASSETS = [
     BASE_PATH + '/manifest.json',
-    BASE_PATH + '/wp-content/themes/workshop/assets/css/style.css',
+    BASE_PATH + '/wp-content/themes/workshop/assets/css/theme.css',
     BASE_PATH + '/wp-content/themes/workshop/assets/js/theme.js',
+    BASE_PATH + '/wp-content/themes/workshop/assets/js/sw-register.js',
     BASE_PATH + '/wp-content/themes/workshop/assets/js/indexeddb.js',
     BASE_PATH + '/wp-content/themes/workshop/assets/js/offline-queue.js',
+    BASE_PATH + '/wp-content/themes/workshop/assets/js/offline-ui.js',
+    BASE_PATH + '/wp-content/themes/workshop/assets/js/data-sync.js',
+    BASE_PATH + '/wp-content/themes/workshop/assets/js/pos-offline.js',
+    BASE_PATH + '/wp-content/themes/workshop/assets/js/vendor/alpine-collapse.min.js',
+    BASE_PATH + '/wp-content/themes/workshop/assets/js/vendor/alpine.min.js',
+    BASE_PATH + '/wp-content/themes/workshop/assets/images/icon-72.png',
     BASE_PATH + '/wp-content/themes/workshop/assets/images/icon-192.png',
-    'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
-    'https://cdn.jsdelivr.net/npm/alpinejs@3.12.0/dist/cdn.min.js',
+    BASE_PATH + '/wp-content/themes/workshop/assets/images/icon-512.png',
+    'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css',
 ];
 
 // Instalación del service worker
@@ -55,8 +61,38 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
     const url = new URL(event.request.url);
 
-    // Ignorar peticiones no-GET y peticiones a otros dominios
-    if (event.request.method !== 'GET' || url.origin !== self.location.origin) {
+    // Ignorar peticiones no-GET.
+    if (event.request.method !== 'GET') {
+        return;
+    }
+
+    // CDN estáticos (Font Awesome, Google Fonts, SweetAlert…): Cache First con
+    // red de respaldo. Aunque sean cross-origin los incluimos en la lista de
+    // assets estáticos para poder trabajar offline.
+    const isStatic = STATIC_ASSETS.some((asset) => url.href.includes(asset) || url.pathname.includes(asset));
+    if (isStatic) {
+        event.respondWith(
+            caches.match(event.request)
+                .then((response) => response || fetch(event.request)
+                    .then((networkResponse) => {
+                        try {
+                            if (!networkResponse.bodyUsed) {
+                                const copy = networkResponse.clone();
+                                caches.open(STATIC_CACHE)
+                                    .then((cache) => cache.put(event.request, copy))
+                                    .catch(() => {});
+                            }
+                        } catch (e) { /* cuerpo ya consumido: no cachear */ }
+                        return networkResponse;
+                    })
+                    .catch(() => new Response('', { status: 503 }))
+                )
+        );
+        return;
+    }
+
+    // Ignorar el resto de peticiones a otros dominios (análisis, etc.).
+    if (url.origin !== self.location.origin) {
         return;
     }
 
@@ -88,17 +124,6 @@ self.addEventListener('fetch', (event) => {
     // Para peticiones AJAX (admin-ajax.php), usar Network First con fallback a IndexedDB
     if (url.pathname.includes('admin-ajax.php')) {
         event.respondWith(handleAJAXRequest(event.request));
-        return;
-    }
-
-    // Para assets estáticos, usar Cache First
-    if (STATIC_ASSETS.some(asset => url.pathname.includes(asset))) {
-        event.respondWith(
-            caches.match(event.request)
-                .then((response) => {
-                    return response || fetch(event.request);
-                })
-        );
         return;
     }
 

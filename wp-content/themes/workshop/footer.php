@@ -90,6 +90,16 @@ if ( ! $ws_hide_footer ) :
     </div>
 </footer>
 <?php endif; ?>
+
+<!-- Botón flotante para instalar la app (PWA) -->
+<button id="ws-pwa-install" type="button" aria-label="<?php esc_attr_e( 'Instalar la aplicación', 'workshop' ); ?>">
+    <i class="fa-solid fa-download" aria-hidden="true"></i>
+    <span class="ws-pwa-install-text">
+        <strong><?php esc_html_e( 'Instalar app', 'workshop' ); ?></strong>
+        <small><?php esc_html_e( 'Trabaja sin conexión', 'workshop' ); ?></small>
+    </span>
+</button>
+
 <?php wp_footer(); ?>
 </body>
 </html>

@@ -39,7 +39,9 @@ jobs:
               -T "$1" "ftp://${FTP_HOST}/$2"
           }
           # .htaccess de producción + archivos PWA en la raíz (/htdocs).
-          upload sw.js         htdocs/sw.js
+          # sw.prod.js es la versión del Service Worker para producción (sin el
+          # prefijo /workshop de la instalación local) y se sube como sw.js.
+          upload sw.prod.js    htdocs/sw.js
           upload manifest.json htdocs/manifest.json
           upload htaccess.prod htdocs/.htaccess
           # Páginas de error personalizadas.

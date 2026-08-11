@@ -119,7 +119,7 @@ add_action( 'wp_head', 'ws_pwa_manifest' );
 function ws_pwa_manifest() {
     $base_path = rtrim( (string) parse_url( home_url(), PHP_URL_PATH ), '/' );
     echo '<link rel="manifest" href="' . esc_url( $base_path . '/manifest.json' ) . '">' . "\n";
-    echo '<meta name="theme-color" content="#2563eb">' . "\n";
+    echo '<meta name="theme-color" content="#4f46e5">' . "\n";
     echo '<meta name="mobile-web-app-capable" content="yes">' . "\n";
     echo '<meta name="apple-mobile-web-app-capable" content="yes">' . "\n";
     echo '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">' . "\n";

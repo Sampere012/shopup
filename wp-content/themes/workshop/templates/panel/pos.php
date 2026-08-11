@@ -56,6 +56,10 @@ if ( ! empty( $sub_data['is_trial'] ) && $sub_data['trial_days_left'] > 0 && $su
         <div class="ws-pos-products">
             <div class="ws-pos-header">
                 <h2><?php esc_html_e( 'Punto de Venta', 'workshop' ); ?></h2>
+                <span id="ws-offline-mode-badge" class="ws-offline-mode-badge" style="display:none">
+                    <i class="fa-solid fa-wifi-slash" aria-hidden="true"></i>
+                    <?php esc_html_e( 'Modo offline', 'workshop' ); ?>
+                </span>
                 <div class="ws-pos-header-actions">
                     <button class="ws-pos-cash-btn" :class="cashOpen ? 'ws-cash-open' : 'ws-cash-closed'" @click="openCashModal()" title="<?php esc_attr_e( 'Abrir / cerrar caja', 'workshop' ); ?>">
                         <i class="fa-solid fa-cash-register"></i>
@@ -367,6 +371,7 @@ document.addEventListener('alpine:init', () => {
         customers: [],
         locations: [],
         loadingProducts: false,
+        offlineMode: false,
         searchQuery: '',
         customerSearch: '',
         discount: 0,
@@ -397,6 +402,7 @@ document.addEventListener('alpine:init', () => {
         init() {
             this.loadLocations();
             this.loadCustomers();
+            this.initOfflineReconnect();
         },
 
         async loadLocations() {
@@ -518,9 +524,30 @@ document.addEventListener('alpine:init', () => {
                 // mientras la petición estaba en vuelo.
                 if (response.success && String(this.currentLocationId) === String(reqLocation)) {
                     this.products = response.data.data || [];
+                    // Volvimos a estar online: apagar el modo offline.
+                    if (this.offlineMode) {
+                        this.offlineMode = false;
+                        this.refreshOfflineBadge();
+                    }
+                    // Guardar en IndexedDB para trabajar offline (objetos completos,
+                    // igual que data-sync.js, para no perder campos de la UI).
+                    if (window.WSIndexedDB && Array.isArray(this.products)) {
+                        try { await WSIndexedDB.saveProducts(this.products); } catch (e) { /* no disponible */ }
+                    }
                 }
             } catch (error) {
-                console.error('Error cargando productos:', error);
+                console.error('Error cargando productos, usando copia offline:', error);
+                // Sin conexión: usar productos guardados en IndexedDB.
+                if (window.WSDataSync) {
+                    try {
+                        const offline = await WSDataSync.getProductsOffline(this.currentLocationId);
+                        if (offline.length && String(this.currentLocationId) === String(reqLocation)) {
+                            this.products = offline;
+                            this.offlineMode = true;
+                            this.refreshOfflineBadge();
+                        }
+                    } catch (e) { /* sin datos offline */ }
+                }
             }
             this.loadingProducts = false;
         },
@@ -530,9 +557,47 @@ document.addEventListener('alpine:init', () => {
                 const response = await $('ws_customers_get', { limit: 100 });
                 if (response.success) {
                     this.customers = response.data.data || [];
+                    if (this.offlineMode) {
+                        this.offlineMode = false;
+                        this.refreshOfflineBadge();
+                    }
+                    if (window.WSIndexedDB && Array.isArray(this.customers)) {
+                        try { await WSIndexedDB.saveCustomers(this.customers); } catch (e) { /* no disponible */ }
+                    }
                 }
             } catch (error) {
-                console.error('Error cargando clientes:', error);
+                console.error('Error cargando clientes, usando copia offline:', error);
+                if (window.WSDataSync) {
+                    try {
+                        const offline = await WSDataSync.getCustomersOffline();
+                        if (offline.length) {
+                            this.customers = offline;
+                            this.offlineMode = true;
+                            this.refreshOfflineBadge();
+                        }
+                    } catch (e) { /* sin datos offline */ }
+                }
+            }
+        },
+
+        initOfflineReconnect() {
+            window.addEventListener('online', () => {
+                // Al volver la conexión: recargar y sincronizar la cola offline.
+                if (window.WSOfflineQueue) {
+                    WSOfflineQueue.processQueue().catch(() => {});
+                }
+                this.loadProducts();
+                this.loadCustomers();
+            });
+        },
+
+        refreshOfflineBadge() {
+            const badge = document.getElementById('ws-offline-mode-badge');
+            if (!badge) return;
+            if (this.offlineMode) {
+                badge.style.display = 'inline-flex';
+            } else {
+                badge.style.display = 'none';
             }
         },
 
@@ -818,6 +883,28 @@ document.addEventListener('alpine:init', () => {
                     });
                 }
             } catch (error) {
+                // Sin conexión: guardar la venta en IndexedDB y encolarla para
+                // sincronizarla cuando vuelva la conexión.
+                if (!navigator.onLine && window.WSIndexedDB && window.WSOfflineQueue) {
+                    try {
+                        await WSIndexedDB.savePOSSale(saleData);
+                        await WSOfflineQueue.addToQueue(WSOfflineQueue.QUEUE_ACTIONS.POS_SALE, saleData);
+                        this.clearCart();
+                        this.cartOpen = false;
+                        this.offlineMode = true;
+                        this.refreshOfflineBadge();
+                        Swal.fire({
+                            icon: 'warning',
+                            title: '<?php esc_html_e( 'Venta guardada offline', 'workshop' ); ?>',
+                            text: '<?php esc_html_e( 'Se sincronizará automáticamente cuando vuelva la conexión', 'workshop' ); ?>',
+                            timer: 3500,
+                            showConfirmButton: false
+                        });
+                        return;
+                    } catch (queueError) {
+                        console.error('Error guardando venta offline:', queueError);
+                    }
+                }
                 Swal.fire({
                     icon: 'error',
                     title: '<?php esc_html_e( 'Error', 'workshop' ); ?>',
