@@ -43,7 +43,6 @@
     btn.id = 'wsb-button';
     btn.setAttribute('aria-label', S.open);
     btn.innerHTML = '<span class="wsb-icon"><i class="fa-solid fa-robot" aria-hidden="true"></i></span>' +
-        '<span class="wsb-close-icon" aria-hidden="true"><i class="fa-solid fa-xmark"></i></span>' +
         '<span class="wsb-badge" aria-hidden="true"></span>';
     base.appendChild(btn);
 
@@ -444,6 +443,177 @@
         });
     }
 
+    // Ejecuta una secuencia de llamadas API (bulk) y resume con los resultados.
+    function execSeq(list, stepFn, done) {
+        var ok = 0, err = '', i = 0;
+        function next() {
+            if (i >= list.length) { done(ok, err); return; }
+            stepFn(list[i], function (json) {
+                if (json && json.success) { ok++; }
+                else if (!err) { err = (json && json.data && json.data.msg) || ''; }
+                i++;
+                next();
+            });
+        }
+        next();
+    }
+
+    // Resuelve varios nombres a productos reales (para tareas en lote).
+    function resolveProductsBulk(names, done) {
+        var found = [];
+        var seen = {};
+        execSeq(names, function (n, next) {
+            api('ws_chatbot_search', { q: n }, function (json) {
+                var r = json && json.success && json.data && json.data.products && json.data.products[0];
+                if (r && !seen[r.id]) { seen[r.id] = 1; found.push(r); }
+                next(json || { success: false });
+            });
+        }, function () { done(found); });
+    }
+
+    function reportLabel(type) {
+        return ({ sales: 'de ventas', stock: 'de stock', orders: 'de pedidos', workers: 'del equipo', security: 'de seguridad', summary: 'resumen' })[type] || 'resumen';
+    }
+
+    function reportTypeFromText(text) {
+        var t = normText(text);
+        if (t.indexOf('venta') > -1 || t.indexOf('vend') > -1 || t.indexOf('caja') > -1) { return 'sales'; }
+        if (t.indexOf('stock') > -1 || t.indexOf('inventario') > -1 || t.indexOf('existencia') > -1) { return 'stock'; }
+        if (t.indexOf('pedido') > -1 || t.indexOf('orden') > -1) { return 'orders'; }
+        if (t.indexOf('equipo') > -1 || t.indexOf('trabajador') > -1 || t.indexOf('empleado') > -1 || t.indexOf('personal') > -1) { return 'workers'; }
+        if (t.indexOf('segur') > -1 || t.indexOf('acceso') > -1 || t.indexOf('login') > -1) { return 'security'; }
+        if (t.indexOf('resumen') > -1 || t.indexOf('todo') > -1 || t.indexOf('completo') > -1) { return 'summary'; }
+        return '';
+    }
+
+    // Interpreta fechas en español para programar tareas.
+    function parseWhenText(text) {
+        var w = normText(text);
+        var m;
+        if (w === 'ya' || w.indexOf('ahora') > -1) { return { when: 'ahora', label: 'ahora mismo', recurring: false }; }
+        m = w.match(/en\s+(\d+)\s*(hora|h|minuto|min|dia|d)/);
+        if (m) {
+            var n = parseInt(m[1], 10);
+            var u = (m[2][0] === 'h') ? 'hora(s)' : ((m[2][0] === 'd') ? 'día(s)' : 'minuto(s)');
+            return { when: 'in' + n + m[2], label: 'en ' + n + ' ' + u, recurring: false };
+        }
+        if (w.indexOf('manana') > -1) {
+            m = w.match(/(\d{1,2})(?::(\d{2}))?/);
+            var h1 = m ? parseInt(m[1], 10) : 8;
+            var mi1 = (m && m[2]) ? parseInt(m[2], 10) : 0;
+            return { when: 'manana ' + h1 + ':' + (mi1 < 10 ? '0' : '') + mi1, label: 'mañana a las ' + h1 + ':' + (mi1 < 10 ? '0' : '') + mi1, recurring: false };
+        }
+        if (w.indexOf('hoy') > -1) {
+            m = w.match(/(\d{1,2})(?::(\d{2}))?/);
+            if (m) {
+                var h2 = parseInt(m[1], 10);
+                var mi2 = (m[2] ? parseInt(m[2], 10) : 0);
+                return { when: 'hoy ' + h2 + ':' + (mi2 < 10 ? '0' : '') + mi2, label: 'hoy a las ' + h2 + ':' + (mi2 < 10 ? '0' : '') + mi2, recurring: false };
+            }
+            return { when: 'hoy 20:00', label: 'hoy a las 20:00', recurring: false };
+        }
+        if (w.indexOf('cada dia') > -1 || w.indexOf('diario') > -1 || w.indexOf('todos los dias') > -1) {
+            m = w.match(/(\d{1,2})(?::(\d{2}))?/);
+            var h3 = m ? parseInt(m[1], 10) : 8;
+            var mi3 = (m && m[2]) ? parseInt(m[2], 10) : 0;
+            return { when: 'cada dia ' + h3 + ':' + (mi3 < 10 ? '0' : '') + mi3, label: 'cada día a las ' + h3 + ':' + (mi3 < 10 ? '0' : '') + mi3, recurring: true };
+        }
+        return null;
+    }
+
+    function reportTypeChips(flow) {
+        return [
+            { label: 'Ventas', cls: 'wsb-chip-pick', icon: 'fa-cash-register', click: function () { pendingAction.data.type = 'sales'; flow === 'schedule' ? scheduleFlow('when') : reportFlow('days'); } },
+            { label: 'Stock', cls: 'wsb-chip-pick', icon: 'fa-warehouse', click: function () { pendingAction.data.type = 'stock'; flow === 'schedule' ? scheduleFlow('when') : reportFlow('days'); } },
+            { label: 'Pedidos', cls: 'wsb-chip-pick', icon: 'fa-cart-shopping', click: function () { pendingAction.data.type = 'orders'; flow === 'schedule' ? scheduleFlow('when') : reportFlow('days'); } },
+            { label: 'Equipo', cls: 'wsb-chip-pick', icon: 'fa-users', click: function () { pendingAction.data.type = 'workers'; flow === 'schedule' ? scheduleFlow('when') : reportFlow('days'); } },
+            { label: 'Seguridad', cls: 'wsb-chip-pick', icon: 'fa-shield-halved', click: function () { pendingAction.data.type = 'security'; flow === 'schedule' ? scheduleFlow('when') : reportFlow('days'); } },
+            { label: 'Resumen', cls: 'wsb-chip-pick', icon: 'fa-chart-line', click: function () { pendingAction.data.type = 'summary'; flow === 'schedule' ? scheduleFlow('when') : reportFlow('days'); } }
+        ];
+    }
+
+    function reportFlow(step) {
+        if (step === 'ask') {
+            pendingAction = { flow: 'report', step: 'type', data: {} };
+            ask('¿Qué reporte quieres?', reportTypeChips('report'), 'report:type');
+            return;
+        }
+        if (step === 'days') {
+            ask('¿De qué período?', [
+                { label: 'Hoy', cls: 'wsb-chip-pick', icon: 'fa-calendar-day', click: function () { pendingAction.data.days = 1; runReportNow(); } },
+                { label: '7 días', cls: 'wsb-chip-pick', icon: 'fa-calendar-week', click: function () { pendingAction.data.days = 7; runReportNow(); } },
+                { label: '30 días', cls: 'wsb-chip-pick', icon: 'fa-calendar', click: function () { pendingAction.data.days = 30; runReportNow(); } }
+            ], 'report:days');
+            return;
+        }
+    }
+
+    function runReportNow() {
+        var d = pendingAction.data;
+        var t = showTyping();
+        api('ws_chatbot_report', { type: d.type, days: String(d.days || 1) }, function (json) {
+            removeTyping(t);
+            pendingAction = null;
+            if (json && json.success && json.data && json.data.text) {
+                reply(json.data.text, [
+                    { label: 'Programarlo', cls: 'wsb-chip-success', icon: 'fa-clock', click: function () { startFlowGuard('schedule'); } },
+                    { label: 'Otro reporte', icon: 'fa-chart-line', click: function () { startFlowGuard('report'); } },
+                    { label: 'Mis reportes', icon: 'fa-list-check', click: function () { myTasks(); } }
+                ], 'report:ok');
+            } else {
+                reply((json && json.data && json.data.msg) || 'No pude generar el reporte.', [], 'report:error');
+            }
+            busy = false;
+        });
+    }
+
+    function scheduleFlow(step) {
+        if (step === 'ask') {
+            pendingAction = { flow: 'schedule', step: 'type', data: {} };
+            ask('¡Claro! Puedo programar reportes que se entregan solos. ¿Qué reporte quieres programar?', reportTypeChips('schedule'), 'schedule:type');
+            return;
+        }
+        if (step === 'when') {
+            pendingAction.step = 'when';
+            ask('¿Cuándo lo quieres? Ejemplos: "en 2 horas", "mañana a las 09:00", "cada día a las 08:00", "hoy a las 18:00":', [
+                { label: 'Ahora', cls: 'wsb-chip-pick', icon: 'fa-bolt', click: function () { scheduleWhen('ahora'); } },
+                { label: 'En 2 horas', cls: 'wsb-chip-pick', icon: 'fa-clock', click: function () { scheduleWhen('en 2 horas'); } },
+                { label: 'Mañana 08:00', cls: 'wsb-chip-pick', icon: 'fa-sun', click: function () { scheduleWhen('manana a las 08:00'); } },
+                { label: 'Cada día 08:00', cls: 'wsb-chip-pick', icon: 'fa-calendar-check', click: function () { scheduleWhen('cada dia a las 08:00'); } }
+            ], 'schedule:when');
+            return;
+        }
+    }
+
+    function scheduleWhen(text) {
+        var r = parseWhenText(text);
+        if (!r) { ask('No entendí la fecha. Prueba: "en 2 horas", "mañana a las 09:00"...', [], 'schedule:when'); return; }
+        var d = pendingAction.data;
+        d.when = r.when; d.whenLabel = r.label; d.recurring = r.recurring;
+        pendingAction.step = 'confirm';
+        confirmAsk('¿Confirmas programar el reporte ' + reportLabel(d.type) + ' para ' + r.label + '?', 'schedule:confirm');
+    }
+
+    function myTasks() {
+        var t = showTyping();
+        api('ws_chatbot_tasks', {}, function (json) {
+            removeTyping(t);
+            if (!json || !json.success || !(json.data && json.data.tasks && json.data.tasks.length)) {
+                reply('No tienes reportes programados. Puedo programar uno: ventas, stock, pedidos, equipo, seguridad o un resumen diario automático.', [{ label: 'Programar', cls: 'wsb-chip-success', icon: 'fa-clock', click: function () { startFlowGuard('schedule'); } }], 'tasks:empty');
+                busy = false;
+                return;
+            }
+            var rows = (json.data.tasks || []).map(function (tk) {
+                var meta = 'Para ' + tk.when_label + (tk.recurring ? ' · cada día' : '') + (tk.status === 'done' ? ' · completado' : ' · pendiente') + (tk.last_result ? ' · Último: ' + tk.last_result.replace(/\n/g, ' ').slice(0, 80) : '');
+                return { name: tk.label, meta: meta, url: '#' };
+            });
+            appendCard('Tus reportes programados:', rows, {
+                chips: [{ label: 'Programar otro', cls: 'wsb-chip-success', icon: 'fa-clock', click: function () { startFlowGuard('schedule'); } }]
+            });
+            busy = false;
+        });
+    }
+
     function handlePendingAction(value) {
         var low = String(value || '').toLowerCase();
         if (low.indexOf('cancelar') > -1 || low === 'no' || low === 'nada' || low === 'salir' || low.indexOf('olvid') > -1) {
@@ -459,20 +629,22 @@
         if (p.flow === 'product_new') {
             if (p.step === 'name') {
                 if (!value.trim()) { ask('El nombre no puede quedar vacío:', [], 'action:product_new:name'); return; }
-                d.name = value;
+                d.names = value.split(/[,;\n]/).map(function (s) { return s.trim(); }).filter(Boolean);
+                if (!d.names.length) { ask('Escribe al menos un nombre:', [], 'action:product_new:name'); return; }
+                d.name = d.names[0];
                 p.step = 'price';
-                ask('¿Cuál es el precio de venta? (ej: 150):', [], 'action:product_new:price');
+                ask(d.names.length > 1 ? 'Perfecto, crearé ' + d.names.length + ' productos (' + d.names.join(', ') + '). ¿Qué precio de venta tienen? (uno para todos, ej: 150):' : '¿Cuál es el precio de venta? (ej: 150):', [], 'action:product_new:price');
             } else if (p.step === 'price') {
                 var pr = parseFloat(value.replace(',', '.').replace(/[^\d.]/g, ''));
                 if (isNaN(pr) || pr < 0) { ask('Escribe un precio válido (ej: 150):', [], 'action:product_new:price'); return; }
                 d.sale_price = pr;
                 p.step = 'min';
-                ask('¿Stock mínimo para recibir avisos? (0 si no quieres):', [], 'action:product_new:min');
+                ask(d.names.length > 1 ? '¿Stock mínimo para recibir avisos? (0 si no quieres, aplica a todos):' : '¿Stock mínimo para recibir avisos? (0 si no quieres):', [], 'action:product_new:min');
             } else if (p.step === 'min') {
                 var mn = parseFloat(value.replace(',', '.').replace(/[^\d.]/g, ''));
                 d.min_stock = isNaN(mn) ? 0 : mn;
                 p.step = 'confirm';
-                confirmAsk('¿Confirmas crear el producto "' + d.name + '" a ' + formatNum(d.sale_price) + '?', 'action:product_new:confirm');
+                confirmAsk(d.names.length > 1 ? '¿Confirmas crear ' + d.names.length + ' productos (' + d.names.join(', ') + ') a ' + formatNum(d.sale_price) + ' cada uno?' : '¿Confirmas crear el producto "' + d.name + '" a ' + formatNum(d.sale_price) + '?', 'action:product_new:confirm');
             } else if (p.step === 'confirm') {
                 if (confirmYes(low)) { p.step = 'execute'; executeFlow(); }
                 else { ask('Escribe "confirmar" para continuar o "cancelar" para salir:', [], 'action:confirm:again'); }
@@ -482,30 +654,44 @@
 
         if (p.flow === 'product_edit') {
             if (p.step === 'pick') {
-                pickFromSearch(value, function (r) {
-                    d.product = r;
-                    p.step = 'field';
-                    ask('¿Qué quieres cambiar de "' + r.name + '"?', [
-                        { label: 'Nombre', cls: 'wsb-chip-pick', icon: 'fa-font', click: function () { d.field = 'name'; p.step = 'value'; ask('Escribe el nuevo nombre:', [], 'action:edit:name'); } },
-                        { label: 'Precio de venta', cls: 'wsb-chip-pick', icon: 'fa-tag', click: function () { d.field = 'price'; p.step = 'value'; ask('Escribe el nuevo precio (ej: 150):', [], 'action:edit:price'); } }
-                    ], 'action:edit:field');
-                });
+                var enames = value.split(/[,;\n]/).map(function (s) { return s.trim(); }).filter(Boolean);
+                if (enames.length > 1) {
+                    resolveProductsBulk(enames, function (found) {
+                        if (!found.length) { reply('No encontré ninguno de esos productos.', [{ label: 'Cancelar', cls: 'wsb-chip-danger', icon: 'fa-xmark', click: cancelFlow }], 'action:edit:none'); busy = false; return; }
+                        d.list = found;
+                        p.step = 'field';
+                        ask('¿Qué quieres cambiar de esos ' + found.length + ' productos?', [
+                            { label: 'Nombre', cls: 'wsb-chip-pick', icon: 'fa-font', click: function () { d.field = 'name'; p.step = 'value'; ask('Escribe el nuevo nombre (aplica a todos):', [], 'action:edit:name'); } },
+                            { label: 'Precio de venta', cls: 'wsb-chip-pick', icon: 'fa-tag', click: function () { d.field = 'price'; p.step = 'value'; ask('Escribe el nuevo precio para todos (ej: 150):', [], 'action:edit:price'); } }
+                        ], 'action:edit:field');
+                    });
+                } else {
+                    pickFromSearch(value, function (r) {
+                        d.list = [r]; d.product = r;
+                        p.step = 'field';
+                        ask('¿Qué quieres cambiar de "' + r.name + '"?', [
+                            { label: 'Nombre', cls: 'wsb-chip-pick', icon: 'fa-font', click: function () { d.field = 'name'; p.step = 'value'; ask('Escribe el nuevo nombre:', [], 'action:edit:name'); } },
+                            { label: 'Precio de venta', cls: 'wsb-chip-pick', icon: 'fa-tag', click: function () { d.field = 'price'; p.step = 'value'; ask('Escribe el nuevo precio (ej: 150):', [], 'action:edit:price'); } }
+                        ], 'action:edit:field');
+                    });
+                }
             } else if (p.step === 'field') {
-                if (low === '1' || low === 'nombre' || low === 'name') { d.field = 'name'; p.step = 'value'; ask('Escribe el nuevo nombre:', [], 'action:edit:name'); }
-                else if (low === '2' || low === 'precio' || low === 'price' || low.indexOf('precio') > -1) { d.field = 'price'; p.step = 'value'; ask('Escribe el nuevo precio (ej: 150):', [], 'action:edit:price'); }
+                if (low === '1' || low === 'nombre' || low === 'name') { d.field = 'name'; p.step = 'value'; ask((d.list && d.list.length > 1 ? 'Escribe el nuevo nombre (aplica a ' + d.list.length + '):' : 'Escribe el nuevo nombre:'), [], 'action:edit:name'); }
+                else if (low === '2' || low === 'precio' || low === 'price' || low.indexOf('precio') > -1) { d.field = 'price'; p.step = 'value'; ask((d.list && d.list.length > 1 ? 'Escribe el nuevo precio para todos (ej: 150):' : 'Escribe el nuevo precio (ej: 150):'), [], 'action:edit:price'); }
                 else { ask('Elige 1) Nombre o 2) Precio de venta:', [], 'action:edit:field'); }
             } else if (p.step === 'value') {
+                var many = d.list && d.list.length > 1;
                 if (d.field === 'name') {
                     if (!value.trim()) { ask('El nombre no puede quedar vacío:', [], 'action:edit:name'); return; }
                     d.value = value;
                     p.step = 'confirm';
-                    confirmAsk('¿Confirmas cambiar el nombre a "' + value + '"?', 'action:edit:confirm');
+                    confirmAsk(many ? '¿Confirmas cambiar el nombre a "' + value + '" en ' + d.list.length + ' productos?' : '¿Confirmas cambiar el nombre a "' + value + '"?', 'action:edit:confirm');
                 } else {
                     var vp = parseFloat(value.replace(',', '.').replace(/[^\d.]/g, ''));
                     if (isNaN(vp) || vp < 0) { ask('Precio inválido. Escribe el nuevo precio (ej: 150):', [], 'action:edit:price'); return; }
                     d.value = vp;
                     p.step = 'confirm';
-                    confirmAsk('¿Confirmas el nuevo precio ' + formatNum(vp) + '?', 'action:edit:confirm');
+                    confirmAsk(many ? '¿Confirmas el nuevo precio ' + formatNum(vp) + ' en ' + d.list.length + ' productos?' : '¿Confirmas el nuevo precio ' + formatNum(vp) + '?', 'action:edit:confirm');
                 }
             } else if (p.step === 'confirm') {
                 if (confirmYes(low)) { p.step = 'execute'; executeFlow(); }
@@ -516,11 +702,21 @@
 
         if (p.flow === 'product_delete') {
             if (p.step === 'pick') {
-                pickFromSearch(value, function (r) {
-                    d.product = r;
-                    p.step = 'confirm';
-                    confirmAsk('⚠️ Vas a ELIMINAR "' + r.name + '" para siempre. ¿Confirmas?', 'action:delete:confirm');
-                });
+                var dnames = value.split(/[,;\n]/).map(function (s) { return s.trim(); }).filter(Boolean);
+                if (dnames.length > 1) {
+                    resolveProductsBulk(dnames, function (found) {
+                        if (!found.length) { reply('No encontré ninguno de esos productos. Prueba con otra palabra.', [{ label: 'Cancelar', cls: 'wsb-chip-danger', icon: 'fa-xmark', click: cancelFlow }], 'action:delete:none'); busy = false; return; }
+                        d.list = found;
+                        p.step = 'confirm';
+                        confirmAsk('⚠️ Vas a ELIMINAR ' + found.length + ' producto(s): ' + found.map(function (r) { return r.name; }).join(', ') + '. ¿Confirmas?', 'action:delete:confirm');
+                    });
+                } else {
+                    pickFromSearch(value, function (r) {
+                        d.list = [r]; d.product = r;
+                        p.step = 'confirm';
+                        confirmAsk('⚠️ Vas a ELIMINAR "' + r.name + '" para siempre. ¿Confirmas?', 'action:delete:confirm');
+                    });
+                }
             } else if (p.step === 'confirm') {
                 if (confirmYes(low)) { p.step = 'execute'; executeFlow(); }
                 else { ask('Escribe "confirmar" para continuar o "cancelar" para salir:', [], 'action:confirm:again'); }
@@ -578,13 +774,15 @@
         if (p.flow === 'customer_new') {
             if (p.step === 'name') {
                 if (!value.trim()) { ask('El nombre no puede quedar vacío:', [], 'action:customer:name'); return; }
-                d.name = value;
+                d.names = value.split(/[,;\n]/).map(function (s) { return s.trim(); }).filter(Boolean);
+                if (!d.names.length) { ask('Escribe al menos un nombre:', [], 'action:customer:name'); return; }
+                d.name = d.names[0];
                 p.step = 'phone';
-                ask('¿Teléfono? (opcional, ej: 5xxxxxxx o escribe "ninguno"):', [], 'action:customer:phone');
+                ask(d.names.length > 1 ? 'Perfecto, crearé ' + d.names.length + ' clientes. ¿Qué teléfono les pongo? (uno para todos, o "ninguno"):' : '¿Teléfono? (opcional, ej: 5xxxxxxx o escribe "ninguno"):', [], 'action:customer:phone');
             } else if (p.step === 'phone') {
                 d.phone = (low === 'ninguno' || low === 'ningun' || low === 'no') ? '' : value;
                 p.step = 'confirm';
-                confirmAsk('¿Confirmas crear el cliente "' + d.name + '"' + (d.phone ? ' · ' + d.phone : '') + '?', 'action:customer:confirm');
+                confirmAsk(d.names.length > 1 ? '¿Confirmas crear ' + d.names.length + ' clientes (' + d.names.join(', ') + ')' + (d.phone ? ' · ' + d.phone : '') + '?' : '¿Confirmas crear el cliente "' + d.name + '"' + (d.phone ? ' · ' + d.phone : '') + '?', 'action:customer:confirm');
             } else if (p.step === 'confirm') {
                 if (confirmYes(low)) { p.step = 'execute'; executeFlow(); }
                 else { ask('Escribe "confirmar" para continuar o "cancelar" para salir:', [], 'action:confirm:again'); }
@@ -615,6 +813,32 @@
             } else if (p.step === 'confirm') {
                 if (confirmYes(low)) { p.step = 'execute'; executeFlow(); }
                 else { ask('Escribe "confirmar" para continuar o "cancelar" para salir:', [], 'action:confirm:again'); }
+            }
+            return;
+        }
+
+        if (p.flow === 'schedule') {
+            if (p.step === 'type') {
+                var rt = reportTypeFromText(value);
+                if (rt) { d.type = rt; scheduleFlow('when'); return; }
+                ask('Elige un reporte de la lista (ventas, stock, pedidos, equipo, seguridad o resumen):', [], 'schedule:type');
+                return;
+            }
+            if (p.step === 'when') {
+                var wr = parseWhenText(value);
+                if (wr) {
+                    d.when = wr.when; d.whenLabel = wr.label; d.recurring = wr.recurring;
+                    p.step = 'confirm';
+                    confirmAsk('¿Confirmas programar el reporte ' + reportLabel(d.type) + ' para ' + wr.label + '?', 'schedule:confirm');
+                } else {
+                    ask('No entendí la fecha. Ejemplos: "en 2 horas", "mañana a las 09:00", "cada día a las 08:00", "hoy a las 18:00", "ahora":', [], 'schedule:when');
+                }
+                return;
+            }
+            if (p.step === 'confirm') {
+                if (confirmYes(low)) { p.step = 'execute'; executeFlow(); }
+                else { ask('Escribe "confirmar" para continuar o "cancelar" para salir:', [], 'schedule:confirm'); }
+                return;
             }
             return;
         }
@@ -657,40 +881,48 @@
         var d = p.data;
 
         if (p.flow === 'product_new') {
-            api('ws_save_product', { name: d.name, sale_price: String(d.sale_price), min_stock: String(d.min_stock || 0) }, function (json) {
-                if (json && json.success) {
-                    setMem('product_new', d.name);
-                    pendingAction = null;
-                    reply('¡Listo! Producto creado ✅ "' + d.name + '" quedó en tu catálogo.', [{ label: 'Ver productos', url: C.shortcuts.panel.products.url, icon: 'fa-boxes-stacked' }], 'action:product_new:ok');
+            var names = (d.names && d.names.length) ? d.names : [d.name];
+            execSeq(names, function (n, next) {
+                api('ws_save_product', { name: n, sale_price: String(d.sale_price), min_stock: String(d.min_stock || 0) }, next);
+            }, function (okCount, firstErr) {
+                pendingAction = null;
+                if (okCount > 0) {
+                    setMem('product_new', names.join(', '));
+                    reply(okCount === names.length
+                        ? '¡Listo! ✅ Creé ' + okCount + ' producto(s) a ' + formatNum(d.sale_price) + ' cada uno.'
+                        : 'Se crearon ' + okCount + ' de ' + names.length + ' productos.' + (firstErr ? ' ' + firstErr : ''), [{ label: 'Ver productos', url: C.shortcuts.panel.products.url, icon: 'fa-boxes-stacked' }], 'action:product_new:ok');
                 } else {
-                    pendingAction = null;
-                    reply(((json && json.data && json.data.msg) || 'No se pudo crear el producto.') + ' Revisa los límites de tu plan e inténtalo de nuevo.', [{ label: 'Reintentar', icon: 'fa-rotate', send: 'crear producto' }], 'action:product_new:error');
+                    reply(firstErr || 'No se pudo crear ningún producto. Revisa los límites de tu plan.', [{ label: 'Reintentar', icon: 'fa-rotate', send: 'crear producto' }], 'action:product_new:error');
                 }
                 busy = false;
             });
         } else if (p.flow === 'product_edit') {
-            var payload = { id: d.product.id };
-            if (d.field === 'name') { payload.name = d.value; } else { payload.sale_price = String(d.value); }
-            api('ws_save_product', payload, function (json) {
-                if (json && json.success) {
-                    setMem('product_edit', d.product.name);
-                    pendingAction = null;
-                    reply('Producto actualizado ✅', [{ label: 'Ver productos', url: C.shortcuts.panel.products.url, icon: 'fa-boxes-stacked' }], 'action:product_edit:ok');
+            var elist = (d.list && d.list.length) ? d.list : [d.product];
+            execSeq(elist, function (r, next) {
+                var payload = { id: r.id };
+                if (d.field === 'name') { payload.name = d.value; } else { payload.sale_price = String(d.value); }
+                api('ws_save_product', payload, next);
+            }, function (okCount, firstErr) {
+                pendingAction = null;
+                if (okCount > 0) {
+                    setMem('product_edit', (d.field === 'name' ? d.value : 'precio ' + d.value));
+                    reply(okCount === elist.length ? 'Producto(s) actualizado(s) ✅ (' + okCount + ').' : 'Se actualizaron ' + okCount + ' de ' + elist.length + '.' + (firstErr ? ' ' + firstErr : ''), [{ label: 'Ver productos', url: C.shortcuts.panel.products.url, icon: 'fa-boxes-stacked' }], 'action:product_edit:ok');
                 } else {
-                    pendingAction = null;
-                    reply((json && json.data && json.data.msg) || 'No se pudo actualizar el producto.', [], 'action:product_edit:error');
+                    reply(firstErr || 'No se pudo actualizar el producto.', [], 'action:product_edit:error');
                 }
                 busy = false;
             });
         } else if (p.flow === 'product_delete') {
-            api('ws_delete_product', { id: d.product.id }, function (json) {
-                if (json && json.success) {
-                    setMem('product_delete', d.product.name);
-                    pendingAction = null;
-                    reply('Producto eliminado ✅ "' + d.product.name + '" ya no está en tu catálogo.', [], 'action:product_delete:ok');
+            var dlist = (d.list && d.list.length) ? d.list : [d.product];
+            execSeq(dlist, function (r, next) {
+                api('ws_delete_product', { id: r.id }, next);
+            }, function (okCount, firstErr) {
+                pendingAction = null;
+                if (okCount > 0) {
+                    setMem('product_delete', dlist.length + ' productos');
+                    reply(okCount === dlist.length ? 'Productos eliminados ✅ (' + okCount + ').' : 'Se eliminaron ' + okCount + ' de ' + dlist.length + '.' + (firstErr ? ' ' + firstErr : ''), [], 'action:product_delete:ok');
                 } else {
-                    pendingAction = null;
-                    reply((json && json.data && json.data.msg) || 'No se pudo eliminar el producto.', [], 'action:product_delete:error');
+                    reply(firstErr || 'No se pudo eliminar el producto.', [], 'action:product_delete:error');
                 }
                 busy = false;
             });
@@ -719,14 +951,26 @@
                 busy = false;
             });
         } else if (p.flow === 'customer_new') {
-            api('ws_customers_save', { name: d.name, phone: d.phone || '' }, function (json) {
-                if (json && json.success) {
-                    setMem('customer_new', d.name);
-                    pendingAction = null;
-                    reply('Cliente creado ✅ "' + d.name + '" quedó en tu CRM.', [{ label: 'Ver clientes', url: C.shortcuts.panel.customers.url, icon: 'fa-users' }], 'action:customer_new:ok');
+            var cnames = (d.names && d.names.length) ? d.names : [d.name];
+            execSeq(cnames, function (n, next) {
+                api('ws_customers_save', { name: n, phone: d.phone || '' }, next);
+            }, function (okCount, firstErr) {
+                pendingAction = null;
+                if (okCount > 0) {
+                    setMem('customer_new', cnames.join(', '));
+                    reply(okCount === cnames.length ? 'Clientes creados ✅ (' + okCount + ').' : 'Se crearon ' + okCount + ' de ' + cnames.length + ' clientes.' + (firstErr ? ' ' + firstErr : ''), [{ label: 'Ver clientes', url: C.shortcuts.panel.customers.url, icon: 'fa-users' }], 'action:customer_new:ok');
                 } else {
-                    pendingAction = null;
-                    reply((json && json.data && json.data.msg) || 'No se pudo crear el cliente.', [], 'action:customer_new:error');
+                    reply(firstErr || 'No se pudo crear el cliente.', [], 'action:customer_new:error');
+                }
+                busy = false;
+            });
+        } else if (p.flow === 'schedule') {
+            api('ws_chatbot_schedule', { type: d.type, when: d.when, recurring: d.recurring ? '1' : '0' }, function (json) {
+                pendingAction = null;
+                if (json && json.success && json.data && json.data.when_label) {
+                    reply('¡Listo! ✅ Reporte ' + reportLabel(d.type) + ' programado para ' + json.data.when_label + (d.recurring ? ' (se repite cada día)' : '') + '. Te avisaré aquí cuando esté listo.', [{ label: 'Mis reportes', icon: 'fa-clock', click: function () { myTasks(); } }], 'schedule:ok');
+                } else {
+                    reply((json && json.data && json.data.msg) || 'No se pudo programar el reporte.', [], 'schedule:error');
                 }
                 busy = false;
             });
@@ -813,9 +1057,12 @@
     }
 
     function startFlow(name) {
-        if (name === 'product_new') { pendingAction = { flow: 'product_new', step: 'name', data: {} }; ask('Perfecto, creo el producto por ti. ¿Cómo se llama?', [], 'action:product_new:name'); }
-        else if (name === 'product_edit') { pendingAction = { flow: 'product_edit', step: 'pick', data: {} }; ask('¿Qué producto quieres editar? Escríbelo y te muestro coincidencias:', [], 'action:edit:pick'); }
-        else if (name === 'product_delete') { pendingAction = { flow: 'product_delete', step: 'pick', data: {} }; ask('¿Qué producto quieres eliminar? Escríbelo:', [], 'action:delete:pick'); }
+        if (name === 'product_new') { pendingAction = { flow: 'product_new', step: 'name', data: {} }; ask('Perfecto, creo el producto por ti. ¿Cómo se llama? (si son varios, sepáralos con comas)', [], 'action:product_new:name'); }
+        else if (name === 'product_edit') { pendingAction = { flow: 'product_edit', step: 'pick', data: {} }; ask('¿Qué producto quieres editar? Escríbelo (o varios separados por comas para el mismo cambio):', [], 'action:edit:pick'); }
+        else if (name === 'product_delete') { pendingAction = { flow: 'product_delete', step: 'pick', data: {} }; ask('¿Qué producto quieres eliminar? Escríbelo (o varios separados por comas):', [], 'action:delete:pick'); }
+        else if (name === 'report') { reportFlow('ask'); }
+        else if (name === 'schedule') { scheduleFlow('ask'); }
+        else if (name === 'mytasks') { myTasks(); }
         else if (name === 'restock') { flowRestockStart(); }
         else if (name === 'order_accept') { flowOrderStart('accept'); }
         else if (name === 'order_reject') { flowOrderStart('reject'); }
@@ -839,6 +1086,9 @@
         ['customer_new', ['crear cliente', 'nuevo cliente', 'agregar cliente', 'crear un cliente', 'dar de alta un cliente', 'registrar un cliente']],
         ['pos_cart', ['registrar venta', 'registrar una venta', 'vender ahora', 'hacer una venta', 'vender en el pos', 'cobrar ahora', 'vender']],
         ['top', ['recomiendame', 'recomiéndame', 'que vende mas', 'qué vende más', 'mas vendido', 'más vendido', 'productos mas vendidos', 'top ventas', 'lo que mas se vende', 'que productos se venden mas']],
+        ['report', ['reporte de ventas', 'reporte del dia', 'reporte de stock', 'stock bajo', 'reporte de pedidos', 'reporte del equipo', 'actividad del equipo', 'que vendi hoy', 'cuanto vendi', 'cuánto vendí', 'ventas de hoy', 'ventas del mes', 'resumen del negocio', 'resumen de ventas', 'reporte de seguridad', 'reporte completo', 'quiero un reporte', 'dame un reporte']],
+        ['schedule', ['programa un reporte', 'programar un reporte', 'programa reporte', 'programar reporte', 'agenda un reporte', 'agendar reporte', 'programar tarea', 'programa una tarea', 'tarea programada', 'reporte automatico', 'reporte diario', 'reporte todos los dias', 'reporte en 2 horas', 'reporte manana', 'reporte mañana']],
+        ['mytasks', ['mis reportes', 'mis tareas', 'reportes programados', 'tareas programadas', 'que reportes tengo', 'ver mis reportes', 'ver mis tareas', 'reportes que programe']],
         ['guide', ['guia', 'guía', 'explicame', 'explícame', 'paso a paso', 'como se usa', 'como se hace', 'como uso', 'cómo uso', 'como hago para', 'como hago', 'quiero aprender', 'manual', 'enseñame a usar', 'que hace cada modulo', 'para que sirve cada modulo', 'como trabajo en el panel', 'guia del panel', 'guía del panel']]
     ];
 
@@ -867,13 +1117,77 @@
     }
 
     // Fallback con derivación en caliente (WhatsApp/contacto) en vez de solo enlaces.
-    function fallbackReply() {
-        var chips = [];
+    var STOP_WORDS = ['como','que','cual','cuales','cuando','donde','cuanto','cuantos','quiero','puedo','puedes','hacer','hago','haces','para','con','por','los','las','el','la','una','unos','unas','del','al','de','y','o','a','en','mi','mis','me','te','se','su','es','son','hay','tiene','tienen','tengo','saber','dime','cuentame','explicame','ayuda','necesito','quiere','debo','tienes','esta','este','esto','asi','bien','todo','toda','todos','todas','sobre','acerca','pregunta','preguntas','respuesta','respuestas','hola','buenas','gracias','porfa'];
+
+    function textWords(s) {
+        return normText(s).split(' ').filter(function (w) {
+            return w.length >= 4 && STOP_WORDS.indexOf(w) === -1;
+        });
+    }
+
+    // Búsqueda por palabras clave sobre TODA la base de conocimiento (patrones
+    // + respuestas): responde aunque la frase no sea exacta a ninguna entrada.
+    function keywordMatch(text) {
+        var words = textWords(text);
+        if (!words.length) { return null; }
+        var best = null, bestScore = 0;
+        (C.knowledge || []).forEach(function (item) {
+            var corpus = normText((item.patterns || []).join(' ') + ' ' + (item.answer || ''));
+            var score = 0, hits = 0;
+            words.forEach(function (w) {
+                if (corpus.indexOf(w) > -1) {
+                    score += (w.length >= 7 ? 2 : 1);
+                    hits++;
+                }
+            });
+            if (hits && score > bestScore) { best = item; bestScore = score; }
+        });
+        if (!best || bestScore < 2) { return null; }
+        return best;
+    }
+
+    function topicChips() {
+        if (isPanel) {
+            return [
+                { label: 'Productos', icon: 'fa-boxes-stacked', send: 'crear producto' },
+                { label: 'Stock', icon: 'fa-warehouse', send: 'reponer stock' },
+                { label: 'Pedidos', icon: 'fa-cart-shopping', send: 'mis pedidos' },
+                { label: 'Ventas', icon: 'fa-cash-register', send: 'ventas de hoy' },
+                { label: 'Reportes', icon: 'fa-chart-line', send: 'reporte de ventas' },
+                { label: 'Equipo', icon: 'fa-users', send: 'reporte del equipo' },
+                { label: 'Plan', icon: 'fa-crown', send: 'mi plan' }
+            ];
+        }
+        return [
+            { label: 'Cómo comprar', icon: 'fa-cart-shopping', send: 'como comprar' },
+            { label: 'Seguimiento', icon: 'fa-truck', send: 'seguimiento de pedido' },
+            { label: 'Devoluciones', icon: 'fa-rotate-left', send: 'devoluciones' },
+            { label: 'Envíos', icon: 'fa-truck-fast', send: 'envio a domicilio' },
+            { label: 'Planes', icon: 'fa-crown', send: 'planes y precios' },
+            { label: 'Crear mi tienda', icon: 'fa-store', send: 'crear mi tienda' },
+            { label: 'Contacto', icon: 'fa-headset', send: 'contacto' }
+        ];
+    }
+
+    // Fallback inteligente: si no hubo coincidencia exacta, intenta responder
+    // por palabras clave; si tampoco, sugiere temas y deriva a un humano.
+    function smartFallback(text) {
+        var item = keywordMatch(text);
+        if (item) {
+            var kchips = [];
+            if (item.chip) { kchips.push(item.chip); }
+            if (item.chips && item.chips.length) { kchips = kchips.concat(item.chips); }
+            reply('Creo que te refieres a esto 👇\n\n' + (item.answer || ''), kchips.length ? kchips : null, 'fallback:keywords');
+            track('fallback:keywords:' + (item.id || 'x'));
+            return;
+        }
+        var chips = topicChips();
         var wa = whatsappChip();
         if (wa) { chips.push(wa); }
         chips.push(contactChip());
-        chips = chips.concat(chipsFor(isPanel ? ['atajos'] : ['marketplace', 'ayuda']).filter(Boolean));
-        reply(S.fallback, chips, 'fallback');
+        reply(S.fallback + '\n\n' + (isPanel
+            ? 'Puedo ayudarte con: productos, stock, pedidos, ventas, clientes, reportes, tu equipo, tu plan o programar reportes.'
+            : 'Puedo orientarte para comprar, seguir tu pedido, devoluciones, envíos o montar tu tienda.'), chips.filter(Boolean), 'fallback');
     }
 
     // IA opcional: cuando el admin configuró OpenRouter, la frase no resuelta
@@ -1157,6 +1471,18 @@
                 reply(guideIntro('reports') || 'Tus reportes y estadísticas te esperan.', [guideChip('reports'), chipsFor(['reports'])[0]].filter(Boolean), 'reports');
             }
         },
+        report: {
+            keys: ['reporte de ventas', 'ventas de hoy', 'stock bajo', 'cuanto vendi', 'cuánto vendí', 'resumen del negocio', 'reporte del equipo'],
+            run: function () { if (!isPanel || locked) { actions.webstore.run(); return; } reportFlow('ask'); }
+        },
+        schedule: {
+            keys: ['programa un reporte', 'programar reporte', 'agendar reporte', 'programar tarea', 'tarea programada', 'reporte diario'],
+            run: function () { if (!isPanel || locked) { actions.webstore.run(); return; } scheduleFlow('ask'); }
+        },
+        mytasks: {
+            keys: ['mis reportes', 'mis tareas', 'tareas programadas', 'reportes programados'],
+            run: function () { if (!isPanel || locked) { actions.webstore.run(); return; } myTasks(); }
+        },
         suppliers: {
             keys: ['proveedores', 'proveedor', 'compania', 'compras a proveedor'],
             run: function () {
@@ -1322,7 +1648,7 @@
             if (intent && intent.knowledge) { busy = false; runKnowledge(intent.knowledge); }
             else if (intent) { busy = false; intent.run(); }
             else if (C.llm && C.llm.enabled) { doLLM(value); } // busy queda activo hasta la respuesta
-            else { busy = false; fallbackReply(); }
+            else { busy = false; smartFallback(value); }
         }, delay);
     }
 

@@ -663,6 +663,103 @@ function ws_chatbot_default_knowledge() {
 /**
  * Conocimiento activo: los ítems del admin, o los seeds si aún no configuró.
  */
+/**
+ * Conocimiento de contexto de toda la app: se suma SIEMPRE a la base editable
+ * del administrador (no se puede editar desde wp-admin, pero cubre cualquier
+ * pregunta sobre el funcionamiento del sitio, el panel, los planes, el modo
+ * offline, la seguridad y los reportes programados).
+ */
+function ws_chatbot_knowledge_extras() {
+    $p = function ( $id, $patterns, $answer, $target = '', $label = '', $icon = '' ) {
+        return array(
+            'id'          => $id,
+            'patterns'    => $patterns,
+            'answer'      => $answer,
+            'link_target' => $target,
+            'link_label'  => $label,
+            'link_icon'   => $icon,
+            'active'      => 1,
+        );
+    };
+    $P = 'panel:'; // atajo: enlaces al panel
+
+    return array(
+        // ---------- Cuenta y acceso ----------
+        $p( 'cuenta-registrarse', array( 'como me registro', 'registrarme', 'crear cuenta', 'hacer una cuenta', 'registrarse gratis', 'crear una cuenta' ), 'Crear tu cuenta es gratis y no necesitas tarjeta: pulsa "Registrarse", llena nombre, correo y contraseña, y en minutos tendrás tu espacio para montar tu negocio.', 'register', 'Crear cuenta', 'fa-user-plus' ),
+        $p( 'cuenta-login', array( 'como entro a mi cuenta', 'iniciar sesion', 'entrar a mi panel', 'acceder a mi cuenta', 'como me logueo', 'iniciar sesión' ), 'Entra con tu correo y contraseña desde el botón "Entrar". Si eres de un negocio, el sistema te lleva directo a tu panel según tu rol (dueño, almacenero o vendedor).', 'login', 'Entrar', 'fa-right-to-bracket' ),
+        $p( 'cuenta-password', array( 'olvide mi contrasena', 'recuperar contrasena', 'cambiar contrasena', 'resetear password', 'olvide la clave' ), 'En la pantalla de entrada pulsa "¿Olvidaste tu contraseña?". Te enviaremos un enlace a tu correo para restablecerla en minutos.', 'login', 'Recuperar', 'fa-key' ),
+        $p( 'cuenta-perfil', array( 'editar mi perfil', 'cambiar mi nombre de usuario', 'cambiar mi correo', 'mi perfil', 'datos de mi cuenta' ), 'Tu perfil (nombre, correo y contraseña) se edita desde el panel en Ajustes/Perfil. Los dueños también pueden invitar y gestionar trabajadores ahí.', $P . 'workers', 'Mi perfil', 'fa-user' ),
+
+        // ---------- Planes y pagos ----------
+        $p( 'plan-gratis', array( 'es gratis', 'tiene costo', 'cuanto cuesta registrarse', 'plan gratis', 'prueba gratis', 'dias de prueba' ), 'El sitio se usa gratis con una prueba de 7 días para nuevos negocios: montas tu tienda, subes productos y vendes sin pagar nada. Después eliges el plan que mejor te venga.', 'register', 'Empezar gratis', 'fa-gift' ),
+        $p( 'plan-planes', array( 'que planes hay', 'planes disponibles', 'cual es el mejor plan', 'planes y precios', 'ver planes', 'tarifas' ), 'Tenemos planes pensados para cada tamaño de negocio: desde el plan inicial hasta el plan Pro con más productos, más tiendas (ubicaciones) y más trabajadores. El panel > Plan te muestra las opciones y el tuyo actual.', $P . 'plan', 'Ver planes', 'fa-crown' ),
+        $p( 'plan-cambiar', array( 'subir de plan', 'cambiar de plan', 'upgrade de plan', 'ampliar mi plan', 'mejorar mi plan' ), 'Desde el panel > Plan eliges el nuevo plan y sigues el pago. Los cambios se aplican al momento y tus productos y ventas no se tocan.', $P . 'plan', 'Mi plan', 'fa-arrow-up' ),
+        $p( 'plan-limites', array( 'limite de productos', 'me dice que llegue al limite', 'plan lleno', 'no puedo crear mas productos', 'limites del plan' ), 'Cada plan tiene un tope de productos, ubicaciones y trabajadores. Si el panel te avisa del límite, sube de plan o elimina lo que ya no uses. El asistente respeta esos límites en todo lo que crea por ti.', $P . 'plan', 'Mi plan', 'fa-gauge-high' ),
+        $p( 'plan-pago', array( 'como pago', 'metodos de pago del plan', 'pagar el plan', 'factura', 'recibo de pago' ), 'El pago del plan se gestiona desde el panel > Plan, donde verás los métodos disponibles para tu zona. Las ventas de tu tienda se cobran aparte, directo con tus clientes.', $P . 'plan', 'Pagar plan', 'fa-credit-card' ),
+        $p( 'plan-moneda', array( 'que moneda se usa', 'moneda del sitio', 'cup', 'pesos', 'precios en' ), 'Cada tienda define su moneda (por ejemplo CUP o CUC). Los precios que ves en el marketplace son los que cada negocio configuró en su catálogo.', $P . 'products', 'Ver precios', 'fa-coins' ),
+
+        // ---------- Marketplace y compras ----------
+        $p( 'compra-buscar', array( 'buscar un producto', 'buscar en el mercado', 'como busco', 'encontrar un producto', 'buscador de productos' ), 'Usa el buscador del marketplace: escribe el nombre del producto o de la tienda y filtra por tienda o precio. Cada producto te muestra su precio y si hay stock.', '', 'Buscar', 'fa-magnifying-glass' ),
+        $p( 'compra-carrito', array( 'agregar al carrito', 'como agrego al carrito', 'mi carrito', 'quitar del carrito', 'ver mi carrito' ), 'En la página de cada tienda pulsa "Añadir al carrito" en los productos. El carrito (botón flotante) agrupa todo; desde ahí confirmas el pedido con tus datos y te llega por WhatsApp.', '', 'Ver carrito', 'fa-cart-shopping' ),
+        $p( 'compra-checkout', array( 'confirmar pedido', 'finalizar compra', 'checkout', 'como hago el pedido', 'enviar pedido' ), 'Al finalizar tu compra escribes tu nombre, teléfono y dirección (si aplica). El pedido llega directo a la tienda, que lo acepta y te contacta por WhatsApp para coordinar entrega o recogida.', '', 'Comprar', 'fa-bag-shopping' ),
+        $p( 'compra-whatsapp', array( 'pedido por whatsapp', 'whatsapp de la tienda', 'escribir por whatsapp', 'contactar tienda por whatsapp' ), 'Cada tienda muestra su WhatsApp en su página: puedes escribirles directo para dudas, encargos o coordinar la entrega. El pedido formal se hace desde el carrito para que quede registrado.', '', 'Ver tiendas', 'fa-whatsapp' ),
+        $p( 'compra-recoger', array( 'recoger en tienda', 'pickup', 'pasar a buscar', 'retirar pedido' ), 'La mayoría de las tiendas ofrece recogida: coordina con la tienda (por WhatsApp) el horario y el punto de recogida después de confirmar tu pedido.', '', 'Ver tiendas', 'fa-store' ),
+        $p( 'compra-agotado', array( 'producto agotado', 'sin stock', 'no hay stock', 'producto agotado cuando reponen' ), 'Si un producto está agotado, puedes preguntar a la tienda por WhatsApp cuándo lo reponen. Los negocios reciben aviso automático cuando su stock queda bajo.', '', 'Ver tiendas', 'fa-circle-exclamation' ),
+        $p( 'compra-resenas', array( 'dejar una resena', 'valorar tienda', 'opiniones', 'calificar una compra', 'estrellas' ), 'Puedes valorar a una tienda desde su página o después de recibir tu pedido. Tus reseñas ayudan a otros clientes a decidir y a la tienda a mejorar.', '', 'Ver tiendas', 'fa-star' ),
+
+        // ---------- Negocio: tienda y catálogo ----------
+        $p( 'negocio-crear-tienda', array( 'crear mi tienda', 'montar mi negocio', 'abrir mi tienda', 'crear mi negocio online', 'tener mi tienda' ), 'Crea tu cuenta gratis, y desde tu panel > Tienda configuras nombre, logo, descripción, horario y ubicación. Sube tus productos y tu tienda queda visible en el marketplace al instante.', $P . 'settings', 'Mi tienda', 'fa-store' ),
+        $p( 'negocio-apariencia', array( 'cambiar el logo', 'foto de mi tienda', 'cambiar la imagen de portada', 'apariencia de mi tienda', 'personalizar mi tienda' ), 'Desde el panel > Tienda editas el logo, la imagen de portada, la descripción y los colores de tu tienda. Los cambios se ven al momento en tu página pública.', $P . 'settings', 'Personalizar', 'fa-palette' ),
+        $p( 'negocio-horario', array( 'poner horario', 'horario de mi tienda', 'cambiar horario', 'horas de apertura' ), 'Configura tu horario en el panel > Tienda: los clientes lo ven en tu página y saben cuándo pueden recoger o recibir sus pedidos.', $P . 'settings', 'Horario', 'fa-clock' ),
+        $p( 'negocio-categorias', array( 'crear categoria', 'categorias de productos', 'organizar productos por categoria', 'agregar categoria' ), 'Agrupa tus productos por categorías desde el panel > Productos. Así tu catálogo queda ordenado y es más fácil de encontrar para tus clientes.', $P . 'products', 'Categorías', 'fa-tags' ),
+        $p( 'negocio-sku', array( 'codigo de barras', 'sku', 'codigo interno de producto', 'identificar producto por codigo' ), 'Cada producto puede tener un código (SKU) para identificarlo rápido en el POS y en las búsquedas. Se asigna al crear o editar el producto.', $P . 'products', 'Productos', 'fa-barcode' ),
+        $p( 'negocio-fraccion', array( 'producto madre', 'fraccionamiento', 'vender por fracciones', 'producto padre e hijo', 'medios y cuartos' ), 'Puedes crear productos madre que se venden por fracciones (por ejemplo 1 unidad = 2 medios). Al vender fracciones, el stock del padre se descuenta automáticamente para que siempre cuadre.', $P . 'products', 'Productos', 'fa-scissors' ),
+        $p( 'negocio-importar', array( 'importar productos', 'subir muchos productos', 'cargar productos en lote', 'importar catalogo', 'exportar productos' ), 'Para subir muchos productos a la vez usa la importación del panel > Productos (archivo con tus datos). También puedes exportar tu catálogo para respaldo.', $P . 'products', 'Importar', 'fa-file-import' ),
+        $p( 'negocio-transferir', array( 'transferir stock', 'pasar stock entre tiendas', 'mover productos de tienda', 'transferencia entre ubicaciones' ), 'Si tienes varias tiendas, mueve stock entre ellas desde el panel > Stock > Transferencia. La mercancía sale de una ubicación y entra en otra al instante.', $P . 'stock', 'Stock', 'fa-arrows-left-right' ),
+        $p( 'negocio-multi-tienda', array( 'varias tiendas', 'otra ubicacion', 'agregar otra tienda', 'sucursales', 'tengo dos tiendas' ), 'Tu plan puede incluir varias ubicaciones (tiendas). Desde el panel creas la nueva ubicación y asignas productos y stock a cada una. El marketplace las muestra por separado.', $P . 'locations', 'Ubicaciones', 'fa-location-dot' ),
+
+        // ---------- Ventas y caja ----------
+        $p( 'pos-cerrar-caja', array( 'cerrar caja', 'arqueo de caja', 'cuadre de caja', 'terminar la jornada', 'contar la caja' ), 'Al cerrar la caja el POS te pide el efectivo final y hace el arqueo: verás cuánto vendiste, cuánto entró en efectivo y si hay diferencias.', $P . 'pos', 'POS', 'fa-cash-register' ),
+        $p( 'pos-transferencia', array( 'cobrar por transferencia', 'venta con tarjeta', 'pago movil', 'cobrar por envio', 'venta transferida' ), 'En el POS puedes cobrar en efectivo o por transferencia: registra el monto y el número de referencia, y la venta queda completa con su historial.', $P . 'pos', 'Cobrar', 'fa-mobile-screen' ),
+        $p( 'pos-historial', array( 'historial de ventas', 'ventas anteriores', 'ver todas mis ventas', 'reporte de ventas del pos' ), 'Todas tus ventas del POS quedan en el panel > Reportes o en Ventas, con detalle por día, producto y forma de pago. También puedes pedirme un reporte aquí mismo.', $P . 'reports', 'Reportes', 'fa-clock-rotate-left' ),
+        $p( 'pos-devolver', array( 'devolver una venta', 'anular venta', 'reembolso de venta', 'venta erronea' ), 'Si te equivocas en una venta del POS, puedes anularla y el stock se repone automáticamente. Hazlo desde el historial de ventas o contacta con soporte si necesitas ayuda.', $P . 'pos', 'POS', 'fa-rotate-left' ),
+
+        // ---------- Clientes y fidelidad ----------
+        $p( 'cli-crm', array( 'mis clientes', 'gestionar clientes', 'lista de clientes', 'agregar clientes', 'crm' ), 'El panel > Clientes guarda a quienes te compran: nombre, teléfono y su historial. Desde ahí puedes crear clientes, buscarlos y hasta ofrecerles promociones.', $P . 'customers', 'Clientes', 'fa-users' ),
+        $p( 'cli-loyalty', array( 'puntos de clientes', 'programa de fidelidad', 'puntos por compra', 'clientes frecuentes' ), 'Puedes premiar a tus clientes frecuentes con puntos o descuentos por sus compras repetidas. Gestiona el programa desde el panel > Clientes.', $P . 'customers', 'Clientes', 'fa-heart' ),
+        $p( 'cli-historial', array( 'historial de compras del cliente', 'cuanto le compre este cliente', 'compras de un cliente' ), 'Cada cliente guarda su historial de compras (POS y pedidos). Ábrelo desde la lista de clientes para ver sus favoritos y totales.', $P . 'customers', 'Clientes', 'fa-receipt' ),
+
+        // ---------- Equipo y roles ----------
+        $p( 'team-invitar', array( 'invitar trabajador', 'agregar empleado', 'dar acceso a mi equipo', 'invitar a alguien a mi negocio' ), 'Desde el panel > Trabajadores el dueño invita a su equipo por correo y asigna el rol: vendedor (vende y cobra), almacenero (gestiona stock) o dueño. Cada uno ve solo lo que le corresponde.', $P . 'workers', 'Equipo', 'fa-user-plus' ),
+        $p( 'team-roles', array( 'que puede hacer un vendedor', 'que puede hacer un almacenero', 'roles y permisos', 'permisos del equipo', 'que ve cada rol' ), 'El vendedor vende en el POS y ve pedidos y clientes; el almacenero gestiona entradas y salidas de stock; el dueño lo administra todo (productos, precios, equipo, reportes y plan).', $P . 'workers', 'Roles', 'fa-user-gear' ),
+        $p( 'team-quitar', array( 'quitar trabajador', 'eliminar empleado', 'revocar acceso', 'despedir a alguien del panel' ), 'Desde el panel > Trabajadores puedes quitar a cualquier miembro del equipo; su acceso se revoca al momento y no vuelve a entrar al panel.', $P . 'workers', 'Equipo', 'fa-user-minus' ),
+        $p( 'team-activity', array( 'que hace mi equipo', 'actividad de mis trabajadores', 'reporte del equipo', 'mis empleados trabajaron' ), 'Puedo decirte la última actividad de cada miembro de tu equipo y avisarte quién lleva días sin entrar. Pídeme un "reporte del equipo" o programa uno diario.', '', 'Reporte equipo', 'fa-users' ),
+
+        // ---------- Reportes y datos ----------
+        $p( 'rep-tipos', array( 'que reportes hay', 'tipos de reportes', 'reportes disponibles', 'que estadisticas puedo ver' ), 'Puedo generarte: ventas (hoy, 7 o 30 días), stock bajo, pedidos pendientes, actividad del equipo, seguridad e intentos de acceso, y un resumen completo del negocio. Pídemelos cuando quieras o prográmalos.', '', 'Ver reportes', 'fa-chart-line' ),
+        $p( 'rep-programar', array( 'programar reporte', 'reporte automatico', 'reporte diario', 'recibir reporte programado', 'tarea en segundo plano' ), 'Puedo programar reportes para que te lleguen solos: ahora mismo, en X horas, hoy a una hora, mañana o cada día a una hora fija. Tú solo dime qué reporte y cuándo: "programa un reporte de ventas mañana a las 9".', '', 'Programar', 'fa-clock' ),
+        $p( 'rep-datos', array( 'que datos tienes de mi negocio', 'que informacion manejas', 'que sabe el bot de mi negocio', 'datos de mi tienda' ), 'Tengo en tiempo real tus productos, stock (incluido bajo stock), pedidos pendientes, ventas del POS, clientes, equipo y actividad, caja abierta, notificaciones y tu plan. Todo de tu negocio, nada inventado.', '', 'Mis datos', 'fa-database' ),
+
+        // ---------- Offline y PWA ----------
+        $p( 'pwa-instalar', array( 'instalar la app', 'usar sin internet', 'modo offline', 'trabajar sin conexion', 'descargar la app' ), 'El sitio es una app instalable (PWA): desde el navegador del móvil puedes añadirla a la pantalla de inicio. En el panel puedes seguir operando con poca o ninguna conexión: las ventas quedan en cola y se sincronizan solas al reconectar.', '', 'Instalar', 'fa-mobile-screen-button' ),
+        $p( 'pwa-sync', array( 'sincronizar ventas offline', 'ventas pendientes de sincronizar', 'cola offline', 'cuando se sincroniza' ), 'Lo que haces sin conexión (ventas, entradas) se guarda localmente y se envía automáticamente al reconectar. El panel te muestra cuántas acciones quedan pendientes de sincronizar.', '', 'Ver panel', 'fa-rotate' ),
+
+        // ---------- Seguridad ----------
+        $p( 'seg-login-fail', array( 'intentos fallidos de login', 'alguien intenta entrar', 'acceso no autorizado', 'seguridad de mi cuenta' ), 'Llevo un registro de los intentos de acceso fallidos. Si detecto varios seguidos desde la misma dirección, te aviso al instante y lo incluyo en el reporte de seguridad diario.', '', 'Seguridad', 'fa-shield-halved' ),
+        $p( 'seg-contrasena', array( 'contrasena segura', 'como protejo mi cuenta', 'recomendacion de seguridad', 'cambiar clave por seguridad' ), 'Usa una contraseña larga y única, no la compartas con nadie, y revisa periódicamente quién tiene acceso a tu panel en Trabajadores. Yo te aviso de cualquier intento raro.', $P . 'workers', 'Equipo', 'fa-lock' ),
+
+        // ---------- Errores comunes ----------
+        $p( 'err-no-veo-tienda', array( 'no veo mi tienda en el marketplace', 'mi tienda no aparece', 'donde esta mi tienda', 'no encuentro mi negocio' ), 'Si no ves tu tienda en el marketplace, revisa que esté publicada (panel > Tienda > estado) y que tenga al menos un producto activo. Los cambios son visibles al instante.', $P . 'settings', 'Mi tienda', 'fa-eye-slash' ),
+        $p( 'err-stock-no-cuadra', array( 'el stock no cuadra', 'inventario incorrecto', 'me falta stock', 'stock diferente al real', 'discrepancia de stock' ), 'El stock se descuenta solo con cada venta (POS o pedido aceptado) y con las entradas/salidas. Si crees que hay una discrepancia, haz un ajuste manual desde el panel > Stock y revisa el historial de movimientos.', $P . 'stock', 'Stock', 'fa-scale-balanced' ),
+        $p( 'err-no-llega-pedido', array( 'no me llego el pedido', 'pedido no confirmado', 'mi pedido no aparece', 'cuando llega mi pedido' ), 'Tras confirmar tu pedido, la tienda te contacta por WhatsApp para coordinar la entrega. Si no te han escrito, escríbeles tú o espera su confirmación: el pedido queda en estado "pendiente" hasta que lo acepten.', '', 'Seguimiento', 'fa-truck' ),
+        $p( 'err-caja-cerrada', array( 'la caja esta cerrada', 'no puedo vender', 'abrir la caja para vender', 'caja cerrada pos' ), 'Para vender en el POS la caja debe estar abierta. Ábrela desde el módulo Vender con el efectivo inicial; al cerrarla se hace el arqueo.', $P . 'pos', 'Abrir caja', 'fa-cash-register' ),
+
+        // ---------- El propio asistente ----------
+        $p( 'bot-que-puede', array( 'que puedes hacer', 'que sabe hacer el bot', 'que me puedes ayudar', 'tus funciones', 'capacidades del asistente' ), 'Puedo: crear, editar y eliminar productos (varios a la vez), reponer stock, aceptar o rechazar pedidos, crear clientes, registrar ventas en el POS, buscar productos, darte reportes de ventas/stock/equipo/seguridad, programar reportes para más tarde o cada día, y responderte las dudas frecuentes. Solo dime qué necesitas.', '', 'Ver atajos', 'fa-robot' ),
+        $p( 'bot-bulk', array( 'crear varios productos a la vez', 'productos en lote', 'borrar varios productos', 'editar varios productos', 'crear muchos productos' ), 'Para tareas en lote escríbeme los nombres separados por comas o por líneas. Por ejemplo: "crea los productos: Harina 1kg, Azúcar 1kg, Sal" y los creo todos con el mismo precio.', '', 'Probar', 'fa-layer-group' ),
+    );
+}
+
 function ws_chatbot_knowledge() {
     $kb = get_option( 'ws_chatbot_knowledge', null );
     if ( null === $kb ) {
@@ -671,6 +768,9 @@ function ws_chatbot_knowledge() {
         update_option( 'ws_chatbot_knowledge', $kb );
     }
     $kb  = is_array( $kb ) ? $kb : array();
+    // Conocimiento de contexto de toda la app (no editable, siempre disponible):
+    // se combina con lo guardado sin pisar las ediciones del administrador.
+    $kb  = array_merge( $kb, ws_chatbot_knowledge_extras() );
     $out = array();
     foreach ( $kb as $item ) {
         if ( empty( $item['active'] ) ) {
@@ -896,6 +996,453 @@ function ws_chatbot_resolve_link( $target ) {
         case 'market':   return $home;
     }
     return $home;
+}
+
+/* -------------------------------------------------------------------------
+ * Contexto de la app, reportes, tareas programadas y seguridad
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Contexto en vivo de la app para el asistente: sitio, usuario, negocio y
+ * navegación. Se usa para enriquecer el prompt de la IA y los fallbacks.
+ */
+function ws_chatbot_app_context() {
+    global $wpdb;
+    $role  = ws_user_role();
+    $biz   = ws_current_business();
+    $suf   = ws_biz_table_suffix( $biz );
+    $T     = function ( $t ) use ( $suf ) { return ws_table_for( $suf, $t ); };
+    $cur   = ws_currency_symbol();
+    $out   = array(
+        'site'    => array(
+            'name'  => ws_site_name(),
+            'url'   => home_url(),
+            'currency' => $cur,
+        ),
+        'user'    => array(
+            'id'   => get_current_user_id(),
+            'role' => $role,
+            'role_label' => ws_role_label( $role ),
+        ),
+        'nav'     => ws_chatbot_context(),
+        'actions' => array( 'crear/editar/eliminar productos (bulk)', 'reponer stock', 'aceptar/rechazar pedidos', 'crear clientes', 'registrar venta POS', 'buscar productos', 'reportes (ventas/stock/pedidos/equipo/seguridad/resumen)', 'programar reportes', 'guias paso a paso', 'responder preguntas frecuentes' ),
+        'reports' => array( 'sales', 'stock', 'orders', 'workers', 'security', 'summary' ),
+    );
+
+    if ( ! $role ) {
+        return $out; // Visitante: solo contexto del sitio.
+    }
+
+    // Snapshot del negocio del usuario actual (tablas con scope del negocio).
+    $products  = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$T('products')}" );
+    $pending   = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$T('orders')} WHERE status = %s", 'pending' ) );
+    $today     = gmdate( 'Y-m-d 00:00:00', current_time( 'timestamp' ) );
+    $sale_row  = $wpdb->get_row( $wpdb->prepare( "SELECT COUNT(*) c, COALESCE(SUM(total),0) t FROM {$T('pos_sales')} WHERE created_at >= %s AND status = 'completed'", $today ) );
+    $low_stock = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$T('stock')} st JOIN {$T('products')} p ON p.id = st.product_id WHERE st.qty > 0 AND st.qty <= p.min_stock" );
+    $agotados  = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$T('stock')} st WHERE st.qty <= 0" );
+    $customers = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$T('customers')}" );
+    $workers   = count( ws_chatbot_team_members() );
+    $cash_open = false;
+    foreach ( ws_user_locations() as $l ) {
+        if ( WS_POS::get_open_cash( (int) $l->id ) ) { $cash_open = true; break; }
+    }
+
+    $out['business'] = array(
+        'id'            => ws_current_business_id(),
+        'name'          => (string) ( $biz->name ?? ws_site_name() ),
+        'plan'          => (string) ( $biz->plan_name ?? '' ),
+        'products'      => $products,
+        'low_stock'     => $low_stock,
+        'agotados'      => $agotados,
+        'pending_orders'=> $pending,
+        'sales_today'   => (int) $sale_row->c,
+        'sales_today_total' => (float) $sale_row->t,
+        'customers'     => $customers,
+        'workers'       => $workers,
+        'cash_open'     => $cash_open,
+        'currency'      => $cur,
+        'unread_notifications' => ws_notifications_unread_count(),
+    );
+    return $out;
+}
+
+/**
+ * Versión de texto compacta del contexto (para el prompt de la IA).
+ */
+function ws_chatbot_context_text() {
+    $c = ws_chatbot_app_context();
+    $lines = array( 'Sitio: ' . $c['site']['name'] . ' (' . $c['site']['url'] . ')' );
+    $lines[] = 'Usuario: ' . ( $c['user']['role_label'] ? $c['user']['role_label'] : 'visitante' );
+    if ( isset( $c['business'] ) ) {
+        $b = $c['business'];
+        $lines[] = sprintf( 'Negocio: %s (plan %s) — %d productos, %d con stock bajo, %d agotados, %d pedidos pendientes, %d ventas hoy por %s %s, %d clientes, %d trabajadores, caja %s.' ,
+            $b['name'], $b['plan'], $b['products'], $b['low_stock'], $b['agotados'], $b['pending_orders'], $b['sales_today'], number_format_i18n( $b['sales_today_total'], 2 ), $b['currency'], $b['customers'], $b['workers'], $b['cash_open'] ? 'abierta' : 'cerrada' );
+    }
+    $lines[] = 'El asistente puede ejecutar: ' . implode( '; ', $c['actions'] );
+    return implode( ' | ', $lines );
+}
+
+/**
+ * Equipo del negocio actual (dueños, almaceneros y vendedores).
+ */
+function ws_chatbot_team_members() {
+    $biz_id = ws_current_business_id();
+    $args   = array(
+        'role__in' => array( 'ws_owner', 'ws_storekeeper', 'ws_seller' ),
+        'fields'   => 'all',
+    );
+    if ( WS_Business::is_default_id( $biz_id ) ) {
+        // Dueños legacy (sin ws_business_id) + todos los roles del negocio por defecto.
+        $legacy = get_users( array( 'role__in' => array( 'ws_owner', 'ws_storekeeper', 'ws_seller' ), 'fields' => 'all', 'meta_key' => 'ws_business_id', 'meta_compare' => 'NOT EXISTS' ) );
+        $with   = get_users( array_merge( $args, array( 'meta_key' => 'ws_business_id', 'meta_value' => $biz_id ) ) );
+        return array_merge( $legacy, $with );
+    }
+    return get_users( array_merge( $args, array( 'meta_key' => 'ws_business_id', 'meta_value' => $biz_id ) ) );
+}
+
+/**
+ * Construye un reporte del negocio actual. Devuelve array( 'title', 'text' ).
+ */
+function ws_chatbot_build_report( $type, $days = 1 ) {
+    global $wpdb;
+    $type  = in_array( $type, array( 'sales', 'stock', 'orders', 'workers', 'security', 'summary' ), true ) ? $type : 'summary';
+    $days  = max( 1, (int) $days );
+    $biz   = ws_current_business();
+    $suf   = ws_biz_table_suffix( $biz );
+    $T     = function ( $t ) use ( $suf ) { return ws_table_for( $suf, $t ); };
+    $cur   = ws_currency_symbol();
+    $nl    = "\n";
+
+    if ( 'sales' === $type || 'summary' === $type ) {
+        $since = gmdate( 'Y-m-d 00:00:00', current_time( 'timestamp' ) - ( $days - 1 ) * DAY_IN_SECONDS );
+        $row   = $wpdb->get_row( $wpdb->prepare( "SELECT COUNT(*) c, COALESCE(SUM(total),0) t FROM {$T('pos_sales')} WHERE created_at >= %s AND status = 'completed'", $since ) );
+        $sales = sprintf( 'Ventas (%d día%s): %d · %s %s', $days, $days > 1 ? 's' : '', (int) $row->c, number_format_i18n( (float) $row->t, 2 ), $cur );
+    }
+    if ( 'stock' === $type || 'summary' === $type ) {
+        $products  = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$T('products')}" );
+        $low       = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$T('stock')} st JOIN {$T('products')} p ON p.id = st.product_id WHERE st.qty > 0 AND st.qty <= p.min_stock" );
+        $agotados  = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$T('stock')} st WHERE st.qty <= 0" );
+        $stock     = sprintf( 'Stock: %d productos · %d bajo stock · %d agotados', $products, $low, $agotados );
+    }
+    if ( 'orders' === $type || 'summary' === $type ) {
+        $pend   = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$T('orders')} WHERE status = %s", 'pending' ) );
+        $totrow = $wpdb->get_var( $wpdb->prepare( "SELECT COALESCE(SUM(total),0) FROM {$T('orders')} WHERE status = %s", 'pending' ) );
+        $orders = sprintf( 'Pedidos pendientes: %d · %s %s', $pend, number_format_i18n( (float) $totrow, 2 ), $cur );
+    }
+    if ( 'workers' === $type || 'summary' === $type ) {
+        $ws_lines = array();
+        $inactive = 0;
+        $threshold = time() - 2 * DAY_IN_SECONDS;
+        foreach ( ws_chatbot_team_members() as $u ) {
+            $act = (string) get_user_meta( $u->ID, 'ws_last_activity', true );
+            $act = $act ? strtotime( $act ) : ( ( $last = get_user_meta( $u->ID, 'ws_last_login', true ) ) ? strtotime( $last ) : 0 );
+            $label = ws_role_label( ws_user_role( $u->ID ) );
+            if ( ! $act || $act < $threshold ) {
+                $inactive++;
+                $ws_lines[] = '• ' . $u->display_name . ' (' . $label . ') — sin actividad reciente ⚠️';
+            } else {
+                $ws_lines[] = '• ' . $u->display_name . ' (' . $label . ') — activo hoy';
+            }
+        }
+        $workers = 'Equipo (' . count( ws_chatbot_team_members() ) . ' miembros):' . $nl . implode( $nl, array_slice( $ws_lines, 0, 12 ) ) . ( $inactive ? $nl . '⚠️ ' . $inactive . ' miembro(s) sin actividad en 2+ días.' : '' );
+    }
+    if ( 'security' === $type || 'summary' === $type ) {
+        $sec = array_slice( (array) get_option( 'ws_security_log', array() ), -5 );
+        if ( empty( $sec ) ) {
+            $security = 'Seguridad: sin eventos recientes ✅';
+        } else {
+            $sec_lines = array();
+            foreach ( $sec as $e ) {
+                $sec_lines[] = '• ' . ( $e['time'] ? wp_date( 'd/m H:i', (int) $e['time'] ) : '?' ) . ' — ' . $e['event'] . ( ! empty( $e['detail'] ) ? ' (' . $e['detail'] . ')' : '' );
+            }
+            $security = 'Seguridad:' . $nl . implode( $nl, $sec_lines );
+        }
+    }
+
+    switch ( $type ) {
+        case 'sales':   $text = $sales; break;
+        case 'stock':   $text = $stock; break;
+        case 'orders':  $text = $orders; break;
+        case 'workers': $text = $workers; break;
+        case 'security':$text = $security; break;
+        default:
+            $text = $sales . $nl . $stock . $nl . $orders . $nl . $workers . $nl . $security;
+    }
+    $titles = array( 'sales' => 'Reporte de ventas', 'stock' => 'Reporte de stock', 'orders' => 'Reporte de pedidos', 'workers' => 'Reporte del equipo', 'security' => 'Reporte de seguridad', 'summary' => 'Resumen del negocio' );
+    return array( 'title' => $titles[ $type ], 'text' => $text );
+}
+
+/**
+ * Interpreta expresiones de tiempo en español → array(at, recurring).
+ */
+function ws_chatbot_parse_when( $when ) {
+    $w   = ws_chatbot_norm_text( $when );
+    $now = current_time( 'timestamp' );
+    if ( false !== strpos( $w, 'ahora' ) || 'ya' === $w ) {
+        return array( 'at' => $now + 30, 'recurring' => false );
+    }
+    if ( preg_match( '/en (\d+)\s*(hora|h|minuto|min|dia|d)/', $w, $m ) ) {
+        $n = (int) $m[1];
+        $u = $m[2];
+        $secs = ( 'hora' === $u || 'h' === $u ) ? HOUR_IN_SECONDS : ( ( 'dia' === $u || 'd' === $u ) ? DAY_IN_SECONDS : MINUTE_IN_SECONDS );
+        return array( 'at' => $now + $n * $secs, 'recurring' => false );
+    }
+    if ( false !== strpos( $w, 'manana' ) ) {
+        $h = 8; $mi = 0;
+        if ( preg_match( '/(\d{1,2})(?::(\d{2}))?/', $w, $m ) ) { $h = (int) $m[1]; $mi = (int) ( $m[2] ?? 0 ); }
+        return array( 'at' => mktime( $h, $mi, 0, (int) gmdate( 'n', $now ), (int) gmdate( 'j', $now ) + 1, (int) gmdate( 'Y', $now ) ), 'recurring' => false );
+    }
+    if ( false !== strpos( $w, 'hoy' ) ) {
+        $h = 20; $mi = 0;
+        if ( preg_match( '/(\d{1,2})(?::(\d{2}))?/', $w, $m ) ) { $h = (int) $m[1]; $mi = (int) ( $m[2] ?? 0 ); }
+        $at = mktime( $h, $mi, 0, (int) gmdate( 'n', $now ), (int) gmdate( 'j', $now ), (int) gmdate( 'Y', $now ) );
+        if ( $at < $now ) { $at += DAY_IN_SECONDS; }
+        return array( 'at' => $at, 'recurring' => false );
+    }
+    if ( false !== strpos( $w, 'cada dia' ) || false !== strpos( $w, 'diario' ) || false !== strpos( $w, 'todos los dias' ) ) {
+        $h = 8; $mi = 0;
+        if ( preg_match( '/(\d{1,2})(?::(\d{2}))?/', $w, $m ) ) { $h = (int) $m[1]; $mi = (int) ( $m[2] ?? 0 ); }
+        $at = mktime( $h, $mi, 0, (int) gmdate( 'n', $now ), (int) gmdate( 'j', $now ), (int) gmdate( 'Y', $now ) );
+        if ( $at < $now ) { $at += DAY_IN_SECONDS; }
+        return array( 'at' => $at, 'recurring' => true );
+    }
+    return false;
+}
+
+/**
+ * Inserta una notificación para un usuario (la entrega el chat en vivo).
+ */
+function ws_chatbot_notify_user( $user_id, $title, $message, $ref_key = '' ) {
+    global $wpdb;
+    if ( ! $user_id ) { return; }
+    $wpdb->insert(
+        $wpdb->prefix . WS_TABLE_PREFIX . 'notifications',
+        array(
+            'user_id'    => (int) $user_id,
+            'type'       => 'chatbot',
+            'title'      => mb_substr( (string) $title, 0, 240 ),
+            'message'    => mb_substr( (string) $message, 0, 240 ),
+            'link'       => '',
+            'ref_key'    => mb_substr( (string) $ref_key, 0, 110 ),
+            'is_read'    => 0,
+            'created_at' => current_time( 'mysql' ),
+        ),
+        array( '%d', '%s', '%s', '%s', '%s', '%s', '%d', '%s' )
+    );
+}
+
+/**
+ * Ejecuta las tareas programadas vencidas (corre cuando un usuario del
+ * negocio está en línea; el contexto de negocio ya está resuelto).
+ */
+add_action( 'init', 'ws_chatbot_run_tasks', 9 );
+function ws_chatbot_run_tasks() {
+    if ( get_transient( 'ws_tasks_lock' ) ) { return; }
+    $uid = get_current_user_id();
+    $role = ws_user_role( $uid );
+    if ( ! $uid || ! $role ) { return; }
+    $tasks = get_option( 'ws_chatbot_tasks', array() );
+    if ( ! is_array( $tasks ) || empty( $tasks ) ) { return; }
+    set_transient( 'ws_tasks_lock', 1, 60 );
+    $biz_id = ws_current_business_id();
+    $now    = current_time( 'timestamp' );
+    $ran    = 0;
+    foreach ( $tasks as $i => $t ) {
+        if ( $ran >= 5 ) { break; }
+        if ( (int) ( $t['biz_id'] ?? 0 ) !== $biz_id || 'done' === ( $t['status'] ?? '' ) || (int) $t['at'] > $now ) {
+            continue;
+        }
+        $result = ws_chatbot_build_report( (string) ( $t['type'] ?? 'summary' ), 1 );
+        $tasks[ $i ]['last_result'] = $result['text'];
+        $tasks[ $i ]['last_run']    = current_time( 'mysql' );
+        ws_chatbot_notify_user( (int) $t['user_id'], '🤖 ' . $result['title'], $result['text'], 'chatbot_task_' . $t['id'] );
+        if ( ! empty( $t['recurring'] ) ) {
+            $tasks[ $i ]['at'] = (int) $t['at'] + DAY_IN_SECONDS;
+            // Si quedó muy atrasada, la fija para dentro de 5 min (evita ráfaga
+            // de catch-up cuando el dueño no visita durante días).
+            if ( (int) $tasks[ $i ]['at'] <= $now ) { $tasks[ $i ]['at'] = $now + 300; }
+        } else {
+            $tasks[ $i ]['status'] = 'done';
+        }
+        $ran++;
+    }
+    update_option( 'ws_chatbot_tasks', array_values( $tasks ) );
+}
+
+/**
+ * Reporte bajo demanda.
+ */
+add_action( 'wp_ajax_ws_chatbot_report', 'ws_ajax_chatbot_report' );
+function ws_ajax_chatbot_report() {
+    if ( ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Sesión expirada.', 'workshop' ) ) );
+    }
+    if ( ! ws_user_role() ) {
+        wp_send_json_error( array( 'msg' => __( 'Solo para negocios.', 'workshop' ) ) );
+    }
+    $type = sanitize_key( $_POST['type'] ?? 'summary' );
+    $days = max( 1, min( 90, (int) ( $_POST['days'] ?? 1 ) ) );
+    $r = ws_chatbot_build_report( $type, $days );
+    wp_send_json_success( array( 'title' => $r['title'], 'text' => $r['text'] ) );
+}
+
+/**
+ * Programa un reporte (tarea en segundo plano).
+ */
+add_action( 'wp_ajax_ws_chatbot_schedule', 'ws_ajax_chatbot_schedule' );
+function ws_ajax_chatbot_schedule() {
+    if ( ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Sesión expirada.', 'workshop' ) ) );
+    }
+    $role = ws_user_role();
+    if ( ! $role ) {
+        wp_send_json_error( array( 'msg' => __( 'Solo para negocios.', 'workshop' ) ) );
+    }
+    $type     = sanitize_key( $_POST['type'] ?? 'summary' );
+    if ( ! in_array( $type, array( 'sales', 'stock', 'orders', 'workers', 'security', 'summary' ), true ) ) {
+        $type = 'summary';
+    }
+    $when      = sanitize_text_field( wp_unslash( $_POST['when'] ?? '' ) );
+    $recurring = ! empty( $_POST['recurring'] );
+    $parsed    = ws_chatbot_parse_when( $when );
+    if ( ! $parsed ) {
+        wp_send_json_error( array( 'msg' => __( 'No entendí la fecha. Ejemplos: "en 2 horas", "mañana a las 09:00", "cada día a las 08:00".', 'workshop' ) ) );
+    }
+    $recurring = $recurring || ! empty( $parsed['recurring'] );
+    $tasks = get_option( 'ws_chatbot_tasks', array() );
+    $tasks = is_array( $tasks ) ? $tasks : array();
+    $id = 't' . time() . '_' . wp_rand( 100, 999 );
+    $tasks[] = array(
+        'id'       => $id,
+        'user_id'  => get_current_user_id(),
+        'biz_id'   => ws_current_business_id(),
+        'type'     => $type,
+        'at'       => (int) $parsed['at'],
+        'recurring'=> $recurring,
+        'status'   => 'pending',
+        'last_result' => '',
+        'created_at' => current_time( 'mysql' ),
+    );
+    // Primera vez: asegura el resumen diario automático del negocio.
+    ws_chatbot_ensure_daily( $tasks );
+    // Poda tareas completadas de hace más de 7 días (evita crecer sin límite).
+    $tasks = array_values( array_filter( $tasks, function ( $t ) {
+        if ( 'done' !== ( $t['status'] ?? '' ) ) { return true; }
+        $ts = strtotime( (string) ( $t['created_at'] ?? '' ) );
+        return ! $ts || ( time() - $ts < 7 * DAY_IN_SECONDS );
+    } ) );
+    update_option( 'ws_chatbot_tasks', $tasks );
+    wp_send_json_success( array(
+        'when_label' => wp_date( 'd/m H:i', (int) $parsed['at'] ) . ( $recurring ? ' (cada día)' : '' ),
+        'recurring'  => $recurring,
+    ) );
+}
+
+/**
+ * Añade (una sola vez) el resumen diario automático del negocio: reporta cada
+ * mañana ventas, stock bajo, pedidos, actividad del equipo y seguridad.
+ */
+function ws_chatbot_ensure_daily( &$tasks ) {
+    $biz_id = ws_current_business_id();
+    foreach ( $tasks as $t ) {
+        if ( (int) ( $t['biz_id'] ?? 0 ) === $biz_id && ! empty( $t['recurring'] ) && 'daily' === ( $t['kind'] ?? '' ) ) {
+            return; // Ya existe el resumen diario.
+        }
+    }
+    $parsed = ws_chatbot_parse_when( 'cada dia a las 08:00' );
+    $tasks[] = array(
+        'id'       => 'daily_' . $biz_id . '_' . time(),
+        'user_id'  => get_current_user_id(),
+        'biz_id'   => $biz_id,
+        'type'     => 'summary',
+        'kind'     => 'daily',
+        'at'       => (int) $parsed['at'],
+        'recurring'=> true,
+        'status'   => 'pending',
+        'last_result' => '',
+        'created_at' => current_time( 'mysql' ),
+    );
+}
+
+/**
+ * Lista las tareas/reportes programados del negocio actual.
+ */
+add_action( 'wp_ajax_ws_chatbot_tasks', 'ws_ajax_chatbot_tasks' );
+function ws_ajax_chatbot_tasks() {
+    if ( ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Sesión expirada.', 'workshop' ) ) );
+    }
+    if ( ! ws_user_role() ) {
+        wp_send_json_error( array( 'msg' => __( 'Solo para negocios.', 'workshop' ) ) );
+    }
+    $biz_id = ws_current_business_id();
+    $labels = array( 'sales' => 'Ventas', 'stock' => 'Stock', 'orders' => 'Pedidos', 'workers' => 'Equipo', 'security' => 'Seguridad', 'summary' => 'Resumen diario' );
+    $out = array();
+    foreach ( (array) get_option( 'ws_chatbot_tasks', array() ) as $t ) {
+        if ( (int) ( $t['biz_id'] ?? 0 ) !== $biz_id ) { continue; }
+        $out[] = array(
+            'id'          => (string) $t['id'],
+            'type'        => (string) ( $t['type'] ?? 'summary' ),
+            'label'       => $labels[ $t['type'] ?? 'summary' ] ?? 'Resumen',
+            'when_label'  => wp_date( 'd/m H:i', (int) $t['at'] ),
+            'recurring'   => ! empty( $t['recurring'] ),
+            'status'      => (string) ( $t['status'] ?? 'pending' ),
+            'last_result' => (string) ( $t['last_result'] ?? '' ),
+        );
+    }
+    wp_send_json_success( array( 'tasks' => $out ) );
+}
+
+/**
+ * Log de seguridad: guarda intentos de acceso fallidos y eventos raros.
+ */
+function ws_security_log( $event, $detail = '' ) {
+    $log = get_option( 'ws_security_log', array() );
+    $log = is_array( $log ) ? $log : array();
+    $ip = (string) ( $_SERVER['HTTP_CF_CONNECTING_IP'] ?? '' );
+    if ( '' === $ip && ! empty( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) {
+        $ip = trim( (string) explode( ',', (string) $_SERVER['HTTP_X_FORWARDED_FOR'] )[0] );
+    }
+    if ( '' === $ip ) { $ip = (string) ( $_SERVER['REMOTE_ADDR'] ?? '' ); }
+    $log[] = array(
+        'time'   => time(),
+        'ip'     => $ip,
+        'event'  => mb_substr( (string) $event, 0, 60 ),
+        'detail' => mb_substr( (string) $detail, 0, 120 ),
+    );
+    update_option( 'ws_security_log', array_slice( $log, -60 ) );
+    return $ip;
+}
+
+/**
+ * Intento de acceso fallido: lo registra y, si se repite desde la misma IP,
+ * avisa a los dueños de negocio al instante (posible fuerza bruta).
+ */
+add_action( 'wp_login_failed', 'ws_chatbot_login_failed', 10, 1 );
+function ws_chatbot_login_failed( $username ) {
+    $ip = ws_security_log( 'Intento de acceso fallido', sanitize_user( $username ) );
+    $rk = 'ws_sec_' . md5( $ip );
+    $n  = (int) get_transient( $rk ) + 1;
+    set_transient( $rk, $n, 10 * MINUTE_IN_SECONDS );
+    if ( $n < 5 ) { return; }
+    if ( get_transient( 'ws_sec_alert_' . md5( $ip ) ) ) { return; } // 1 alerta/hora por IP
+    set_transient( 'ws_sec_alert_' . md5( $ip ), 1, HOUR_IN_SECONDS );
+    $msg = sprintf( __( 'Se detectaron %d intentos de acceso fallidos desde la IP %s. Revisa la seguridad de tus cuentas.', 'workshop' ), $n, $ip );
+    foreach ( get_users( array( 'role' => 'ws_owner', 'fields' => 'ID' ) ) as $uid ) {
+        ws_chatbot_notify_user( (int) $uid, '⚠️ Posible intento de intrusión', $msg, 'sec_alert_' . md5( $ip ) );
+    }
+}
+
+/**
+ * Rastrea la última actividad de los trabajadores (para el reporte de equipo).
+ */
+add_action( 'init', 'ws_chatbot_track_activity', 20 );
+function ws_chatbot_track_activity() {
+    $uid = get_current_user_id();
+    if ( ! $uid || ! ws_user_role( $uid ) ) { return; }
+    if ( get_transient( 'ws_act_' . $uid ) ) { return; }
+    set_transient( 'ws_act_' . $uid, 1, 5 * MINUTE_IN_SECONDS );
+    update_user_meta( $uid, 'ws_last_activity', current_time( 'mysql' ) );
 }
 
 /* -------------------------------------------------------------------------
@@ -1208,7 +1755,8 @@ function ws_ajax_chatbot_llm() {
         'Los VISITANTES buscan productos, quieren saber cómo comprar, cómo seguir un pedido, devoluciones y envíos; invítalos a registrarse gratis para montar su negocio. ' .
         'Los NEGOCIOS gestionan en su panel: productos, stock (entradas/salidas/transferencias), pedidos (aceptar/rechazar), ventas POS con caja, clientes (CRM), trabajadores con roles, reportes y planes. ' .
         'El bot puede crear/editar/eliminar productos, reponer stock, aceptar pedidos, crear clientes y registrar ventas si el usuario lo pide. ' .
-        'Responde en español, breve y con tono amable (algún emoji). Si te piden algo fuera de estas capacidades, sugiere contactar soporte por la página de Contacto o WhatsApp.';
+        'Responde en español, breve y con tono amable (algún emoji). Si te piden algo fuera de estas capacidades, sugiere contactar soporte por la página de Contacto o WhatsApp. ' .
+        'DATOS EN VIVO DEL USUARIO (úsalos para responder con datos reales del negocio, nunca inventes cifras): ' . ws_chatbot_context_text();
 
     $body = array(
         'model'       => (string) $admin['llm_model'],

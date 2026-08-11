@@ -1,5 +1,5 @@
 /* Workshop MultiTienda Service Worker */
-const CACHE_NAME = 'workshop-v14';
+const CACHE_NAME = 'workshop-v15';
 const STATIC_CACHE = 'workshop-static-v7';
 const DYNAMIC_CACHE = 'workshop-dynamic-v7';
 const DATA_CACHE = 'workshop-data-v7';
