@@ -183,11 +183,18 @@ get_header();
                                 <?php if ( empty( $ws_topic['topic'] ) || empty( $ws_topic['items'] ) ) : continue; endif; ?>
                                 <div class="ws-faq-topic" data-topic>
                                     <h3 class="ws-faq-topic-title"><i class="fa-solid fa-circle-question"></i> <?php echo esc_html( $ws_topic['topic'] ); ?></h3>
+                                    <?php $ws_faq_num = 0; ?>
                                     <?php foreach ( (array) $ws_topic['items'] as $ws_item ) : ?>
                                         <?php if ( empty( $ws_item['q'] ) ) : continue; endif; ?>
+                                        <?php $ws_faq_num = (int) $ws_faq_num + 1; ?>
                                         <details class="ws-faq-item"<?php echo 0 === (int) $ws_faq_open ? ' open' : ''; ?>>
-                                            <summary><?php echo esc_html( $ws_item['q'] ); ?><i class="fa-solid fa-chevron-down ws-faq-chevron"></i></summary>
-                                            <div class="ws-faq-answer"><?php echo wp_kses_post( $ws_item['a'] ); ?></div>
+                                            <summary>
+                                                <span class="ws-faq-q"><span class="ws-faq-num"><?php echo (int) $ws_faq_num; ?></span><span class="ws-faq-q-text"><?php echo esc_html( $ws_item['q'] ); ?></span></span>
+                                                <span class="ws-faq-chevron"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></span>
+                                            </summary>
+                                            <div class="ws-faq-answer">
+                                                <div class="ws-faq-answer-inner"><?php echo wp_kses_post( $ws_item['a'] ); ?></div>
+                                            </div>
                                         </details>
                                         <?php $ws_faq_open = (int) $ws_faq_open + 1; ?>
                                     <?php endforeach; ?>
@@ -204,6 +211,7 @@ get_header();
                             var empty = faq.querySelector('.ws-faq-empty');
                             input.addEventListener('input', function () {
                                 var q = (input.value || '').trim().toLowerCase();
+                                faq.classList.toggle('is-filtering', !!q);
                                 var any = false;
                                 topics.forEach(function (t) {
                                     var shown = false;
