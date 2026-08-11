@@ -54,10 +54,10 @@ get_header();
             <h1><?php esc_html_e( 'Todas las tiendas del mercado', 'workshop' ); ?></h1>
             <p class="ws-stores-hero-sub"><?php esc_html_e( 'Descubre qué vende cada negocio, por qué comprarle y entra directo a su tienda. Los dueños cuentan su historia: tú eliges.', 'workshop' ); ?></p>
             <div class="ws-hero-stats ws-mp-hero-stats">
-                <div class="ws-hero-stat"><strong><?php echo esc_html( number_format_i18n( count( $businesses ) ) ); ?></strong><span><i class="fa-solid fa-store"></i> <?php esc_html_e( 'Negocios', 'workshop' ); ?></span></div>
-                <div class="ws-hero-stat"><strong><?php echo esc_html( number_format_i18n( $total_pvs ) ); ?></strong><span><i class="fa-solid fa-location-dot"></i> <?php esc_html_e( 'Tiendas', 'workshop' ); ?></span></div>
-                <div class="ws-hero-stat"><strong><?php echo esc_html( number_format_i18n( $total_products ) ); ?></strong><span><i class="fa-solid fa-box"></i> <?php esc_html_e( 'Productos', 'workshop' ); ?></span></div>
-                <div class="ws-hero-stat"><strong><?php echo esc_html( number_format_i18n( $total_orders ) ); ?></strong><span><i class="fa-solid fa-bag-shopping"></i> <?php esc_html_e( 'Pedidos', 'workshop' ); ?></span></div>
+                <div class="ws-hero-stat"><strong><?php echo esc_html( ws_compact_number( count( $businesses ) ) ); ?></strong><span><i class="fa-solid fa-store"></i> <?php esc_html_e( 'Negocios', 'workshop' ); ?></span></div>
+                <div class="ws-hero-stat"><strong><?php echo esc_html( ws_compact_number( $total_pvs ) ); ?></strong><span><i class="fa-solid fa-location-dot"></i> <?php esc_html_e( 'Tiendas', 'workshop' ); ?></span></div>
+                <div class="ws-hero-stat"><strong><?php echo esc_html( ws_compact_number( $total_products ) ); ?></strong><span><i class="fa-solid fa-box"></i> <?php esc_html_e( 'Productos', 'workshop' ); ?></span></div>
+                <div class="ws-hero-stat"><strong><?php echo esc_html( ws_compact_number( $total_orders ) ); ?></strong><span><i class="fa-solid fa-bag-shopping"></i> <?php esc_html_e( 'Pedidos', 'workshop' ); ?></span></div>
             </div>
         </div>
     </section>
@@ -115,7 +115,7 @@ get_header();
                                     <b><?php echo esc_html( $biz->name ); ?></b>
                                     <?php if ( $biz->ws_reviews ) : ?>
                                         <?php echo ws_mp_stars( $biz->ws_rating ); ?>
-                                        <small class="ws-rating-count"><?php echo esc_html( number_format_i18n( $biz->ws_reviews ) ); ?></small>
+                                        <small class="ws-rating-count"><?php echo esc_html( ws_compact_number( $biz->ws_reviews ) ); ?></small>
                                     <?php endif; ?>
                                 </span>
                                 <?php if ( ! empty( $biz->description ) ) : ?>
@@ -124,11 +124,11 @@ get_header();
                                     <span class="ws-store-row-desc ws-store-row-desc-empty"><?php esc_html_e( 'Negocio verificado en el mercado. Entra y descubre sus productos.', 'workshop' ); ?></span>
                                 <?php endif; ?>
                                 <span class="ws-store-row-chips">
-                                    <span class="ws-chip"><i class="fa-solid fa-location-dot"></i> <?php echo esc_html( sprintf( _n( '%d tienda', '%d tiendas', $biz->ws_pvs, 'workshop' ), $biz->ws_pvs ) ); ?></span>
-                                    <span class="ws-chip"><i class="fa-solid fa-box"></i> <?php echo esc_html( sprintf( _n( '%d producto', '%d productos', $biz->ws_products, 'workshop' ), $biz->ws_products ) ); ?></span>
+                                    <span class="ws-chip"><i class="fa-solid fa-location-dot"></i> <?php echo esc_html( sprintf( _n( '%s tienda', '%s tiendas', $biz->ws_pvs, 'workshop' ), ws_compact_number( $biz->ws_pvs ) ) ); ?></span>
+                                    <span class="ws-chip"><i class="fa-solid fa-box"></i> <?php echo esc_html( sprintf( _n( '%s producto', '%s productos', $biz->ws_products, 'workshop' ), ws_compact_number( $biz->ws_products ) ) ); ?></span>
                                     <?php if ( $biz->ws_orders ) : ?>
-                                        <span class="ws-chip"><i class="fa-solid fa-bag-shopping"></i> <?php echo esc_html( sprintf( _n( '%d pedido', '%d pedidos', $biz->ws_orders, 'workshop' ), $biz->ws_orders ) ); ?></span>
-                                        <span class="ws-chip ws-chip-accent"><i class="fa-solid fa-coins"></i> <?php echo esc_html( $ws_cur . number_format_i18n( $biz->ws_revenue, 0 ) ); ?> <?php esc_html_e( 'facturados', 'workshop' ); ?></span>
+                                        <span class="ws-chip"><i class="fa-solid fa-bag-shopping"></i> <?php echo esc_html( sprintf( _n( '%s pedido', '%s pedidos', $biz->ws_orders, 'workshop' ), ws_compact_number( $biz->ws_orders ) ) ); ?></span>
+                                        <span class="ws-chip ws-chip-accent"><i class="fa-solid fa-coins"></i> <?php echo esc_html( $ws_cur . ws_compact_number( $biz->ws_revenue ) ); ?> <?php esc_html_e( 'facturados', 'workshop' ); ?></span>
                                     <?php else : ?>
                                         <span class="ws-chip ws-chip-new"><i class="fa-solid fa-sparkles"></i> <?php esc_html_e( 'Nuevo en el mercado', 'workshop' ); ?></span>
                                     <?php endif; ?>

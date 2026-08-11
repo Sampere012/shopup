@@ -97,6 +97,34 @@ function ws_money( $amount, $currency = null ) {
     return number_format_i18n( $amount, 2 ) . ' ' . $currency;
 }
 
+/**
+ * Abrevia números grandes para el mercado (ej: 120000 -> "120 mil", 2500000 -> "2,5 M").
+ * Números menores a 1000 se muestran tal cual.
+ */
+function ws_compact_number( $number ) {
+    $number   = (float) $number;
+    $abs      = abs( $number );
+    $suffixes = array( ' mil', ' M', ' mil M' );
+    if ( $abs < 1000 ) {
+        return number_format_i18n( $number, 0 );
+    }
+    $v   = $number;
+    $abs = $abs;
+    $i   = 0;
+    while ( $abs >= 1000 && $i < count( $suffixes ) ) {
+        $v   = $v / 1000;
+        $abs = $abs / 1000;
+        $i++;
+    }
+    $v = round( $v, 1 );
+    // El redondeo puede subir de rango (999.999 -> 1 M); ajusta sufijo.
+    if ( $v >= 1000 && $i < count( $suffixes ) ) {
+        $v = $v / 1000;
+        $i++;
+    }
+    return rtrim( rtrim( number_format_i18n( $v, 1 ), '0' ), ',.' ) . $suffixes[ $i - 1 ];
+}
+
 function ws_currency_symbol( $location_id = 0 ) {
     if ( $location_id ) {
         $loc = WS_CRUD::get_location( $location_id );

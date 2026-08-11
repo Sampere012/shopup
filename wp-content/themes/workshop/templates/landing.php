@@ -25,9 +25,9 @@ get_header();
             <h1><?php echo esc_html( ws_site_hero( 'hero_title' ) ); ?></h1>
             <p class="ws-hero-sub"><?php echo esc_html( ws_site_hero( 'hero_sub' ) ); ?></p>
             <div class="ws-hero-stats">
-                <div class="ws-hero-stat"><strong><?php echo esc_html( number_format_i18n( $store_count ) ); ?></strong><span><?php esc_html_e( 'Tiendas activas', 'workshop' ); ?></span></div>
-                <div class="ws-hero-stat"><strong><?php echo esc_html( number_format_i18n( $loc_all ) ); ?></strong><span><?php esc_html_e( 'Sucursales', 'workshop' ); ?></span></div>
-                <div class="ws-hero-stat"><strong><?php echo esc_html( number_format_i18n( $prod_count ) ); ?></strong><span><?php esc_html_e( 'Productos', 'workshop' ); ?></span></div>
+                <div class="ws-hero-stat"><strong><?php echo esc_html( ws_compact_number( $store_count ) ); ?></strong><span><?php esc_html_e( 'Tiendas activas', 'workshop' ); ?></span></div>
+                <div class="ws-hero-stat"><strong><?php echo esc_html( ws_compact_number( $loc_all ) ); ?></strong><span><?php esc_html_e( 'Sucursales', 'workshop' ); ?></span></div>
+                <div class="ws-hero-stat"><strong><?php echo esc_html( ws_compact_number( $prod_count ) ); ?></strong><span><?php esc_html_e( 'Productos', 'workshop' ); ?></span></div>
             </div>
         </div>
     </section>

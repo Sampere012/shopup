@@ -194,7 +194,7 @@ get_header();
                                     <h3><?php echo esc_html( $biz->name ); ?></h3>
                                     <?php if ( $biz->ws_reviews ) : ?>
                                         <?php echo ws_mp_stars( $biz->ws_rating ); ?>
-                                        <span class="ws-rating-count"><?php echo esc_html( number_format_i18n( $biz->ws_reviews ) ); ?></span>
+                                        <span class="ws-rating-count"><?php echo esc_html( ws_compact_number( $biz->ws_reviews ) ); ?></span>
                                     <?php endif; ?>
                                 </div>
                                 <?php if ( ! empty( $biz->description ) ) : ?>
@@ -449,6 +449,14 @@ get_header();
         });
     }
 
+    // Abrevia números grandes: 120000 -> "120 mil", 2500000 -> "2,5 M".
+    var wsCompact = function (n) {
+        n = Math.round(n);
+        if (n >= 1000000) return (n / 1000000).toLocaleString('es', { maximumFractionDigits: 1 }) + ' M';
+        if (n >= 1000) return (n / 1000).toLocaleString('es', { maximumFractionDigits: 1 }) + ' mil';
+        return n.toLocaleString('es');
+    };
+
     // Contadores animados del hero (IntersectionObserver).
     var counters = document.querySelectorAll('.ws-count[data-count]');
     if ('IntersectionObserver' in window && counters.length) {
@@ -463,7 +471,7 @@ get_header();
                 var step = function (ts) {
                     if (!start) start = ts;
                     var p = Math.min(1, (ts - start) / duration);
-                    el.textContent = Math.round(target * (1 - Math.pow(1 - p, 3))).toLocaleString('es');
+                    el.textContent = wsCompact(target * (1 - Math.pow(1 - p, 3)));
                     if (p < 1) requestAnimationFrame(step);
                 };
                 requestAnimationFrame(step);
@@ -471,7 +479,7 @@ get_header();
         }, { threshold: 0.4 });
         counters.forEach(function (c) { io.observe(c); });
     } else {
-        counters.forEach(function (c) { c.textContent = parseInt(c.getAttribute('data-count'), 10).toLocaleString('es'); });
+        counters.forEach(function (c) { c.textContent = wsCompact(parseInt(c.getAttribute('data-count'), 10)); });
     }
 
     // Revelado suave de tarjetas al hacer scroll.
