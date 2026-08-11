@@ -501,10 +501,13 @@ function ws_chatbot_admin_settings() {
         'enabled_public' => 1,
         'enabled_panel'  => 1,
         'messages'       => array(),
-        // IA opcional: clave de OpenRouter + modelo. La clave NUNCA sale del
-        // servidor; el widget solo pregunta al proxy PHP ws_chatbot_llm.
+        // IA opcional: proveedor (OpenRouter, Groq o cualquiera compatible con
+        // la API de OpenAI) + clave + modelo. La clave NUNCA sale del servidor;
+        // el widget solo pregunta al proxy PHP ws_chatbot_llm.
         'llm_key'        => '',
         'llm_model'      => 'openrouter/auto',
+        'llm_provider'   => 'openrouter', // openrouter | groq | custom
+        'llm_base_url'   => '',
     );
     $opt = get_option( 'ws_chatbot_config', array() );
     $opt = is_array( $opt ) ? $opt : array();
@@ -514,8 +517,34 @@ function ws_chatbot_admin_settings() {
         'messages'       => isset( $opt['messages'] ) && is_array( $opt['messages'] ) ? $opt['messages'] : array(),
         'llm_key'        => isset( $opt['llm_key'] ) ? (string) $opt['llm_key'] : '',
         'llm_model'      => ! empty( $opt['llm_model'] ) ? (string) $opt['llm_model'] : $defaults['llm_model'],
+        'llm_provider'   => in_array( (string) ( $opt['llm_provider'] ?? '' ), array( 'openrouter', 'groq', 'custom' ), true ) ? (string) $opt['llm_provider'] : $defaults['llm_provider'],
+        'llm_base_url'   => isset( $opt['llm_base_url'] ) ? (string) $opt['llm_base_url'] : '',
     );
     return $out;
+}
+
+/**
+ * URL de chat/completions según el proveedor de IA configurado. Todos los
+ * proveedores soportados hablan la API compatible con OpenAI (chat/completions
+ * con Authorization Bearer); 'custom' acepta cualquier base OpenAI-compatible.
+ */
+function ws_chatbot_llm_url( $provider, $base_url = '' ) {
+    $provider = (string) $provider;
+    if ( 'groq' === $provider ) {
+        return 'https://api.groq.com/openai/v1/chat/completions';
+    }
+    if ( 'custom' === $provider ) {
+        $base = rtrim( trim( (string) $base_url ), '/' );
+        if ( '' === $base ) {
+            return '';
+        }
+        // Acepta tanto la base (…/v1) como la URL completa ya armada.
+        if ( false === stripos( $base, '/chat/completions' ) ) {
+            $base .= '/chat/completions';
+        }
+        return $base;
+    }
+    return 'https://openrouter.ai/api/v1/chat/completions';
 }
 
 /* -------------------------------------------------------------------------
@@ -1836,7 +1865,15 @@ function ws_ajax_chatbot_llm() {
         'messages'    => array_merge( array( array( 'role' => 'system', 'content' => $system ) ), $history, array( array( 'role' => 'user', 'content' => mb_substr( $text, 0, 1000 ) ) ) ),
         'max_tokens'  => 400,
         'temperature' => 0.5,
-    );        $resp = wp_remote_post( 'https://openrouter.ai/api/v1/chat/completions', array(
+    );
+    $provider = (string) ( $admin['llm_provider'] ?? 'openrouter' );
+    $url      = ws_chatbot_llm_url( $provider, $admin['llm_base_url'] ?? '' );
+    if ( '' === $url ) {
+        wp_send_json_error( array( 'msg' => __( 'Falta la URL base del proveedor de IA.', 'workshop' ) ) );
+    }
+    $provider_label = 'custom' === $provider ? 'IA personalizada' : ( 'groq' === $provider ? 'Groq' : 'OpenRouter' );
+
+    $resp = wp_remote_post( $url, array(
         'timeout' => 25,
         'headers' => array(
             'Authorization' => 'Bearer ' . $key,
@@ -1846,7 +1883,7 @@ function ws_ajax_chatbot_llm() {
     ) );
     if ( is_wp_error( $resp ) ) {
         if ( function_exists( 'ws_log_error' ) ) {
-            ws_log_error( 'LLM (OpenRouter) no disponible: ' . $resp->get_error_message() );
+            ws_log_error( 'LLM (' . $provider_label . ') no disponible: ' . $resp->get_error_message() );
         }
         wp_send_json_error( array( 'msg' => __( 'La IA no está disponible ahora.', 'workshop' ) ) );
     }
@@ -1856,7 +1893,7 @@ function ws_ajax_chatbot_llm() {
     if ( $code >= 400 || '' === $text ) {
         $err = (string) ( $json['error']['message'] ?? __( 'La IA no respondió.', 'workshop' ) );
         if ( function_exists( 'ws_log_error' ) ) {
-            ws_log_error( 'LLM (OpenRouter) respondió HTTP ' . $code . ': ' . mb_substr( $err, 0, 200 ) );
+            ws_log_error( 'LLM (' . $provider_label . ') respondió HTTP ' . $code . ': ' . mb_substr( $err, 0, 200 ) );
         }
         wp_send_json_error( array( 'msg' => mb_substr( $err, 0, 200 ) ) );
     }

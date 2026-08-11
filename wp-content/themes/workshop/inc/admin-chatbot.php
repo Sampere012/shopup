@@ -367,6 +367,8 @@ function ws_chatbot_save_behavior( $post ) {
     $opt['enabled_panel']  = ! empty( $post['ws_enabled_panel'] ) ? 1 : 0;
     $opt['llm_key']        = sanitize_text_field( $post['ws_llm_key'] ?? '' );
     $opt['llm_model']      = sanitize_text_field( $post['ws_llm_model'] ?? 'openrouter/auto' );
+    $opt['llm_provider']   = in_array( (string) ( $post['ws_llm_provider'] ?? '' ), array( 'openrouter', 'groq', 'custom' ), true ) ? (string) $post['ws_llm_provider'] : 'openrouter';
+    $opt['llm_base_url']   = esc_url_raw( trim( (string) ( $post['ws_llm_base_url'] ?? '' ) ) );
     update_option( 'ws_chatbot_config', $opt );
     echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__( 'Comportamiento guardado.', 'workshop' ) . '</p></div>';
 }
@@ -392,28 +394,80 @@ function ws_chatbot_admin_behavior_form() {
 
         <hr style="margin:18px 0">
         <h2><?php esc_html_e( 'IA opcional (conversación libre)', 'workshop' ); ?></h2>
-        <p class="description"><?php esc_html_e( 'Cuando el bot no entiende una frase, puede responder con un modelo de IA vía OpenRouter. La clave se guarda solo en el servidor (nunca llega al navegador) y se consume por interacción no resuelta.', 'workshop' ); ?></p>
+        <p class="description"><?php esc_html_e( 'Cuando el bot no entiende una frase, puede responder con un modelo de IA. La clave se guarda solo en el servidor (nunca llega al navegador) y se consume por interacción no resuelta.', 'workshop' ); ?></p>
         <p>
-            <label for="ws-llm-key" style="font-weight:600"><?php esc_html_e( 'Clave de OpenRouter (API key)', 'workshop' ); ?></label><br>
-            <input type="password" id="ws-llm-key" name="ws_llm_key" value="<?php echo esc_attr( $admin['llm_key'] ); ?>" style="width:100%;max-width:420px;margin-top:4px" autocomplete="off" placeholder="sk-or-v1-…">
-            <span class="ws-kb-help"><?php esc_html_e( 'La consigues gratis en openrouter.ai → API Keys. Sin clave, el bot usa solo sus respuestas internas.', 'workshop' ); ?></span>
+            <label for="ws-llm-provider" style="font-weight:600"><?php esc_html_e( 'Proveedor de IA', 'workshop' ); ?></label><br>
+            <select id="ws-llm-provider" name="ws_llm_provider" style="max-width:420px;margin-top:4px">
+                <option value="openrouter" <?php selected( $admin['llm_provider'], 'openrouter' ); ?>><?php esc_html_e( 'OpenRouter (openrouter.ai)', 'workshop' ); ?></option>
+                <option value="groq" <?php selected( $admin['llm_provider'], 'groq' ); ?>><?php esc_html_e( 'Groq (groq.com — gratis y rápido)', 'workshop' ); ?></option>
+                <option value="custom" <?php selected( $admin['llm_provider'], 'custom' ); ?>><?php esc_html_e( 'Otro (compatible con OpenAI)', 'workshop' ); ?></option>
+            </select>
+        </p>
+        <p>
+            <label for="ws-llm-key" style="font-weight:600"><?php esc_html_e( 'Clave del proveedor (API key)', 'workshop' ); ?></label><br>
+            <input type="password" id="ws-llm-key" name="ws_llm_key" value="<?php echo esc_attr( $admin['llm_key'] ); ?>" style="width:100%;max-width:420px;margin-top:4px" autocomplete="off" placeholder="sk-…">
+            <span class="ws-kb-help"><?php esc_html_e( 'OpenRouter: openrouter.ai → API Keys · Groq: console.groq.com → API Keys · Otro: la clave del proveedor que uses. Sin clave, el bot usa solo sus respuestas internas.', 'workshop' ); ?></span>
+        </p>
+        <p id="ws-llm-base-wrap"<?php echo 'custom' === $admin['llm_provider'] ? '' : ' style="display:none"'; ?>>
+            <label for="ws-llm-base" style="font-weight:600"><?php esc_html_e( 'URL base del proveedor (OpenAI-compatible)', 'workshop' ); ?></label><br>
+            <input type="url" id="ws-llm-base" name="ws_llm_base_url" value="<?php echo esc_attr( $admin['llm_base_url'] ); ?>" style="width:100%;max-width:420px;margin-top:4px" placeholder="https://api.tuproveedor.com/v1">
+            <span class="ws-kb-help"><?php esc_html_e( 'Ej. https://api.tuproveedor.com/v1 (se agrega /chat/completions automáticamente).', 'workshop' ); ?></span>
         </p>
         <p>
             <label for="ws-llm-model" style="font-weight:600"><?php esc_html_e( 'Modelo', 'workshop' ); ?></label><br>
-            <select id="ws-llm-model" name="ws_llm_model" style="max-width:420px;margin-top:4px">
-                <?php
-                $models = array(
-                    'openrouter/auto'          => __( 'openrouter/auto (elige el mejor según la consulta)', 'workshop' ),
-                    'meta-llama/llama-3.1-8b-instruct:free' => __( 'Llama 3.1 8B (gratuito)', 'workshop' ),
-                    'meta-llama/llama-3.3-70b-instruct'     => __( 'Llama 3.3 70B (potente)', 'workshop' ),
-                    'openai/gpt-4o-mini'       => 'GPT-4o mini',
-                    'anthropic/claude-3.5-haiku' => 'Claude 3.5 Haiku',
-                );
-                foreach ( $models as $val => $label ) : ?>
-                    <option value="<?php echo esc_attr( $val ); ?>" <?php selected( $admin['llm_model'], $val ); ?>><?php echo esc_html( $label ); ?></option>
-                <?php endforeach; ?>
-            </select>
+            <input type="text" id="ws-llm-model" name="ws_llm_model" value="<?php echo esc_attr( $admin['llm_model'] ); ?>" style="width:100%;max-width:420px;margin-top:4px" list="ws-llm-models" placeholder="openrouter/auto">
+            <datalist id="ws-llm-models">
+                <option value="openrouter/auto"><?php esc_html_e( 'OpenRouter: auto', 'workshop' ); ?></option>
+                <option value="meta-llama/llama-3.3-70b-instruct"><?php esc_html_e( 'OpenRouter: Llama 3.3 70B', 'workshop' ); ?></option>
+                <option value="openai/gpt-4o-mini"><?php esc_html_e( 'OpenRouter: GPT-4o mini', 'workshop' ); ?></option>
+                <option value="llama-3.3-70b-versatile"><?php esc_html_e( 'Groq: Llama 3.3 70B', 'workshop' ); ?></option>
+                <option value="llama-3.1-8b-instant"><?php esc_html_e( 'Groq: Llama 3.1 8B (rápido)', 'workshop' ); ?></option>
+                <option value="llama3-70b-8192"><?php esc_html_e( 'Groq: Llama3 70B', 'workshop' ); ?></option>
+                <option value="llama3-8b-8192"><?php esc_html_e( 'Groq: Llama3 8B', 'workshop' ); ?></option>
+            </datalist>
         </p>
+        <script>
+        (function () {
+            var prov = document.getElementById('ws-llm-provider');
+            var base = document.getElementById('ws-llm-base-wrap');
+            var model = document.getElementById('ws-llm-model');
+            if (!prov || !base || !model) { return; }
+            // Default de modelo por proveedor: evita mandar un modelo de
+            // OpenRouter (ej. openrouter/auto) a Groq u otro proveedor.
+            var defaults = {
+                openrouter: 'openrouter/auto',
+                groq: 'llama-3.3-70b-versatile',
+                custom: ''
+            };
+            var isOtherProviderModel = function (m) {
+                m = (m || '').trim().toLowerCase();
+                return m.indexOf('openrouter/') === 0 || m.indexOf('meta-llama/') === 0 ||
+                       m.indexOf('openai/') === 0 || m.indexOf('anthropic/') === 0 ||
+                       m.indexOf('llama-3.3-70b-versatile') === 0 || m.indexOf('llama-3.1-8b-instant') === 0 ||
+                       m.indexOf('llama3-70b-8192') === 0 || m.indexOf('llama3-8b-8192') === 0;
+            };
+            prov.addEventListener('change', function () {
+                base.style.display = prov.value === 'custom' ? '' : 'none';
+                var d = defaults[prov.value];
+                if (d !== undefined && isOtherProviderModel(model.value)) {
+                    model.value = d;
+                }
+            });
+            // Validación amable de la URL base (custom): exige esquema http(s).
+            var form = prov.closest('form');
+            if (form) {
+                form.addEventListener('submit', function (e) {
+                    var url = document.getElementById('ws-llm-base');
+                    if (prov.value === 'custom' && url && url.value.trim() !== '' &&
+                        url.value.indexOf('http://') !== 0 && url.value.indexOf('https://') !== 0) {
+                        e.preventDefault();
+                        alert('La URL base debe empezar con http:// o https://');
+                        url.focus();
+                    }
+                });
+            }
+        })();
+        </script>
         <p><button type="submit" class="button button-primary"><?php esc_html_e( 'Guardar comportamiento', 'workshop' ); ?></button></p>
     </form>
     <?php
