@@ -112,6 +112,7 @@ function ws_chatbot_config() {
         'shortcuts' => $shortcuts,
         'strings'   => array_merge( ws_chatbot_strings(), $admin['messages'] ),
         'knowledge' => ws_chatbot_knowledge_config(),
+        'guides'    => ws_chatbot_role_guides(),
         'trackUrl'  => admin_url( 'admin-ajax.php' ) . '?action=ws_chatbot_track',
         'apiUrl'    => admin_url( 'admin-ajax.php' ),
         'nonce'     => wp_create_nonce( 'ws_nonce' ),
@@ -228,6 +229,195 @@ function ws_chatbot_panel_shortcuts() {
             'label' => $label,
             'url'   => ws_panel_url( $role, $page, $biz ),
             'icon'  => $icon,
+        );
+    }
+    return $out;
+}
+
+/**
+ * Guías paso a paso por rol para los módulos del panel.
+ *
+ * Respuestas por defecto específicas: cada módulo se explica según el rol
+ * (dueño, almacenero o vendedor) con pasos concretos y su URL. Se entregan
+ * al widget como C.guides y el bot las muestra cuando el usuario pide una
+ * guía, manual o "cómo se usa" un módulo.
+ */
+function ws_chatbot_role_guides() {
+    $role = ws_user_role();
+    if ( ! $role ) {
+        return array();
+    }
+    $biz  = ws_current_business();
+    $url  = function ( $page ) use ( $role, $biz ) {
+        return ws_panel_url( $role, $page, $biz );
+    };
+
+    $guides = array(
+        'products' => array(
+            'id'    => 'products',
+            'label' => __( 'Productos', 'workshop' ),
+            'icon'  => 'fa-boxes-stacked',
+            'roles' => array( 'owner', 'storekeeper', 'seller' ),
+            'url'   => $url( 'products' ),
+            'intro_role' => array(
+                'owner'       => 'Como dueño gestionas todo el catálogo: creas productos, ajustas precios y eliminas lo que ya no vendes.',
+                'storekeeper' => 'Como almacenero mantienes el catálogo al día: creas productos y actualizas precios.',
+                'seller'      => 'Como vendedor consultas el catálogo y su disponibilidad para orientar a tus clientes.',
+            ),
+            'steps' => array(
+                'Ve a Productos y pulsa "Nuevo producto".',
+                'Completa el nombre y el precio de venta (costo y stock mínimo son opcionales).',
+                'Al guardar, el producto queda en tu tienda y en el POS con stock 0 hasta que entres existencias.',
+                'Usa la lupa para buscar, el lápiz para editar y el botón de borrar (confirma el aviso) para quitarlo.',
+            ),
+        ),
+        'stock' => array(
+            'id'    => 'stock',
+            'label' => __( 'Stock', 'workshop' ),
+            'icon'  => 'fa-warehouse',
+            'roles' => array( 'owner', 'storekeeper' ),
+            'url'   => $url( 'stock' ),
+            'intro_role' => array(
+                'owner'       => 'Como dueño controlas entradas, salidas y transferencias entre tus tiendas.',
+                'storekeeper' => 'Como almacenero registras entradas, salidas y transferencias de la mercancía.',
+            ),
+            'steps' => array(
+                'En Stock pulsa "Nueva entrada" para recibir mercancía: elige producto, tienda y cantidad.',
+                'La entrada queda registrada y el inventario se actualiza al instante.',
+                'Las salidas se usan para mermas o bajas; las transferencias mueven stock entre sucursales.',
+                'Mira el aviso de "stock bajo" para reponer antes de quedarte sin producto.',
+            ),
+        ),
+        'orders' => array(
+            'id'    => 'orders',
+            'label' => __( 'Pedidos', 'workshop' ),
+            'icon'  => 'fa-cart-shopping',
+            'roles' => array( 'owner', 'storekeeper', 'seller' ),
+            'url'   => $url( 'orders' ),
+            'intro_role' => array(
+                'owner'       => 'Como dueño aceptas, completas o cancelas los pedidos de tus clientes.',
+                'storekeeper' => 'Como almacenero ves los pedidos para preparar la mercancía; quien tenga permiso los acepta.',
+                'seller'      => 'Como vendedor puedes ver y aceptar los pedidos de tus clientes para agilizar la venta.',
+            ),
+            'steps' => array(
+                'Abre Pedidos: verás las solicitudes pendientes de tus clientes.',
+                'Entra a cada pedido para ver cliente, dirección y productos.',
+                'Aceptar descuenta el stock automáticamente; Completa cuando entregues; Cancela si no hay disponibilidad.',
+                'El cliente puede seguir el estado desde la tienda.',
+            ),
+        ),
+        'pos' => array(
+            'id'    => 'pos',
+            'label' => __( 'Vender (POS)', 'workshop' ),
+            'icon'  => 'fa-cash-register',
+            'roles' => array( 'owner', 'seller' ),
+            'url'   => $url( 'pos' ),
+            'intro_role' => array(
+                'owner' => 'Como dueño vendes en caja y supervisas lo que cobra tu equipo.',
+                'seller' => 'Como vendedor este es tu módulo: abres caja y cobras a los clientes.',
+            ),
+            'steps' => array(
+                'Ve a Vender (POS) y pulsa "Abrir caja" indicando el efectivo inicial.',
+                'Con la caja abierta, busca el producto y agrega la cantidad.',
+                'Elige efectivo, transferencia o mixto; si pagan por transferencia, pide el número.',
+                'Confirma la venta: el stock se descuenta al momento.',
+                'Al cerrar el turno, arquea la caja desde Ventas POS.',
+            ),
+        ),
+        'customers' => array(
+            'id'    => 'customers',
+            'label' => __( 'Clientes (CRM)', 'workshop' ),
+            'icon'  => 'fa-users',
+            'roles' => array( 'owner', 'seller' ),
+            'url'   => $url( 'customers' ),
+            'intro_role' => array(
+                'owner' => 'Como dueño gestionas la base de clientes, sus datos y sus puntos.',
+                'seller' => 'Como vendedor creas clientes al momento de vender para llevar su historial.',
+            ),
+            'steps' => array(
+                'En Clientes pulsa "Nuevo cliente" y completa nombre y teléfono.',
+                'Cada venta o pedido puede asociarse a un cliente.',
+                'En la ficha del cliente ves su historial, total gastado y puntos acumulados.',
+            ),
+        ),
+        'reports' => array(
+            'id'    => 'reports',
+            'label' => __( 'Reportes', 'workshop' ),
+            'icon'  => 'fa-chart-line',
+            'roles' => array( 'owner', 'storekeeper' ),
+            'url'   => $url( 'reports' ),
+            'intro_role' => array(
+                'owner'       => 'Como dueño ves ventas, ganancias y lo más vendido por periodo.',
+                'storekeeper' => 'Como almacenero revisas movimientos y existencias por periodo.',
+            ),
+            'steps' => array(
+                'Abre Reportes y elige el periodo que quieras consultar.',
+                'Si tienes varias tiendas, filtra por la que te interese.',
+                'Mira ventas, ganancia, movimientos de stock y productos más vendidos.',
+                'Exporta la información si la necesitas para tu contabilidad.',
+            ),
+        ),
+        'workers' => array(
+            'id'    => 'workers',
+            'label' => __( 'Trabajadores', 'workshop' ),
+            'icon'  => 'fa-user-gear',
+            'roles' => array( 'owner' ),
+            'url'   => $url( 'workers' ),
+            'intro_role' => array(
+                'owner' => 'Como dueño invitas a tu equipo y eliges qué puede hacer cada uno.',
+            ),
+            'steps' => array(
+                'Ve a Trabajadores y pulsa "Invitar".',
+                'Completa los datos y elige el rol: vendedor (cobra), almacenero (stock) o dueño (todo).',
+                'Asigna las tiendas donde podrá trabajar.',
+                'Cada rol ve solo lo que necesita para su tarea.',
+            ),
+        ),
+        'plan' => array(
+            'id'    => 'plan',
+            'label' => __( 'Mi plan', 'workshop' ),
+            'icon'  => 'fa-crown',
+            'roles' => array( 'owner' ),
+            'url'   => $url( 'plan' ),
+            'intro_role' => array(
+                'owner' => 'Como dueño ves tu plan, sus límites y cómo mejorarlo.',
+            ),
+            'steps' => array(
+                'Abre Mi plan para ver lo que incluye tu suscripción.',
+                'Revisa los límites (productos, tiendas, funciones).',
+                'Si necesitas más, solicita la mejora desde ahí.',
+            ),
+        ),
+        'appearance' => array(
+            'id'    => 'appearance',
+            'label' => __( 'Tu sitio (logo, colores)', 'workshop' ),
+            'icon'  => 'fa-palette',
+            'roles' => array( 'owner' ),
+            'url'   => $url( 'appearance' ),
+            'intro_role' => array(
+                'owner' => 'Como dueño personalizas la tienda de tu negocio.',
+            ),
+            'steps' => array(
+                'Ve a Tu sitio (apariencia).',
+                'Sube el logo de tu negocio y elige los colores.',
+                'Guarda: se aplica a tu tienda pública.',
+            ),
+        ),
+    );
+
+    $out = array();
+    foreach ( $guides as $g ) {
+        if ( ! in_array( $role, (array) $g['roles'], true ) ) {
+            continue;
+        }
+        $out[] = array(
+            'id'    => $g['id'],
+            'label' => $g['label'],
+            'icon'  => $g['icon'],
+            'url'   => $g['url'],
+            // Intro específica del rol actual (el resto del mapa no viaja al JS).
+            'intro' => (string) ( $g['intro_role'][ $role ] ?? '' ),
+            'steps' => $g['steps'],
         );
     }
     return $out;

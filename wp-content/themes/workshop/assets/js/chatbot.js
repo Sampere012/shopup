@@ -809,6 +809,7 @@
         else if (name === 'customer_new') { flowCustomerStart(); }
         else if (name === 'pos_cart') { flowPosStart(); }
         else if (name === 'top') { doTop(); }
+        else if (name === 'guide') { startGuideFlow(); }
     }
 
     /* ------------------------------------------------------------------ */
@@ -824,7 +825,8 @@
         ['order_reject', ['rechazar pedido', 'rechaza el pedido', 'rechazar un pedido', 'rechazar orden']],
         ['customer_new', ['crear cliente', 'nuevo cliente', 'agregar cliente', 'crear un cliente', 'dar de alta un cliente', 'registrar un cliente']],
         ['pos_cart', ['registrar venta', 'registrar una venta', 'vender ahora', 'hacer una venta', 'vender en el pos', 'cobrar ahora', 'vender']],
-        ['top', ['recomiendame', 'recomiéndame', 'que vende mas', 'qué vende más', 'mas vendido', 'más vendido', 'productos mas vendidos', 'top ventas', 'lo que mas se vende', 'que productos se venden mas']]
+        ['top', ['recomiendame', 'recomiéndame', 'que vende mas', 'qué vende más', 'mas vendido', 'más vendido', 'productos mas vendidos', 'top ventas', 'lo que mas se vende', 'que productos se venden mas']],
+        ['guide', ['guia', 'guía', 'explicame', 'explícame', 'paso a paso', 'como se usa', 'como se hace', 'como uso', 'cómo uso', 'como hago para', 'como hago', 'quiero aprender', 'manual', 'enseñame a usar', 'que hace cada modulo', 'para que sirve cada modulo', 'como trabajo en el panel', 'guia del panel', 'guía del panel']]
     ];
 
     // Frases imperativas de acción: ganan a la base de conocimiento (el bot
@@ -895,6 +897,59 @@
             track('top:shown');
             busy = false;
         });
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Guías paso a paso por rol (respuestas por defecto específicas)       */
+    /* ------------------------------------------------------------------ */
+
+    function guideOf(id) {
+        var g = null;
+        (C.guides || []).forEach(function (x) { if (x.id === id) { g = x; } });
+        return g;
+    }
+
+    // Intro específica del rol para el módulo (p. ej. la de vendedor difiere
+    // de la de almacenero al explicar Stock o Productos).
+    function guideIntro(id) {
+        var g = guideOf(id);
+        return (g && g.intro) || '';
+    }
+
+    function guideChip(id) {
+        return guideOf(id) ? { label: 'Guía paso a paso', icon: 'fa-list-ol', click: function () { showGuide(id); } } : null;
+    }
+
+    function startGuideFlow() {
+        var guides = C.guides || [];
+        if (!guides.length) {
+            reply('No tengo guías disponibles para tu rol en este momento.', [], 'guide:none');
+            busy = false;
+            return;
+        }
+        reply('Claro, te explico paso a paso cómo se trabaja en cada módulo. Elige uno:', guides.map(function (g) {
+            return { label: g.label, cls: 'wsb-chip-pick', icon: g.icon, click: function () { showGuide(g.id); } };
+        }), 'guide:list');
+        busy = false;
+    }
+
+    function showGuide(id) {
+        var g = guideOf(id);
+        if (!g) {
+            reply('No encontré esa guía.', [], 'guide:missing');
+            return;
+        }
+        track('guide:' + id);
+        var rows = (g.steps || []).map(function (s, i) {
+            return { name: 'Paso ' + (i + 1), meta: s, url: g.url || '#' };
+        });
+        appendCard(g.label + ' — paso a paso:', rows, {
+            chips: [
+                { label: 'Abrir módulo', icon: 'fa-arrow-pointer', url: g.url || '#', newTab: true },
+                { label: 'Otra guía', icon: 'fa-list-ol', click: startGuideFlow }
+            ]
+        });
+        busy = false;
     }
 
     // Multi-intención: "crea un producto y dime el stock" se ejecuta en secuencia.
@@ -1009,7 +1064,14 @@
             keys: ['crear producto', 'nuevo producto', 'agregar producto', 'alta producto', 'crear un producto', 'añadir producto', 'anadir producto'],
             run: function () {
                 if (!isPanel || locked) { actions.webstore.run(); return; }
-                reply(S.productHint, chipsFor(['productNew', 'products']), 'createProduct');
+                reply(guideIntro('products') || S.productHint, [guideChip('products'), chipsFor(['productNew', 'products'])[0]].filter(Boolean), 'createProduct');
+            }
+        },
+        guia: {
+            keys: ['guia', 'explicame', 'paso a paso', 'manual', 'como se usa el panel', 'que hace cada modulo', 'para que sirve cada modulo', 'como trabajo en el panel'],
+            run: function () {
+                if (!isPanel || locked) { actions.webstore.run(); return; }
+                startGuideFlow();
             }
         },
         listProducts: {
@@ -1023,7 +1085,7 @@
             keys: ['pedidos', 'orden', 'ordenes', 'mis pedidos', 'revisar pedidos', 'aceptar pedido', 'pedido nuevo'],
             run: function () {
                 if (!isPanel || locked) { actions.trackOrder.run(); return; }
-                reply(S.ordersHint, chipsFor(['orders']), 'orders');
+                reply(guideIntro('orders') || S.ordersHint, [guideChip('orders'), chipsFor(['orders'])[0]].filter(Boolean), 'orders');
             }
         },
         trackOrder: {
@@ -1058,28 +1120,28 @@
             keys: ['stock', 'inventario', 'existencias', 'reponer', 'entrada de stock', 'salida de stock', 'bajo stock'],
             run: function () {
                 if (!isPanel || locked) { actions.webstore.run(); return; }
-                reply(S.stockHint, chipsFor(['stock']), 'stock');
+                reply(guideIntro('stock') || S.stockHint, [guideChip('stock'), chipsFor(['stock'])[0]].filter(Boolean), 'stock');
             }
         },
         customers: {
             keys: ['clientes', 'crm', 'contacto de cliente', 'base de clientes', 'agregar cliente'],
             run: function () {
                 if (!isPanel || locked) { actions.contact.run(); return; }
-                reply('Tu CRM de clientes está aquí.', chipsFor(['customers']), 'customers');
+                reply(guideIntro('customers') || 'Tu CRM de clientes está aquí.', [guideChip('customers'), chipsFor(['customers'])[0]].filter(Boolean), 'customers');
             }
         },
         pos: {
             keys: ['vender', 'pos', 'punto de venta', 'caja', 'registrar venta'],
             run: function () {
                 if (!isPanel || locked) { actions.webstore.run(); return; }
-                reply('Abre el punto de venta para cobrar en el momento.', chipsFor(['pos', 'posSales']), 'pos');
+                reply(guideIntro('pos') || 'Abre el punto de venta para cobrar en el momento.', [guideChip('pos'), chipsFor(['pos', 'posSales'])[0]].filter(Boolean), 'pos');
             }
         },
         reports: {
             keys: ['reportes', 'reporte', 'estadisticas', 'ventas mes', 'ganancia', 'facturacion', 'graficos'],
             run: function () {
                 if (!isPanel || locked) { actions.webstore.run(); return; }
-                reply('Tus reportes y estadísticas te esperan.', chipsFor(['reports']), 'reports');
+                reply(guideIntro('reports') || 'Tus reportes y estadísticas te esperan.', [guideChip('reports'), chipsFor(['reports'])[0]].filter(Boolean), 'reports');
             }
         },
         suppliers: {
@@ -1093,7 +1155,7 @@
             keys: ['trabajadores', 'empleados', 'personal', 'permisos', 'roles', 'invitar usuario'],
             run: function () {
                 if (!isPanel || locked) { reply(S.noAtajos, chipsFor(['marketplace', 'ayuda']), 'workers'); return; }
-                reply('Administra tu equipo y sus permisos.', chipsFor(['workers']), 'workers');
+                reply(guideIntro('workers') || 'Administra tu equipo y sus permisos.', [guideChip('workers'), chipsFor(['workers'])[0]].filter(Boolean), 'workers');
             }
         },
         plan: {
@@ -1304,6 +1366,7 @@
                 { label: 'Resumen del día', icon: 'fa-gauge-high', send: 'resumen' },
                 { label: 'Crear producto', icon: 'fa-plus', send: 'crear producto' },
                 { label: 'Abrir caja', icon: 'fa-cash-register', send: 'abrir caja' },
+                { label: 'Guía del panel', icon: 'fa-list-ol', send: 'guia del panel' },
                 { label: 'Recorrido guiado', icon: 'fa-location-arrow', send: 'recorrido' }
             ], 'boot:panel');
             // Memoria de sesión: retoma donde quedó la última vez.
