@@ -156,6 +156,34 @@
     transform: translateY(-1px); box-shadow: 0 4px 10px rgba(79, 70, 229, .15);
 }
 
+/* Tarjetas de datos (resultados de búsqueda, pedido, resumen) */
+.wsb-card {
+    max-width: 92%; margin: 2px 0 10px; overflow: hidden;
+    background: #fff; border: 1px solid var(--wsb-border); border-radius: 14px;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, .07);
+    animation: wsb-msg-in .28s ease both;
+}
+.wsb-card-title {
+    padding: 9px 13px; font-size: .78rem; font-weight: 700; letter-spacing: .02em;
+    color: var(--wsb-muted); text-transform: uppercase;
+    border-bottom: 1px solid var(--wsb-border); background: #fafbfd;
+}
+.wsb-card-item {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 9px 13px; text-decoration: none; color: var(--wsb-text);
+    border-bottom: 1px solid #f1f2f6; transition: background .15s ease;
+}
+.wsb-card-item:last-child { border-bottom: 0; }
+.wsb-card-item:hover { background: var(--wsb-primary-light); }
+.wsb-card-item-name { font-size: .85rem; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wsb-card-item-meta { font-size: .74rem; color: var(--wsb-muted); text-align: right; flex-shrink: 0; display: flex; align-items: center; gap: 6px; }
+.wsb-badge-stock {
+    display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .7rem; font-weight: 700;
+    background: #dcfce7; color: #15803d; white-space: nowrap;
+}
+.wsb-badge-stock.is-out { background: #fee2e2; color: #b91c1c; }
+.wsb-where { font-size: .68rem; color: var(--wsb-muted); white-space: nowrap; }
+
 /* Botón Atajos */
 .wsb-atajos {
     display: flex; align-items: center; justify-content: center; gap: 8px;

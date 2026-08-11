@@ -76,6 +76,7 @@ function ws_chatbot_config() {
         'logged'  => $logged,
         'bizName' => ws_site_name(),
         'bizSlug' => $slug,
+        'locSlug' => (string) get_query_var( 'ws_location' ),
         'chatbot' => $chatbot,
         'planName'=> $plan_name,
         'home'    => $home,
@@ -102,6 +103,7 @@ function ws_chatbot_config() {
         'strings'   => array_merge( ws_chatbot_strings(), $admin['messages'] ),
         'knowledge' => ws_chatbot_knowledge_config(),
         'trackUrl'  => admin_url( 'admin-ajax.php' ) . '?action=ws_chatbot_track',
+        'apiUrl'    => admin_url( 'admin-ajax.php' ),
         'nonce'     => wp_create_nonce( 'ws_nonce' ),
     ) );
 }
@@ -382,6 +384,69 @@ function ws_chatbot_default_knowledge() {
             'link_icon'   => 'fa-envelope',
             'active'   => 1,
         ),
+        array(
+            'id' => 'que-es-shopup',
+            'patterns' => array( 'que es esta pagina', 'que hace esta pagina', 'que es shopup', 'como funciona esta pagina', 'en que consiste', 'que ofrecen' ),
+            'answer'   => 'Este es un mercado de tiendas locales: los negocios publican sus productos y tú compras directo en cada tienda. Si tienes algo que vender, puedes montar tu negocio gratis y gestionar pedidos, stock y ventas desde su panel.',
+            'link_target' => 'market',
+            'link_label'  => 'Ver el mercado',
+            'link_icon'   => 'fa-store-alt',
+            'active'   => 1,
+        ),
+        array(
+            'id' => 'devoluciones-cambios',
+            'patterns' => array( 'devolucion', 'devolución', 'cambio de producto', 'garantia', 'garantía', 'reembolso', 'quitar el pedido', 'cancelar mi pedido' ),
+            'answer'   => 'Las devoluciones y cambios se gestionan directamente con cada tienda. Escríbeles por su página de contacto o usa la página de Contacto del sitio y te orientamos.',
+            'link_target' => 'contacto',
+            'link_label'  => 'Contactar',
+            'link_icon'   => 'fa-envelope',
+            'active'   => 1,
+        ),
+        array(
+            'id' => 'envios-entrega',
+            'patterns' => array( 'envio', 'envío', 'entrega', 'demora', 'cuando llega', 'reparto', 'a domicilio' ),
+            'answer'   => 'Cada tienda define sus opciones de entrega y su costo al hacer el pedido. Entra a la tienda, elige tus productos y verás las opciones disponibles antes de confirmar.',
+            'link_target' => 'stores',
+            'link_label'  => 'Ver tiendas',
+            'link_icon'   => 'fa-truck-fast',
+            'active'   => 1,
+        ),
+        array(
+            'id' => 'cuenta-acceso',
+            'patterns' => array( 'olvide mi contrasena', 'olvidé mi contraseña', 'cambiar contrasena', 'cambiar contraseña', 'mi cuenta', 'recuperar cuenta', 'entrar a mi cuenta' ),
+            'answer'   => 'Para entrar usa tu usuario y contraseña en la página de acceso. Si no recuerdas tu contraseña, puedes restablecerla desde el acceso; y si tienes problemas, escríbenos por Contacto.',
+            'link_target' => 'login',
+            'link_label'  => 'Ir al acceso',
+            'link_icon'   => 'fa-right-to-bracket',
+            'active'   => 1,
+        ),
+        array(
+            'id' => 'variantes-producto',
+            'patterns' => array( 'tallas', 'colores', 'variantes', 'variedad', 'mismo producto en', 'version del producto' ),
+            'answer'   => 'Si un producto tiene variantes (tallas, colores), se indican en su ficha de la tienda. Pregúntale directamente a la tienda si no la ves.',
+            'link_target' => 'stores',
+            'link_label'  => 'Ver tiendas',
+            'link_icon'   => 'fa-shapes',
+            'active'   => 1,
+        ),
+        array(
+            'id' => 'multi-ubicacion',
+            'patterns' => array( 'sucursal', 'otra tienda', 'mas de una tienda', 'varias tiendas', 'almacen', 'transferir stock', 'transferencia entre tiendas', 'mover productos entre' ),
+            'answer'   => 'Un negocio puede tener varias sucursales o almacenes, cada uno con su propio stock. En tu panel, el módulo Stock permite transferir productos entre ubicaciones.',
+            'link_target' => 'panel:stock',
+            'link_label'  => 'Gestionar stock',
+            'link_icon'   => 'fa-arrows-rotate',
+            'active'   => 1,
+        ),
+        array(
+            'id' => 'integracion-datos',
+            'patterns' => array( 'api', 'erp', 'integrar', 'integracion', 'exportar datos', 'importar productos', 'conectar con otro sistema' ),
+            'answer'   => 'Desde el panel puedes importar y exportar productos, y ver reportes exportables. No hay integraciones externas (API/ERP) por ahora; si necesitas algo específico, escríbenos por Contacto.',
+            'link_target' => 'panel:products',
+            'link_label'  => 'Mis productos',
+            'link_icon'   => 'fa-file-import',
+            'active'   => 1,
+        ),
     );
 }
 
@@ -457,9 +522,152 @@ function ws_chatbot_resolve_link( $target ) {
         case 'stores':   return ws_marketplace_stores_url();
         case 'ayuda':    return $home . 'ayuda/';
         case 'contacto': return $home . 'contacto/';
+        case 'login':    return $home . 'login/';
         case 'market':   return $home;
     }
     return $home;
+}
+
+/* -------------------------------------------------------------------------
+ * Datos en vivo: búsqueda de productos y resumen del negocio
+ * ---------------------------------------------------------------------- */
+
+add_action( 'wp_ajax_ws_chatbot_search', 'ws_ajax_chatbot_search' );
+add_action( 'wp_ajax_nopriv_ws_chatbot_search', 'ws_ajax_chatbot_search' );
+function ws_ajax_chatbot_search() {
+    global $wpdb;
+    if ( ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Sesión expirada.', 'workshop' ) ) );
+    }
+    $q = sanitize_text_field( $_POST['q'] ?? '' );
+    if ( mb_strlen( $q ) < 2 ) {
+        wp_send_json_error( array( 'msg' => __( 'Escribe al menos 2 letras para buscar.', 'workshop' ) ) );
+    }
+
+    $biz   = ws_current_business();
+    $role  = ws_user_role();
+    $limit = 6;
+    $out   = array();
+
+    if ( $role ) {
+        // Usuario de negocio: busca en sus ubicaciones (con o sin stock).
+        $panel_url = ws_panel_url( $role, 'products', $biz );
+        foreach ( array_slice( ws_user_location_ids(), 0, 5 ) as $lid ) {
+            foreach ( WS_Stock::stock_rows( array( 'location_id' => $lid, 'search' => $q, 'limit' => 4 ) ) as $r ) {
+                $out[] = array(
+                    'name'       => (string) $r->name,
+                    'price_text' => number_format_i18n( (float) $r->sale_price, 2 ) . ' ' . ( $r->currency ? $r->currency : '€' ),
+                    'stock_text' => (float) $r->qty > 0 ? sprintf( __( 'Stock: %s', 'workshop' ), number_format_i18n( (float) $r->qty, 2 ) ) : __( 'Agotado', 'workshop' ),
+                    'where'      => (string) $r->location_name,
+                    'url'        => $panel_url,
+                    'in_stock'   => (float) $r->qty > 0,
+                );
+                if ( count( $out ) >= $limit ) {
+                    break 2;
+                }
+            }
+        }
+    } else {
+        // Visitante: se usa el contexto de la PÁGINA que envía el front-end
+        // (biz + loc), porque la petición AJAX no conserva los query vars y
+        // así la búsqueda funciona también en negocios con slug propio.
+        $biz_slug = sanitize_title( $_POST['biz'] ?? '' );
+        $loc_slug = sanitize_text_field( $_POST['loc'] ?? '' );
+        $target   = $biz_slug ? WS_Business::get_by_slug( $biz_slug ) : $biz;
+        $suffix   = $target ? ws_biz_table_suffix( $target ) : '';
+        $loc_t    = ws_table_for( $suffix, 'locations' );
+        $stock_t  = ws_table_for( $suffix, 'stock' );
+        $prod_t   = ws_table_for( $suffix, 'products' );
+
+        $locs = array();
+        if ( $loc_slug ) {
+            $row = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$loc_t} WHERE slug=%s LIMIT 1", $loc_slug ) );
+            if ( $row ) {
+                $locs[] = $row;
+            }
+        }
+        if ( empty( $locs ) ) {
+            $locs = $wpdb->get_results( "SELECT * FROM {$loc_t} WHERE type='pv' ORDER BY name ASC LIMIT 6" );
+        }
+        $like = '%' . $wpdb->esc_like( $q ) . '%';
+        foreach ( $locs as $loc ) {
+            $rows = $wpdb->get_results( $wpdb->prepare(
+                "SELECT s.qty, p.name, p.sale_price, p.currency FROM {$stock_t} s
+                 INNER JOIN {$prod_t} p ON p.id = s.product_id
+                 WHERE s.location_id=%d AND p.name LIKE %s AND s.qty>0
+                 ORDER BY p.name ASC LIMIT 3",
+                (int) $loc->id, $like
+            ) );
+            foreach ( $rows as $r ) {
+                $out[] = array(
+                    'name'       => (string) $r->name,
+                    'price_text' => number_format_i18n( (float) $r->sale_price, 2 ) . ' ' . ( $r->currency ? $r->currency : '€' ),
+                    'stock_text' => sprintf( __( 'Stock: %s', 'workshop' ), number_format_i18n( (float) $r->qty, 2 ) ),
+                    'where'      => (string) $loc->name,
+                    'url'        => ws_store_url( $loc, $target ),
+                    'in_stock'   => true,
+                );
+                if ( count( $out ) >= $limit ) {
+                    break 2;
+                }
+            }
+        }
+    }
+    wp_send_json_success( array( 'products' => $out, 'q' => $q ) );
+}
+
+add_action( 'wp_ajax_ws_chatbot_summary', 'ws_ajax_chatbot_summary' );
+function ws_ajax_chatbot_summary() {
+    if ( ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Sesión expirada.', 'workshop' ) ) );
+    }
+    $role = ws_user_role();
+    if ( ! $role ) {
+        wp_send_json_error( array( 'msg' => __( 'El resumen del día está disponible para negocios.', 'workshop' ) ) );
+    }
+
+    $biz     = ws_current_business();
+    $loc_ids = ws_user_location_ids();
+    if ( empty( $loc_ids ) ) {
+        wp_send_json_success( array( 'summary' => null ) );
+    }
+
+    global $wpdb;
+    $ph   = implode( ',', array_fill( 0, count( $loc_ids ), '%d' ) );
+    $args = array_map( 'intval', $loc_ids );
+    $ot   = ws_table_name( 'orders' );
+    $pt   = ws_table_name( 'pos_sales' );
+    $st   = ws_table_name( 'stock' );
+    $prt  = ws_table_name( 'products' );
+
+    $sales_today  = (float) $wpdb->get_var( $wpdb->prepare(
+        "SELECT COALESCE(SUM(total),0) FROM {$ot} WHERE location_id IN ({$ph}) AND status IN ('accepted','completed') AND DATE(created_at)=CURDATE()", ...$args
+    ) );
+    $sales_today += (float) $wpdb->get_var( $wpdb->prepare(
+        "SELECT COALESCE(SUM(total),0) FROM {$pt} WHERE location_id IN ({$ph}) AND status='completed' AND DATE(created_at)=CURDATE()", ...$args
+    ) );
+    $pending = (int) $wpdb->get_var( $wpdb->prepare(
+        "SELECT COUNT(*) FROM {$ot} WHERE location_id IN ({$ph}) AND status='pending'", ...$args
+    ) );
+    $low_stock = (int) $wpdb->get_var( $wpdb->prepare(
+        "SELECT COUNT(*) FROM {$st} s INNER JOIN {$prt} p ON p.id=s.product_id
+         WHERE s.location_id IN ({$ph}) AND p.min_stock>0 AND s.qty<=p.min_stock", ...$args
+    ) );
+    $cash = WS_POS::get_open_cash( (int) $loc_ids[0] );
+
+    wp_send_json_success( array( 'summary' => array(
+        'sales_today' => $sales_today,
+        'sales_text'  => number_format_i18n( $sales_today, 2 ) . ' ' . ws_currency_symbol(),
+        'pending'     => $pending,
+        'low_stock'   => $low_stock,
+        'cash_open'   => (bool) $cash,
+        'urls'        => array(
+            'orders'   => ws_panel_url( $role, 'orders', $biz ),
+            'stock'    => ws_panel_url( $role, 'stock', $biz ),
+            'pos'      => ws_panel_url( $role, 'pos', $biz ),
+            'posSales' => ws_panel_url( $role, 'pos-sales', $biz ),
+        ),
+    ) ) );
 }
 
 /* -------------------------------------------------------------------------

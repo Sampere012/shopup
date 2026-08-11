@@ -28,7 +28,9 @@
         'price_history_list',
         'products_get', 'products_list', 'public_order_status',
         'reviews_get', 'reviews_stats',
-        'shifts_list', 'stock_list', 'store_products', 'suppliers_list'
+        'shifts_list', 'stock_list', 'store_products', 'suppliers_list',
+        // Consultas del asistente (chatbot) en el panel: son lecturas.
+        'ws_chatbot_search', 'ws_chatbot_summary'
     ];
 
     // Acciones con manejo offline propio (POS y carrito): pasan tal cual.

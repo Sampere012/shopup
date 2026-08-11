@@ -164,6 +164,185 @@
         }, 450 + Math.min(500, text.length * 8));
     }
 
+    /* ------------------------------------------------------------------ */
+    /* Datos en vivo: búsqueda, seguimiento de pedido y resumen del negocio */
+    /* ------------------------------------------------------------------ */
+
+    var lastUserText = '';
+    var pendingAsk = null; // {type:'search'} | {type:'order_number'} | {type:'order_phone', number}
+
+    function escapeHtml(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function api(action, data, cb) {
+        if (!C.apiUrl) { cb({ success: false, data: { msg: 'No disponible.' } }); return; }
+        var body = new URLSearchParams();
+        body.append('action', action);
+        body.append('ws_nonce', C.nonce);
+        Object.keys(data || {}).forEach(function (k) { body.append(k, data[k]); });
+        fetch(C.apiUrl, { method: 'POST', credentials: 'same-origin', body: body })
+            .then(function (r) { return r.json(); })
+            .then(function (json) { cb(json); })
+            .catch(function () { cb({ success: false, data: { msg: 'Sin conexión para consultar ahora.' } }); });
+    }
+
+    function removeTyping(t) {
+        if (t && t.parentNode) { body.removeChild(t); }
+    }
+
+    // Tarjeta con filas enlazables (resultados de búsqueda, pedido, resumen).
+    function appendCard(title, rows, opts) {
+        opts = opts || {};
+        var row = document.createElement('div');
+        row.className = 'wsb-msg';
+        var card = document.createElement('div');
+        card.className = 'wsb-card';
+        var html = '<div class="wsb-card-title">' + escapeHtml(title) + '</div>';
+        (rows || []).forEach(function (it) {
+            html += '<a class="wsb-card-item" href="' + escapeHtml(it.url || '#') + '" target="_blank" rel="noopener">' +
+                '<span class="wsb-card-item-name">' + escapeHtml(it.name) + '</span>' +
+                '<span class="wsb-card-item-meta">' + (it.meta || '') + '</span>' +
+                '</a>';
+        });
+        card.innerHTML = html;
+        row.appendChild(card);
+        body.appendChild(row);
+        body.scrollTop = body.scrollHeight;
+        if (opts.chips && opts.chips.length) { appendChips(opts.chips); }
+        return row;
+    }
+
+    function doSearch(q) {
+        var t = showTyping();
+        // Se envía el contexto de la página (negocio + ubicación) para que la
+        // búsqueda pública apunte a la tienda correcta también en negocios con slug.
+        api('ws_chatbot_search', { q: q, biz: C.bizSlug || '', loc: C.locSlug || '' }, function (json) {
+            removeTyping(t);
+            if (json && json.success) {
+                var list = (json.data && json.data.products) || [];
+                if (!list.length) {
+                    reply('No encontré "' + q + '" disponible ahora mismo. ¿Pruebas con otra palabra o revisas todas las tiendas?',
+                        [marketChip()].filter(Boolean), 'search:none');
+                    return;
+                }
+                var rows = list.map(function (it) {
+                    return {
+                        name: it.name,
+                        meta: (it.price_text || '') + (it.stock_text ? ' <span class="wsb-badge-stock' + (it.in_stock === false ? ' is-out' : '') + '">' + escapeHtml(it.stock_text) + '</span>' : '') + (it.where ? ' <span class="wsb-where">' + escapeHtml(it.where) + '</span>' : ''),
+                        url: it.url
+                    };
+                });
+                appendCard('Resultados de "' + q + '":', rows, { chips: [marketChip()].filter(Boolean) });
+            } else {
+                reply((json && json.data && json.data.msg) || 'No pude buscar en este momento.', [marketChip()].filter(Boolean), 'search:error');
+            }
+        });
+    }
+
+    function doSummary() {
+        var t = showTyping();
+        api('ws_chatbot_summary', {}, function (json) {
+            removeTyping(t);
+            if (!json || !json.success || !json.data || !json.data.summary) {
+                reply((json && json.data && json.data.msg) || 'Aún no tienes ubicaciones asignadas o no pude obtener el resumen ahora.', [], 'summary:error');
+                return;
+            }
+            var s = json.data.summary;
+            var rows = [
+                { name: 'Ventas de hoy', meta: '<b>' + escapeHtml(s.sales_text) + '</b>', url: s.urls.posSales },
+                { name: 'Pedidos pendientes', meta: '<b>' + s.pending + '</b>', url: s.urls.orders },
+                { name: 'Productos con stock bajo', meta: '<b>' + s.low_stock + '</b>', url: s.urls.stock },
+                { name: 'Caja POS', meta: s.cash_open ? '<span class="wsb-badge-stock">Abierta</span>' : '<span class="wsb-badge-stock is-out">Cerrada</span>', url: s.urls.pos }
+            ];
+            appendCard('Resumen de tu negocio hoy:', rows, {
+                chips: [
+                    { label: 'Ver pedidos', url: s.urls.orders, icon: 'fa-cart-shopping' },
+                    { label: 'Abrir POS', url: s.urls.pos, icon: 'fa-cash-register' }
+                ]
+            });
+            track('summary:shown');
+        });
+    }
+
+    function checkOrder(number, phone) {
+        var t = showTyping();
+        api('ws_public_order_status', { number: number, phone: phone }, function (json) {
+            removeTyping(t);
+            if (!json || !json.success || !json.data || !json.data.order) {
+                reply((json && json.data && json.data.msg) || 'No encontré el pedido. Revisa el número y el teléfono e inténtalo de nuevo.',
+                    [marketChip(), contactChip()].filter(Boolean), 'trackOrder:error');
+                return;
+            }
+            var o = json.data.order;
+            // appendCard escapa name y href; los meta llevan HTML controlado.
+            var rows = [
+                { name: o.status_label, meta: '<span class="wsb-badge-stock">' + escapeHtml(o.status) + '</span>', url: '#' },
+                { name: o.date, meta: '', url: '#' },
+                { name: 'Total', meta: '<b>' + escapeHtml(o.currency) + ' ' + formatNum(o.total) + '</b>', url: '#' }
+            ];
+            (o.items || []).slice(0, 4).forEach(function (it) {
+                rows.push({ name: it.product_name, meta: it.qty + ' × ' + formatNum(it.price), url: '#' });
+            });
+            if ((o.items || []).length > 4) {
+                rows.push({ name: '…', meta: 'y ' + (o.items.length - 4) + ' producto(s) más', url: '#' });
+            }
+            appendCard('Pedido ' + escapeHtml(o.number), rows, { chips: [marketChip()].filter(Boolean) });
+            track('trackOrder:ok');
+        });
+    }
+
+    function formatNum(v) {
+        v = Number(v) || 0;
+        return v.toLocaleString('es-CU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function marketChip() {
+        return isPanel ? chipsFor(['products'])[0] : { label: 'Ver tiendas', url: C.urls.stores, icon: 'fa-store' };
+    }
+    function contactChip() {
+        return { label: 'Contacto', url: C.urls.contacto, icon: 'fa-envelope' };
+    }
+
+    // Extrae el término de búsqueda de frases como "buscar camisa" o "¿tienes arroz?"
+    function extractQuery(text) {
+        var m = String(text || '').match(/(?:buscar|busco|busca|tienes|tienen|tiene|hay|disponible|precio de|donde encuentro|encuentro)\s*(.+)$/i);
+        if (m && m[1]) {
+            return m[1].trim().replace(/[?.!]+$/, '');
+        }
+        return '';
+    }
+
+    function handlePending(value) {
+        var low = value.toLowerCase();
+        if (low.indexOf('cancelar') > -1 || low.indexOf('salir') > -1 || low === 'nada' || low === 'no' || low === 'olvidalo' || low === 'olvídalo') {
+            pendingAsk = null;
+            reply('No hay problema. ¿Te ayudo con otra cosa?', chipsFor(['marketplace', 'ayuda', 'contacto']), 'cancel');
+            busy = false;
+            return;
+        }
+        var p = pendingAsk;
+        if (p.type === 'search') {
+            pendingAsk = null;
+            busy = false;
+            doSearch(value);
+            return;
+        }
+        if (p.type === 'order_number') {
+            pendingAsk = { type: 'order_phone', number: value };
+            busy = false;
+            reply('Perfecto. Ahora dime el teléfono que usaste al hacer el pedido (para verificar que es tuyo):', [], 'trackOrder:askPhone');
+            return;
+        }
+        if (p.type === 'order_phone') {
+            pendingAsk = null;
+            busy = false;
+            checkOrder(p.number, value);
+        }
+    }
+
     var actions = {
         greeting: {
             keys: ['hola', 'buenas', 'hey', 'hi', 'saludo', 'que tal', 'holi', 'hello', 'buen dia', 'buenas tardes'],
@@ -212,10 +391,31 @@
             }
         },
         trackOrder: {
-            keys: ['donde esta mi pedido', 'rastrear', 'seguimiento', 'estado del pedido', 'mi compra', 'reclamo pedido'],
+            keys: ['donde esta mi pedido', 'rastrear', 'seguimiento', 'estado del pedido', 'mi compra', 'reclamo pedido', 'seguir mi pedido'],
             run: function () {
                 if (isPanel) { reply('Revisa tus pedidos en el panel.', chipsFor(['orders']), 'trackOrder'); return; }
-                reply('Puedes consultar el estado de tu pedido directamente en la tienda donde lo hiciste.', chipsFor(['tienda', 'marketplace']).filter(Boolean), 'trackOrder');
+                reply('Claro, consulto el estado al instante. Escríbeme el número de tu pedido (ej: 12):', [], 'trackOrder:askNumber');
+                pendingAsk = { type: 'order_number' };
+            }
+        },
+        searchProduct: {
+            keys: ['buscar', 'busco', 'busca ', 'tienes ', 'tienen ', 'hay ', 'precio de', 'disponible', 'encuentro', 'donde encuentro'],
+            run: function () {
+                if (locked) { actions.locked.run(); return; }
+                var q = extractQuery(lastUserText);
+                if (!q) {
+                    reply('¿Qué producto buscas? Escríbelo y lo busco al instante.', [], 'search:ask');
+                    pendingAsk = { type: 'search' };
+                    return;
+                }
+                doSearch(q);
+            }
+        },
+        summary: {
+            keys: ['resumen', 'como va mi negocio', 'como va mi tienda', 'como va el dia', 'estado de mi negocio', 'ventas de hoy', 'pedidos pendientes', 'stock bajo', 'caja abierta', 'reporte del dia', 'numeros del dia'],
+            run: function () {
+                if (!isPanel || locked) { actions.webstore.run(); return; }
+                doSummary();
             }
         },
         stock: {
@@ -373,6 +573,13 @@
         input.value = '';
         appendMsg(value, true);
         busy = true;
+        lastUserText = value;
+
+        // Flujo conversacional pendiente (buscar / seguimiento de pedido).
+        if (pendingAsk) {
+            handlePending(value);
+            return;
+        }
 
         var intent = resolveIntent(value);
         var delay = 350 + Math.min(600, value.length * 12);
@@ -441,13 +648,31 @@
             return;
         }
         if (isPanel) {
-            reply(S.welcomePanel, chipsFor(['productNew', 'orders', 'stock', 'plan']), 'boot:panel');
+            reply(S.welcomePanel, [
+                { label: 'Resumen del día', icon: 'fa-gauge-high', send: 'resumen' },
+                { label: 'Crear producto', icon: 'fa-plus', send: 'crear producto' },
+                { label: 'Abrir caja', icon: 'fa-cash-register', send: 'abrir caja' },
+                { label: 'Recorrido guiado', icon: 'fa-location-arrow', send: 'recorrido' }
+            ], 'boot:panel');
         } else if (!C.logged) {
-            reply(S.welcomeGuest + ' ' + S.registerHook, [registerChip(), chipsFor(['marketplace', 'ayuda'])[0]].filter(Boolean), 'boot:guest');
+            reply(S.welcomeGuest + ' ' + S.registerHook, [
+                { label: 'Buscar producto', icon: 'fa-magnifying-glass', send: 'buscar' },
+                { label: 'Cómo comprar', icon: 'fa-cart-shopping', send: 'como compro' },
+                { label: 'Seguir mi pedido', icon: 'fa-truck-fast', send: 'seguir mi pedido' },
+                registerChip()
+            ].filter(Boolean), 'boot:guest');
         } else if (C.context === 'store') {
-            reply(S.storeTeaser + ' Puedes también ver todas las tiendas.', chipsFor(['marketplace']), 'boot:store');
+            reply(S.storeTeaser + ' Puedes también ver todas las tiendas.', [
+                { label: 'Buscar en esta tienda', icon: 'fa-magnifying-glass', send: 'buscar' },
+                { label: 'Ver todas las tiendas', icon: 'fa-store', send: 'todas las tiendas' },
+                { label: 'Seguir mi pedido', icon: 'fa-truck-fast', send: 'seguir mi pedido' }
+            ], 'boot:store');
         } else {
-            reply(S.welcomeNewUser, chipsFor(['marketplace', 'ayuda']), 'boot:user');
+            reply(S.welcomeNewUser, [
+                { label: 'Buscar producto', icon: 'fa-magnifying-glass', send: 'buscar' },
+                { label: 'Ver tiendas', icon: 'fa-store', send: 'todas las tiendas' },
+                { label: 'Seguir mi pedido', icon: 'fa-truck-fast', send: 'seguir mi pedido' }
+            ], 'boot:user');
         }
     }
 
