@@ -305,6 +305,132 @@ function ws_site_pages() {
 }
 
 /**
+ * Normaliza texto de una pregunta/tema para comparar: minúsculas, sin tildes
+ * ni signos de puntuación (solo letras y números).
+ */
+function ws_faq_norm( $text ) {
+    $text = html_entity_decode( (string) $text, ENT_QUOTES, 'UTF-8' );
+    $text = mb_strtolower( trim( $text ), 'UTF-8' );
+    $text = strtr(
+        $text,
+        array(
+            'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u',
+            'ü' => 'u', 'ñ' => 'n', 'à' => 'a', 'è' => 'e', 'ì' => 'i',
+            'ò' => 'o', 'ù' => 'u', 'ç' => 'c',
+        )
+    );
+    return trim( (string) preg_replace( '/[^a-z0-9]+/', ' ', $text ) );
+}
+
+/**
+ * Todas las FAQs disponibles: las editables del administrador + la biblioteca
+ * grande (600). Se fusionan por tema y se deduplican por pregunta normalizada:
+ * la versión del administrador gana; los temas/preguntas de la biblioteca que
+ * el admin no tenga se agregan. El editor de wp-admin solo muestra las FAQs
+ * guardadas, así no se vuelve inmanejable.
+ */
+function ws_site_faqs_all() {
+    // Memoización por request: se llama en el render de Ayuda, el pie y el
+    // conocimiento del chat; con 600+ ítems no conviene reconstruir.
+    static $cached = null;
+    if ( null !== $cached ) {
+        return $cached;
+    }
+
+    $pages = ws_site_pages();
+    $faqs  = (array) ( $pages['faqs'] ?? array() );
+
+    if ( ! function_exists( 'ws_faq_big_library' ) ) {
+        $cached = $faqs;
+        return $cached;
+    }
+
+    // Índice por tema normalizado, con preguntas vistas para deduplicar.
+    $merged = array();
+    foreach ( $faqs as $topic ) {
+        if ( ! is_array( $topic ) || '' === trim( (string) ( $topic['topic'] ?? '' ) ) ) {
+            continue;
+        }
+        $tname = trim( (string) $topic['topic'] );
+        $tkey  = ws_faq_norm( $tname );
+        if ( '' === $tkey ) {
+            continue;
+        }
+        // Evita colisión: si dos nombres distintos normalizan igual, mantén
+        // ambos como temas separados (clave compuesta).
+        $ukey = $tkey;
+        if ( isset( $merged[ $ukey ] ) && $merged[ $ukey ]['topic'] !== $tname ) {
+            $ukey = $tkey . '|' . ws_faq_norm( $tname ) . '|' . md5( $tname );
+        }
+        if ( ! isset( $merged[ $ukey ] ) ) {
+            $merged[ $ukey ] = array( 'topic' => $tname, 'items' => array(), 'seen' => array() );
+        }
+        foreach ( (array) ( $topic['items'] ?? array() ) as $it ) {
+            if ( ! is_array( $it ) || '' === trim( (string) ( $it['q'] ?? '' ) ) ) {
+                continue;
+            }
+            $qkey = ws_faq_norm( $it['q'] );
+            if ( '' === $qkey || isset( $merged[ $ukey ]['seen'][ $qkey ] ) ) {
+                continue;
+            }
+            $merged[ $ukey ]['seen'][ $qkey ] = true;
+            $merged[ $ukey ]['items'][]        = array(
+                'q' => trim( (string) $it['q'] ),
+                'a' => trim( (string) ( $it['a'] ?? '' ) ),
+            );
+        }
+    }
+
+    foreach ( ws_faq_big_library() as $topic ) {
+        if ( ! is_array( $topic ) || '' === trim( (string) ( $topic['topic'] ?? '' ) ) ) {
+            continue;
+        }
+        $tname = trim( (string) $topic['topic'] );
+        $tkey  = ws_faq_norm( $tname );
+        if ( '' === $tkey ) {
+            continue;
+        }
+        $ukey = $tkey;
+        foreach ( array_keys( $merged ) as $mk ) {
+            if ( $mk === $tkey && $merged[ $mk ]['topic'] !== $tname ) {
+                $ukey = $tkey . '|' . ws_faq_norm( $tname ) . '|' . md5( $tname );
+                break;
+            }
+            if ( 0 === strpos( $mk, $tkey . '|' ) && $merged[ $mk ]['topic'] === $tname ) {
+                $ukey = $mk;
+                break;
+            }
+        }
+        if ( ! isset( $merged[ $ukey ] ) ) {
+            $merged[ $ukey ] = array( 'topic' => $tname, 'items' => array(), 'seen' => array() );
+        }
+        foreach ( (array) ( $topic['items'] ?? array() ) as $it ) {
+            if ( ! is_array( $it ) || '' === trim( (string) ( $it['q'] ?? '' ) ) ) {
+                continue;
+            }
+            $qkey = ws_faq_norm( $it['q'] );
+            if ( '' === $qkey || isset( $merged[ $ukey ]['seen'][ $qkey ] ) ) {
+                continue;
+            }
+            $merged[ $ukey ]['seen'][ $qkey ] = true;
+            $merged[ $ukey ]['items'][]        = array(
+                'q' => trim( (string) $it['q'] ),
+                'a' => trim( (string) ( $it['a'] ?? '' ) ),
+            );
+        }
+    }
+
+    $out = array();
+    foreach ( $merged as $t ) {
+        if ( ! empty( $t['items'] ) ) {
+            $out[] = array( 'topic' => $t['topic'], 'items' => $t['items'] );
+        }
+    }
+    $cached = $out;
+    return $cached;
+}
+
+/**
  * Campos de texto de las páginas (cacheadas para uso repetido en el pie).
  */
 function ws_site_page( $page, $field ) {

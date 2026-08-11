@@ -167,7 +167,9 @@ get_header();
                 </div>
             <?php else : ?>
                 <div class="ws-static-card ws-static-card-content">
-                    <?php if ( 'help' === $ws_key && ! empty( $ws_pages['faqs'] ) ) : ?>
+                    <?php if ( 'help' === $ws_key ) : ?>
+                        <?php $ws_faqs_all = ws_site_faqs_all(); ?>
+                        <?php if ( ! empty( $ws_faqs_all ) ) : ?>
                         <?php if ( '' !== trim( $ws_content ) ) : ?>
                             <div class="ws-static-content ws-faq-intro">
                                 <?php echo wp_kses_post( $ws_content ); ?>
@@ -179,7 +181,7 @@ get_header();
                         </div>
                         <div class="ws-faq" id="ws-faq">
                             <?php $ws_faq_open = 0; ?>
-                            <?php foreach ( (array) $ws_pages['faqs'] as $ws_topic ) : ?>
+                            <?php foreach ( (array) $ws_faqs_all as $ws_topic ) : ?>
                                 <?php if ( empty( $ws_topic['topic'] ) || empty( $ws_topic['items'] ) ) : continue; endif; ?>
                                 <div class="ws-faq-topic" data-topic>
                                     <h3 class="ws-faq-topic-title"><i class="fa-solid fa-circle-question"></i> <?php echo esc_html( $ws_topic['topic'] ); ?></h3>
@@ -228,6 +230,7 @@ get_header();
                             });
                         })();
                         </script>
+                        <?php endif; /* ws_faqs_all */ ?>
                     <?php else : ?>
                         <div class="ws-static-content">
                             <?php if ( '' !== trim( $ws_content ) ) : ?>

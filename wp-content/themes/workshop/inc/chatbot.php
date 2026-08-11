@@ -821,8 +821,14 @@ function ws_chatbot_faq_patterns( $q ) {
  * chips navegables, y una entrada por pregunta que responde directamente.
  */
 function ws_chatbot_faq_knowledge() {
-    $pages = ws_site_pages();
-    $faqs  = (array) ( $pages['faqs'] ?? array() );
+    // Memoización por request: 600+ FAQs con patrones por pregunta solo se
+    // construyen una vez por petición (lo usa el config del chat).
+    static $cached = null;
+    if ( null !== $cached ) {
+        return $cached;
+    }
+
+    $faqs  = ws_site_faqs_all();
     $ayuda = ws_chatbot_resolve_link( 'ayuda' );
     $out   = array();
     $ti    = 0;
@@ -928,7 +934,8 @@ function ws_chatbot_faq_knowledge() {
         }
     }
 
-    return $out;
+    $cached = $out;
+    return $cached;
 }
 
 /**
