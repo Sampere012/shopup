@@ -403,8 +403,13 @@
                 $('ws_reviews_get', { location_id: this.locationId })
                     .then(res => {
                         if (res.success) {
-                            this.storeReviews = res.data.data || [];
-                            this.storeRating = (res.data.stats && res.data.stats.average) || 0;
+                            // Normaliza SIEMPRE a array: el endpoint público
+                            // devuelve data.data (array), pero se protege ante
+                            // cualquier forma de respuesta para que el template
+                            // (storeReviews.slice/length) nunca truene.
+                            const raw = res.data && res.data.data !== undefined ? res.data.data : (res.data || []);
+                            this.storeReviews = Array.isArray(raw) ? raw : [];
+                            this.storeRating = (res.data && res.data.stats && res.data.stats.average) || 0;
                         }
                     })
                     .catch(err => console.error('Error cargando valoraciones:', err))

@@ -191,14 +191,14 @@ get_header();
                             <i class="fa-solid fa-star" :class="i <= Math.round(storeRating) ? 'ws-star-filled' : 'ws-star-empty'"></i>
                         </template>
                     </div>
-                    <span x-text="storeReviews.length ? '(' + storeReviews.length + ' reseñas)' : '(Aún sin reseñas)'"></span>
+                    <span x-text="(storeReviews || []).length ? '(' + (storeReviews || []).length + ' reseñas)' : '(Aún sin reseñas)'"></span>
                 </div>
 
                 <div class="ws-reviews-list">
-                    <template x-if="storeReviews.length === 0 && !reviewBusy">
+                    <template x-if="!(storeReviews || []).length && !reviewBusy">
                         <p class="ws-muted"><?php esc_html_e( 'Sé el primero en valorar esta tienda.', 'workshop' ); ?></p>
                     </template>
-                    <template x-for="review in storeReviews.slice(0, 6)" :key="review.id">
+                    <template x-for="review in (storeReviews || []).slice(0, 6)" :key="review.id">
                         <div class="ws-review-item">
                             <div class="ws-review-rating">
                                 <template x-for="i in 5" :key="i">

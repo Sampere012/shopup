@@ -90,7 +90,7 @@ function ws_rewrite_rules() {
  */
 add_action( 'init', 'ws_maybe_flush_rewrite_rules', 20 );
 function ws_maybe_flush_rewrite_rules() {
-    $version = '2026-08-10-pwa';
+    $version = '2026-08-11-manifest-fix';
     if ( get_option( 'ws_rewrite_rules_version' ) !== $version ) {
         update_option( 'ws_rewrite_rules_version', $version );
         ws_flush_rewrite_rules();
