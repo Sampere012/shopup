@@ -1104,6 +1104,32 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-btn-wa { background: linear-gradient(135deg, #25d366, #128c7e); color: #fff; box-shadow: 0 4px 14px rgba(18, 140, 126, .3); }
 .ws-btn-wa:hover { background: linear-gradient(135deg, #128c7e, #0d7a6b); color: #fff; }
 
+/* Formulario de consulta por WhatsApp (página de contacto) */
+.ws-contact-form-block {
+    margin-top: 34px; padding-top: 28px; border-top: 1px dashed var(--ws-border);
+}
+.ws-contact-form-head { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 18px; }
+.ws-contact-form-head h3 { margin: 0 0 4px; font-size: 1.12rem; }
+.ws-contact-form-head p { margin: 0; color: var(--ws-muted); font-size: .88rem; line-height: 1.5; }
+.ws-contact-form-ico {
+    width: 48px; height: 48px; border-radius: 14px; flex-shrink: 0; color: #fff; font-size: 1.3rem;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, #25d366, #128c7e); box-shadow: 0 6px 16px rgba(18, 140, 126, .35);
+}
+.ws-contact-form { display: flex; flex-direction: column; }
+.ws-contact-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.ws-contact-form-note {
+    display: flex; align-items: center; gap: 7px; margin: 12px 0 0; color: var(--ws-muted); font-size: .8rem;
+}
+.ws-contact-form-note i { color: var(--ws-success); }
+.ws-contact-form-block-empty {
+    margin-top: 28px; padding: 16px 18px; background: #f8fafc; border: 1px solid var(--ws-border);
+    border-radius: var(--ws-radius); color: var(--ws-muted); font-size: .88rem;
+}
+@media (max-width: 520px) {
+    .ws-contact-form-row { grid-template-columns: 1fr; }
+}
+
 /* Barra de confianza (bajo el contenido) */
 .ws-trust-bar {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px;

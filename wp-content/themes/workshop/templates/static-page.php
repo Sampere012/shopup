@@ -29,6 +29,11 @@ $ws_whatsapp = trim( (string) ( $ws_cur['whatsapp'] ?? '' ) );
 $ws_address  = trim( (string) ( $ws_cur['address'] ?? '' ) );
 $ws_hours    = trim( (string) ( $ws_cur['hours'] ?? '' ) );
 
+// WhatsApp del administrador de WordPress (perfil del admin o Ajustes):
+// si está configurado, los visitantes pueden enviar consultas por WhatsApp.
+// Solo se consulta en la página de contacto para no hacer queries extra.
+$ws_admin_wa = ( 'contact' === $ws_key ) ? ws_admin_whatsapp_number() : '';
+
 get_header();
 ?>
 <div class="ws-landing ws-static-page">
@@ -102,6 +107,47 @@ get_header();
                                     <span class="ws-contact-value"><?php echo esc_html( $ws_hours ); ?></span>
                                 </div>
                             <?php endif; ?>
+                        </div>
+                    <?php endif; ?>
+
+                    <?php if ( $ws_admin_wa ) : ?>
+                        <div class="ws-contact-form-block">
+                            <div class="ws-contact-form-head">
+                                <span class="ws-contact-form-ico"><i class="fa-brands fa-whatsapp"></i></span>
+                                <div>
+                                    <h3><?php esc_html_e( 'Envíanos tu consulta por WhatsApp', 'workshop' ); ?></h3>
+                                    <p><?php esc_html_e( 'Rellena el formulario y tu mensaje llegará directo a nuestro equipo de soporte.', 'workshop' ); ?></p>
+                                </div>
+                            </div>
+                            <form class="ws-contact-form" id="ws-contact-form" novalidate>
+                                <div class="ws-contact-form-row">
+                                    <label class="ws-field">
+                                        <span><?php esc_html_e( 'Tu nombre', 'workshop' ); ?></span>
+                                        <input type="text" name="cf_name" required placeholder="<?php esc_attr_e( 'Nombre y apellido', 'workshop' ); ?>">
+                                    </label>
+                                    <label class="ws-field">
+                                        <span><?php esc_html_e( 'Tu teléfono', 'workshop' ); ?></span>
+                                        <input type="tel" name="cf_phone" required placeholder="+58 412 123 4567">
+                                    </label>
+                                </div>
+                                <label class="ws-field">
+                                    <span><?php esc_html_e( 'Asunto', 'workshop' ); ?></span>
+                                    <input type="text" name="cf_subject" placeholder="<?php esc_attr_e( '¿Sobre qué nos escribes?', 'workshop' ); ?>">
+                                </label>
+                                <label class="ws-field">
+                                    <span><?php esc_html_e( 'Tu consulta', 'workshop' ); ?></span>
+                                    <textarea name="cf_message" rows="4" required placeholder="<?php esc_attr_e( 'Cuéntanos en qué podemos ayudarte…', 'workshop' ); ?>"></textarea>
+                                </label>
+                                <button class="ws-btn ws-btn-wa ws-btn-block" type="submit">
+                                    <i class="fa-brands fa-whatsapp"></i>
+                                    <span><?php esc_html_e( 'Enviar consulta por WhatsApp', 'workshop' ); ?></span>
+                                </button>
+                                <p class="ws-contact-form-note"><i class="fa-solid fa-shield-halved"></i> <?php esc_html_e( 'Se abrirá WhatsApp con tu mensaje listo para enviar. No compartimos tus datos.', 'workshop' ); ?></p>
+                            </form>
+                        </div>
+                    <?php else : ?>
+                        <div class="ws-contact-form-block ws-contact-form-block-empty">
+                            <p><i class="fa-solid fa-circle-info"></i> <?php esc_html_e( 'También puedes escribirnos por correo o teléfono usando las vías de contacto de arriba.', 'workshop' ); ?></p>
                         </div>
                     <?php endif; ?>
 
@@ -189,4 +235,40 @@ get_header();
         </section>
     <?php endif; ?>
 </div>
+
+<?php if ( 'contact' === $ws_key && $ws_admin_wa ) : ?>
+<script>
+(function () {
+    var form = document.getElementById('ws-contact-form');
+    if (!form) return;
+    var waNumber = '<?php echo esc_js( $ws_admin_wa ); ?>';
+    var siteName = '<?php echo esc_js( get_bloginfo( 'name' ) ); ?>';
+    form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var name = (form.cf_name.value || '').trim();
+        var phone = (form.cf_phone.value || '').trim();
+        var subject = (form.cf_subject.value || '').trim();
+        var message = (form.cf_message.value || '').trim();
+
+        if (!name || !phone || !message) {
+            alert('<?php echo esc_js( __( 'Por favor completa tu nombre, teléfono y consulta.', 'workshop' ) ); ?>');
+            return;
+        }
+
+        var lines = [];
+        lines.push('👋 *Consulta desde ' + siteName + '*');
+        lines.push('');
+        lines.push('*Nombre:* ' + name);
+        lines.push('*Teléfono:* ' + phone);
+        if (subject) lines.push('*Asunto:* ' + subject);
+        lines.push('');
+        lines.push('*Consulta:*');
+        lines.push(message);
+
+        var url = 'https://wa.me/' + waNumber + '?text=' + encodeURIComponent(lines.join('\n'));
+        window.open(url, '_blank', 'noopener');
+    });
+})();
+</script>
+<?php endif; ?>
 <?php get_footer(); ?>
