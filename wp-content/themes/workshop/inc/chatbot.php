@@ -736,7 +736,7 @@ function ws_chatbot_knowledge_extras() {
         $p( 'team-activity', array( 'que hace mi equipo', 'actividad de mis trabajadores', 'reporte del equipo', 'mis empleados trabajaron' ), 'Puedo decirte la última actividad de cada miembro de tu equipo y avisarte quién lleva días sin entrar. Pídeme un "reporte del equipo" o programa uno diario.', '', 'Reporte equipo', 'fa-users' ),
 
         // ---------- Reportes y datos ----------
-        $p( 'rep-tipos', array( 'que reportes hay', 'tipos de reportes', 'reportes disponibles', 'que estadisticas puedo ver' ), 'Puedo generarte: ventas (hoy, 7 o 30 días), stock bajo, pedidos pendientes, actividad del equipo, seguridad e intentos de acceso, y un resumen completo del negocio. Pídemelos cuando quieras o prográmalos.', '', 'Ver reportes', 'fa-chart-line' ),
+        $p( 'rep-tipos', array( 'que reportes hay', 'tipos de reportes', 'reportes disponibles', 'que estadisticas puedo ver' ), 'Puedo generarte: ventas (hoy, 7 o 30 días), stock bajo, pedidos pendientes, actividad del equipo, seguridad e intentos de acceso, logs de la app (errores del día), y un resumen completo del negocio. Pídemelos cuando quieras o prográmalos.', '', 'Ver reportes', 'fa-chart-line' ),
         $p( 'rep-programar', array( 'programar reporte', 'reporte automatico', 'reporte diario', 'recibir reporte programado', 'tarea en segundo plano' ), 'Puedo programar reportes para que te lleguen solos: ahora mismo, en X horas, hoy a una hora, mañana o cada día a una hora fija. Tú solo dime qué reporte y cuándo: "programa un reporte de ventas mañana a las 9".', '', 'Programar', 'fa-clock' ),
         $p( 'rep-datos', array( 'que datos tienes de mi negocio', 'que informacion manejas', 'que sabe el bot de mi negocio', 'datos de mi tienda' ), 'Tengo en tiempo real tus productos, stock (incluido bajo stock), pedidos pendientes, ventas del POS, clientes, equipo y actividad, caja abierta, notificaciones y tu plan. Todo de tu negocio, nada inventado.', '', 'Mis datos', 'fa-database' ),
 
@@ -1033,7 +1033,7 @@ function ws_chatbot_app_context() {
         ),
         'nav'     => ws_chatbot_context(),
         'actions' => array( 'crear/editar/eliminar productos (bulk)', 'reponer stock', 'aceptar/rechazar pedidos', 'crear clientes', 'registrar venta POS', 'buscar productos', 'reportes (ventas/stock/pedidos/equipo/seguridad/resumen)', 'programar reportes', 'guias paso a paso', 'responder preguntas frecuentes' ),
-        'reports' => array( 'sales', 'stock', 'orders', 'workers', 'security', 'summary' ),
+        'reports' => array( 'sales', 'stock', 'orders', 'workers', 'security', 'logs', 'summary' ),
     );
 
     if ( ! $role ) {
@@ -1112,7 +1112,7 @@ function ws_chatbot_team_members() {
  */
 function ws_chatbot_build_report( $type, $days = 1 ) {
     global $wpdb;
-    $type  = in_array( $type, array( 'sales', 'stock', 'orders', 'workers', 'security', 'summary' ), true ) ? $type : 'summary';
+    $type  = in_array( $type, array( 'sales', 'stock', 'orders', 'workers', 'security', 'logs', 'summary' ), true ) ? $type : 'summary';
     $days  = max( 1, (int) $days );
     $biz   = ws_current_business();
     $suf   = ws_biz_table_suffix( $biz );
@@ -1165,6 +1165,23 @@ function ws_chatbot_build_report( $type, $days = 1 ) {
             $security = 'Seguridad:' . $nl . implode( $nl, $sec_lines );
         }
     }
+    if ( 'logs' === $type || 'summary' === $type ) {
+        if ( function_exists( 'ws_log_daily_stats' ) ) {
+            $st     = ws_log_daily_stats( $days );
+            $c      = $st['counts'];
+            $logs   = sprintf( 'Logs de la app (%d día%s): %d eventos · INFO %d · WARNING %d · ERROR %d · FATAL %d', $days, $days > 1 ? 's' : '', array_sum( $c ), (int) $c['INFO'], (int) $c['WARNING'], (int) $c['ERROR'], (int) $c['FATAL'] );
+            if ( empty( $st['severe'] ) ) {
+                $logs .= $nl . 'Sin errores graves en el período ✅';
+            } else {
+                $logs .= $nl . 'Errores del período:';
+                foreach ( $st['severe'] as $s ) {
+                    $logs .= $nl . '• ' . wp_date( 'd/m H:i', strtotime( (string) $s['t'] ) ) . ' [' . $s['l'] . '] ' . $s['m'] . ( $s['f'] ? ' — ' . basename( (string) $s['f'] ) . ':' . $s['n'] : '' );
+                }
+            }
+        } else {
+            $logs = 'Logs de la app: no disponibles.';
+        }
+    }
 
     switch ( $type ) {
         case 'sales':   $text = $sales; break;
@@ -1172,10 +1189,11 @@ function ws_chatbot_build_report( $type, $days = 1 ) {
         case 'orders':  $text = $orders; break;
         case 'workers': $text = $workers; break;
         case 'security':$text = $security; break;
+        case 'logs':    $text = $logs; break;
         default:
-            $text = $sales . $nl . $stock . $nl . $orders . $nl . $workers . $nl . $security;
+            $text = $sales . $nl . $stock . $nl . $orders . $nl . $workers . $nl . $security . $nl . $logs;
     }
-    $titles = array( 'sales' => 'Reporte de ventas', 'stock' => 'Reporte de stock', 'orders' => 'Reporte de pedidos', 'workers' => 'Reporte del equipo', 'security' => 'Reporte de seguridad', 'summary' => 'Resumen del negocio' );
+    $titles = array( 'sales' => 'Reporte de ventas', 'stock' => 'Reporte de stock', 'orders' => 'Reporte de pedidos', 'workers' => 'Reporte del equipo', 'security' => 'Reporte de seguridad', 'logs' => 'Reporte de logs de la app', 'summary' => 'Resumen del negocio' );
     return array( 'title' => $titles[ $type ], 'text' => $text );
 }
 
@@ -1315,7 +1333,7 @@ function ws_ajax_chatbot_schedule() {
         wp_send_json_error( array( 'msg' => __( 'Solo para negocios.', 'workshop' ) ) );
     }
     $type     = sanitize_key( $_POST['type'] ?? 'summary' );
-    if ( ! in_array( $type, array( 'sales', 'stock', 'orders', 'workers', 'security', 'summary' ), true ) ) {
+    if ( ! in_array( $type, array( 'sales', 'stock', 'orders', 'workers', 'security', 'logs', 'summary' ), true ) ) {
         $type = 'summary';
     }
     $when      = sanitize_text_field( wp_unslash( $_POST['when'] ?? '' ) );

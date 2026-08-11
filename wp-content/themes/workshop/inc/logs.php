@@ -214,6 +214,65 @@ function ws_logs_admin_menu() {
     );
 }
 
+/**
+ * Estadísticas del log para un período: conteo por nivel y los últimos
+ * ERROR/FATAL del período con mensaje y archivo:línea. Se usa en el resumen
+ * diario del chatbot y en el reporte de logs bajo demanda.
+ */
+function ws_log_daily_stats( $days = 1 ) {
+    $days   = max( 1, (int) $days );
+    $start  = gmdate( 'Y-m-d 00:00:00', current_time( 'timestamp' ) - ( $days - 1 ) * DAY_IN_SECONDS );
+    $counts = array( 'DEBUG' => 0, 'INFO' => 0, 'NOTICE' => 0, 'WARNING' => 0, 'ERROR' => 0, 'FATAL' => 0 );
+    $severe = array(); // ERROR/FATAL del período (nuevo -> viejo).
+
+    $file = ws_log_file();
+    if ( ! $file ) {
+        return array( 'counts' => $counts, 'severe' => $severe );
+    }
+
+    // El log activo + el rotado (app.1.log) del día anterior.
+    $files = array( $file );
+    $rot   = dirname( $file ) . '/app.1.log';
+    if ( file_exists( $rot ) ) {
+        $files[] = $rot;
+    }
+
+    foreach ( $files as $f ) {
+        $raw = @file( $f, FILE_IGNORE_NEW_LINES );
+        if ( ! is_array( $raw ) ) {
+            continue;
+        }
+        foreach ( array_reverse( $raw ) as $line ) {
+            $line = trim( (string) $line );
+            if ( '' === $line ) {
+                continue;
+            }
+            $e = json_decode( $line, true );
+            if ( ! is_array( $e ) ) {
+                continue;
+            }
+            $t = (string) ( $e['t'] ?? '' );
+            if ( $t < $start ) {
+                continue;
+            }
+            $l = (string) ( $e['l'] ?? 'INFO' );
+            if ( isset( $counts[ $l ] ) ) {
+                $counts[ $l ]++;
+            }
+            if ( in_array( $l, array( 'ERROR', 'FATAL' ), true ) && count( $severe ) < 10 ) {
+                $severe[] = array(
+                    't' => $t,
+                    'l' => $l,
+                    'm' => (string) ( $e['m'] ?? '' ),
+                    'f' => (string) ( $e['f'] ?? '' ),
+                    'n' => (int) ( $e['n'] ?? 0 ),
+                );
+            }
+        }
+    }
+    return array( 'counts' => $counts, 'severe' => $severe );
+}
+
 /** Últimas N líneas del log (nuevo -> viejo), parseadas a arrays. */
 function ws_log_tail( $file, $max_lines = 300 ) {
     if ( ! $file || ! file_exists( $file ) ) { return array(); }

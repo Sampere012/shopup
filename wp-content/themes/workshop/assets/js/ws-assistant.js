@@ -482,6 +482,7 @@
         if (t.indexOf('pedido') > -1 || t.indexOf('orden') > -1) { return 'orders'; }
         if (t.indexOf('equipo') > -1 || t.indexOf('trabajador') > -1 || t.indexOf('empleado') > -1 || t.indexOf('personal') > -1) { return 'workers'; }
         if (t.indexOf('segur') > -1 || t.indexOf('acceso') > -1 || t.indexOf('login') > -1) { return 'security'; }
+        if (t.indexOf('logs') > -1 || t.indexOf('errores') > -1 || t.indexOf('incidente') > -1) { return 'logs'; }
         if (t.indexOf('resumen') > -1 || t.indexOf('todo') > -1 || t.indexOf('completo') > -1) { return 'summary'; }
         return '';
     }
@@ -528,6 +529,7 @@
             { label: 'Pedidos', cls: 'wsb-chip-pick', icon: 'fa-cart-shopping', click: function () { pendingAction.data.type = 'orders'; flow === 'schedule' ? scheduleFlow('when') : reportFlow('days'); } },
             { label: 'Equipo', cls: 'wsb-chip-pick', icon: 'fa-users', click: function () { pendingAction.data.type = 'workers'; flow === 'schedule' ? scheduleFlow('when') : reportFlow('days'); } },
             { label: 'Seguridad', cls: 'wsb-chip-pick', icon: 'fa-shield-halved', click: function () { pendingAction.data.type = 'security'; flow === 'schedule' ? scheduleFlow('when') : reportFlow('days'); } },
+            { label: 'Logs', cls: 'wsb-chip-pick', icon: 'fa-file-lines', click: function () { pendingAction.data.type = 'logs'; flow === 'schedule' ? scheduleFlow('when') : reportFlow('days'); } },
             { label: 'Resumen', cls: 'wsb-chip-pick', icon: 'fa-chart-line', click: function () { pendingAction.data.type = 'summary'; flow === 'schedule' ? scheduleFlow('when') : reportFlow('days'); } }
         ];
     }
@@ -1086,7 +1088,7 @@
         ['customer_new', ['crear cliente', 'nuevo cliente', 'agregar cliente', 'crear un cliente', 'dar de alta un cliente', 'registrar un cliente']],
         ['pos_cart', ['registrar venta', 'registrar una venta', 'vender ahora', 'hacer una venta', 'vender en el pos', 'cobrar ahora', 'vender']],
         ['top', ['recomiendame', 'recomiéndame', 'que vende mas', 'qué vende más', 'mas vendido', 'más vendido', 'productos mas vendidos', 'top ventas', 'lo que mas se vende', 'que productos se venden mas']],
-        ['report', ['reporte de ventas', 'reporte del dia', 'reporte de stock', 'stock bajo', 'reporte de pedidos', 'reporte del equipo', 'actividad del equipo', 'que vendi hoy', 'cuanto vendi', 'cuánto vendí', 'ventas de hoy', 'ventas del mes', 'resumen del negocio', 'resumen de ventas', 'reporte de seguridad', 'reporte completo', 'quiero un reporte', 'dame un reporte']],
+        ['report', ['reporte de ventas', 'reporte del dia', 'reporte de stock', 'stock bajo', 'reporte de pedidos', 'reporte del equipo', 'actividad del equipo', 'que vendi hoy', 'cuanto vendi', 'cuánto vendí', 'ventas de hoy', 'ventas del mes', 'resumen del negocio', 'resumen de ventas', 'reporte de seguridad', 'reporte de logs', 'errores del dia', 'errores de la app', 'reporte completo', 'quiero un reporte', 'dame un reporte']],
         ['schedule', ['programa un reporte', 'programar un reporte', 'programa reporte', 'programar reporte', 'agenda un reporte', 'agendar reporte', 'programar tarea', 'programa una tarea', 'tarea programada', 'reporte automatico', 'reporte diario', 'reporte todos los dias', 'reporte en 2 horas', 'reporte manana', 'reporte mañana']],
         ['mytasks', ['mis reportes', 'mis tareas', 'reportes programados', 'tareas programadas', 'que reportes tengo', 'ver mis reportes', 'ver mis tareas', 'reportes que programe']],
         ['guide', ['guia', 'guía', 'explicame', 'explícame', 'paso a paso', 'como se usa', 'como se hace', 'como uso', 'cómo uso', 'como hago para', 'como hago', 'quiero aprender', 'manual', 'enseñame a usar', 'que hace cada modulo', 'para que sirve cada modulo', 'como trabajo en el panel', 'guia del panel', 'guía del panel']]
