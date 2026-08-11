@@ -2361,7 +2361,7 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-fab-group.is-open .ws-fab-trigger { background: linear-gradient(135deg, #ef4444, #dc2626); }
 
 .ws-fab-group .ws-fab-item {
-    position: absolute; right: 0; bottom: calc(60px + 62px * var(--i, 0));
+    position: absolute; right: 0; bottom: calc(60px + 70px * var(--i, 0));
     opacity: 0; pointer-events: none;
     transform: translateY(12px) scale(.5); transform-origin: bottom right;
     transition: opacity .18s ease, transform .3s cubic-bezier(.34, 1.56, .64, 1), bottom .3s cubic-bezier(.34, 1.56, .64, 1);
@@ -2408,7 +2408,7 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
    el chat se quedaba pegado al trigger ⋮ sin apilarse como el carrito.
    Se refuerza con !important para que se apile igual que el resto. */
 .ws-fab-group .ws-fab-item#wsb-root {
-    bottom: calc(60px + 62px * var(--i, 0)) !important;
+    bottom: calc(60px + 70px * var(--i, 0)) !important;
     right: 0 !important;
     left: auto !important;
 }
@@ -2420,9 +2420,9 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 @media (max-width: 520px) {
     .ws-fab-group { right: 12px; bottom: 12px; }
     .ws-fab-trigger { width: 52px; height: 52px; }
-    .ws-fab-group .ws-fab-item { bottom: calc(56px + 60px * var(--i, 0)); }
+    .ws-fab-group .ws-fab-item { bottom: calc(56px + 68px * var(--i, 0)); }
     /* El chat también debe apilarse en mobile (su ID gana en especificidad). */
-    .ws-fab-group .ws-fab-item#wsb-root { bottom: calc(56px + 60px * var(--i, 0)) !important; }
+    .ws-fab-group .ws-fab-item#wsb-root { bottom: calc(56px + 68px * var(--i, 0)) !important; }
 }
 
 /* ---------- Fraccionamiento de productos ---------- */
