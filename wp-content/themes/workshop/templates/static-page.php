@@ -173,11 +173,15 @@ get_header();
                                 <?php echo wp_kses_post( $ws_content ); ?>
                             </div>
                         <?php endif; ?>
-                        <div class="ws-faq">
+                        <div class="ws-faq-search">
+                            <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                            <input type="search" id="ws-faq-search" placeholder="<?php esc_attr_e( 'Buscar en las preguntas frecuentes…', 'workshop' ); ?>" aria-label="<?php esc_attr_e( 'Buscar en las preguntas frecuentes', 'workshop' ); ?>" autocomplete="off">
+                        </div>
+                        <div class="ws-faq" id="ws-faq">
                             <?php $ws_faq_open = 0; ?>
                             <?php foreach ( (array) $ws_pages['faqs'] as $ws_topic ) : ?>
                                 <?php if ( empty( $ws_topic['topic'] ) || empty( $ws_topic['items'] ) ) : continue; endif; ?>
-                                <div class="ws-faq-topic">
+                                <div class="ws-faq-topic" data-topic>
                                     <h3 class="ws-faq-topic-title"><i class="fa-solid fa-circle-question"></i> <?php echo esc_html( $ws_topic['topic'] ); ?></h3>
                                     <?php foreach ( (array) $ws_topic['items'] as $ws_item ) : ?>
                                         <?php if ( empty( $ws_item['q'] ) ) : continue; endif; ?>
@@ -189,7 +193,33 @@ get_header();
                                     <?php endforeach; ?>
                                 </div>
                             <?php endforeach; ?>
+                            <div class="ws-faq-empty" hidden><?php esc_html_e( 'No encontramos preguntas con ese término. Prueba con otra palabra o escríbenos desde Contacto.', 'workshop' ); ?></div>
                         </div>
+                        <script>
+                        (function () {
+                            var input = document.getElementById('ws-faq-search');
+                            var faq = document.getElementById('ws-faq');
+                            if (!input || !faq) return;
+                            var topics = faq.querySelectorAll('[data-topic]');
+                            var empty = faq.querySelector('.ws-faq-empty');
+                            input.addEventListener('input', function () {
+                                var q = (input.value || '').trim().toLowerCase();
+                                var any = false;
+                                topics.forEach(function (t) {
+                                    var shown = false;
+                                    t.querySelectorAll('.ws-faq-item').forEach(function (item) {
+                                        var text = (item.textContent || '').toLowerCase();
+                                        var match = !q || text.indexOf(q) !== -1;
+                                        item.hidden = !match;
+                                        if (match) shown = true;
+                                    });
+                                    t.hidden = !shown;
+                                    if (shown) any = true;
+                                });
+                                if (empty) empty.hidden = any;
+                            });
+                        })();
+                        </script>
                     <?php else : ?>
                         <div class="ws-static-content">
                             <?php if ( '' !== trim( $ws_content ) ) : ?>

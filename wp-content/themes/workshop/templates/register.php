@@ -34,43 +34,47 @@ get_header();
                 <div>
                     <p class="ws-auth-sub"><?php esc_html_e( 'Crea tu negocio gratis', 'workshop' ); ?></p>
                     <div class="ws-alert ws-alert-error" x-show="error" x-cloak x-text="error"></div>
-                    <form class="ws-form" @submit.prevent="submitStep1" x-ref="form1">
-                        <label class="ws-field">
-                            <span><?php esc_html_e( 'Nombre del negocio', 'workshop' ); ?> *</span>
-                            <input type="text" x-model="form.biz_name" @input="form.slug = form.slug || slugify(form.biz_name)" required>
-                        </label>
-                        <label class="ws-field">
-                            <span><?php esc_html_e( 'Dirección de tu tienda (URL)', 'workshop' ); ?> *</span>
-                            <div class="ws-input-prefix">
-                                <span class="ws-input-prefix-tag"><?php echo esc_html( wp_parse_url( home_url(), PHP_URL_HOST ) ); ?>/</span>
-                                <input type="text" x-model="form.slug" @input="form.slug = slugify(form.slug)" placeholder="mi-negocio" required>
+                    <form class="ws-form ws-auth-form" @submit.prevent="submitStep1" x-ref="form1">
+                        <div class="ws-form-grid">
+                            <label class="ws-field ws-span-2">
+                                <span><?php esc_html_e( 'Nombre del negocio', 'workshop' ); ?> *</span>
+                                <input type="text" x-model="form.biz_name" @input="form.slug = form.slug || slugify(form.biz_name)" required>
+                            </label>
+                            <label class="ws-field ws-span-2">
+                                <span><?php esc_html_e( 'Dirección de tu tienda (URL)', 'workshop' ); ?> *</span>
+                                <div class="ws-input-prefix">
+                                    <span class="ws-input-prefix-tag"><?php echo esc_html( wp_parse_url( home_url(), PHP_URL_HOST ) ); ?>/</span>
+                                    <input type="text" x-model="form.slug" @input="form.slug = slugify(form.slug)" placeholder="mi-negocio" required>
+                                </div>
+                                <small class="ws-muted"><?php esc_html_e( 'Solo letras, números y guiones. Ej: mi-tienda', 'workshop' ); ?></small>
+                            </label>
+                            <label class="ws-field">
+                                <span><?php esc_html_e( 'Tu nombre', 'workshop' ); ?> *</span>
+                                <input type="text" x-model="form.owner_name" required>
+                            </label>
+                            <label class="ws-field">
+                                <span><?php esc_html_e( 'Email', 'workshop' ); ?> *</span>
+                                <input type="email" x-model="form.email" @input="form.username = form.username || slugify(form.email.split('@')[0])" required>
+                            </label>
+                            <label class="ws-field">
+                                <span><?php esc_html_e( 'Teléfono / WhatsApp', 'workshop' ); ?></span>
+                                <input type="text" x-model="form.phone" placeholder="+34 600 000 000">
+                            </label>
+                            <label class="ws-field">
+                                <span><?php esc_html_e( 'Usuario', 'workshop' ); ?> *</span>
+                                <input type="text" x-model="form.username" required>
+                            </label>
+                            <label class="ws-field ws-span-2">
+                                <span><?php esc_html_e( 'Contraseña', 'workshop' ); ?> *</span>
+                                <input type="password" x-model="form.password" minlength="8" placeholder="<?php esc_attr_e( 'Mínimo 8 caracteres', 'workshop' ); ?>" required>
+                            </label>
+                            <div class="ws-span-2">
+                                <button class="ws-btn ws-btn-primary ws-btn-block" type="submit" :disabled="busy">
+                                    <i class="fa-solid fa-paper-plane"></i>
+                                    <span x-text="busy ? '<?php esc_attr_e( 'Enviando…', 'workshop' ); ?>' : '<?php esc_attr_e( 'Crear cuenta y enviar código', 'workshop' ); ?>'"></span>
+                                </button>
                             </div>
-                            <small class="ws-muted"><?php esc_html_e( 'Solo letras, números y guiones. Ej: mi-tienda', 'workshop' ); ?></small>
-                        </label>
-                        <label class="ws-field">
-                            <span><?php esc_html_e( 'Tu nombre', 'workshop' ); ?> *</span>
-                            <input type="text" x-model="form.owner_name" required>
-                        </label>
-                        <label class="ws-field">
-                            <span><?php esc_html_e( 'Email', 'workshop' ); ?> *</span>
-                            <input type="email" x-model="form.email" @input="form.username = form.username || slugify(form.email.split('@')[0])" required>
-                        </label>
-                        <label class="ws-field">
-                            <span><?php esc_html_e( 'Teléfono / WhatsApp', 'workshop' ); ?></span>
-                            <input type="text" x-model="form.phone" placeholder="+34 600 000 000">
-                        </label>
-                        <label class="ws-field">
-                            <span><?php esc_html_e( 'Usuario', 'workshop' ); ?> *</span>
-                            <input type="text" x-model="form.username" required>
-                        </label>
-                        <label class="ws-field">
-                            <span><?php esc_html_e( 'Contraseña', 'workshop' ); ?> *</span>
-                            <input type="password" x-model="form.password" minlength="8" placeholder="<?php esc_attr_e( 'Mínimo 8 caracteres', 'workshop' ); ?>" required>
-                        </label>
-                        <button class="ws-btn ws-btn-primary ws-btn-block" type="submit" :disabled="busy">
-                            <i class="fa-solid fa-paper-plane"></i>
-                            <span x-text="busy ? '<?php esc_attr_e( 'Enviando…', 'workshop' ); ?>' : '<?php esc_attr_e( 'Crear cuenta y enviar código', 'workshop' ); ?>'"></span>
-                        </button>
+                        </div>
                     </form>
                     <p class="ws-auth-switch">
                         <?php esc_html_e( '¿Ya tienes cuenta?', 'workshop' ); ?>
@@ -82,8 +86,8 @@ get_header();
             <!-- Paso 2: verificación -->
             <template x-if="step === 2">
                 <div>
-                    <p class="ws-auth-sub"><?php esc_html_e( 'Verifica tu correo', 'workshop' ); ?></p>
-                    <p class="ws-muted" style="text-align:center">
+                    <p class="ws-auth-sub ws-auth-sub-left"><?php esc_html_e( 'Verifica tu correo', 'workshop' ); ?></p>
+                    <p class="ws-muted ws-auth-sub-left">
                         <?php esc_html_e( 'Enviamos un código de 6 dígitos a', 'workshop' ); ?>
                         <strong x-text="form.email" class="ws-text-primary"></strong>
                     </p>
