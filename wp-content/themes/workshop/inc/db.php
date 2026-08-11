@@ -247,7 +247,8 @@ function ws_db_tables() {
 
         'reviews' => "CREATE TABLE {prefix}ws_reviews (
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
-            product_id BIGINT(20) UNSIGNED NOT NULL,
+            product_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
+            location_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
             customer_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
             customer_name VARCHAR(255) NOT NULL DEFAULT '',
             rating INT(1) NOT NULL DEFAULT 5,
@@ -260,6 +261,7 @@ function ws_db_tables() {
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             KEY product_id (product_id),
+            KEY location_id (location_id),
             KEY customer_id (customer_id),
             KEY approved (approved),
             KEY status (status)
@@ -585,6 +587,17 @@ function ws_db_migrate() {
             $stock_cols = $wpdb->get_col( "SHOW COLUMNS FROM {$stock_t}", 0 );
             if ( ! in_array( 'fraction_balance', $stock_cols, true ) ) {
                 $wpdb->query( "ALTER TABLE {$stock_t} ADD COLUMN fraction_balance DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER qty" );
+            }
+        }
+        // Reseñas a nivel de TIENDA (no solo de producto): las valoraciones
+        // públicas se asocian a la ubicación (location_id) y product_id queda
+        // 0. Se aplica a la tabla por defecto y a la de cada negocio con slug.
+        $rev_t = ws_table_for( $ws_suffix, 'reviews' );
+        if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $rev_t ) ) === $rev_t ) {
+            $rev_cols = $wpdb->get_col( "SHOW COLUMNS FROM {$rev_t}", 0 );
+            if ( ! in_array( 'location_id', $rev_cols, true ) ) {
+                $wpdb->query( "ALTER TABLE {$rev_t} ADD COLUMN location_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0 AFTER product_id" );
+                $wpdb->query( "ALTER TABLE {$rev_t} ADD KEY location_id (location_id)" );
             }
         }
     }

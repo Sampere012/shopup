@@ -1386,27 +1386,53 @@ function ws_ajax_reviews_get() {
         wp_send_json_error( array( 'msg' => __( 'Sesión inválida.', 'workshop' ) ) );
     }
 
-    $product_id = (int) ( $_POST['product_id'] ?? 0 );
+    $product_id  = (int) ( $_POST['product_id'] ?? 0 );
+    $location_id = (int) ( $_POST['location_id'] ?? 0 );
     $has_filters = '' !== sanitize_text_field( $_POST['search'] ?? '' )
         || '' !== sanitize_key( $_POST['status'] ?? '' )
         || (int) ( $_POST['rating'] ?? 0 ) > 0;
 
-    // Modo público (tienda): reseñas aprobadas de un producto + rating.
-    if ( $product_id && ! $has_filters ) {
+    // Modo público (tienda): reseñas aprobadas de la TIENDA (location_id) o,
+    // compatibilidad con el modo antiguo, de un producto. El rating público es
+    // el de la tienda (las estrellas valoran al negocio, no al producto).
+    if ( ( $location_id || $product_id ) && ! $has_filters ) {
         $args = array(
-            'product_id' => $product_id,
             'approved'   => 1,
             'orderby'    => sanitize_key( $_POST['sort'] ?? 'created_at' ),
             'order'      => ( ( $_POST['dir'] ?? 'desc' ) === 'asc' ) ? 'ASC' : 'DESC',
             'limit'      => isset( $_POST['limit'] ) ? (int) $_POST['limit'] : 10,
             'offset'     => isset( $_POST['offset'] ) ? (int) $_POST['offset'] : 0,
         );
+        if ( $location_id ) {
+            $args['location_id'] = $location_id;
+        } else {
+            $args['product_id'] = $product_id;
+        }
         $reviews      = WS_Reviews::get_reviews( $args );
-        $rating_stats = WS_Reviews::get_product_rating( $product_id );
+        // Las reseñas que llegan al JS se serializan a JSON en la respuesta;
+        // se devuelven ya como arrays (wp_send_json_success los codifica).
+        $review_rows  = array();
+        foreach ( $reviews as $r ) {
+            $review_rows[] = array(
+                'id'            => (int) $r->id,
+                'product_id'    => (int) $r->product_id,
+                'location_id'   => (int) $r->location_id,
+                'product_name'  => $r->product_name ?? '',
+                'location_name' => $r->location_name ?? '',
+                'customer_name' => $r->customer_name,
+                'rating'        => (int) $r->rating,
+                'title'         => $r->title ?? '',
+                'comment'       => $r->comment ?? '',
+                'created_at'    => mysql2date( 'Y-m-d H:i:s', $r->created_at ),
+            );
+        }
+        $rating_stats = $location_id
+            ? WS_Reviews::get_location_rating( $location_id )
+            : WS_Reviews::get_product_rating( $product_id );
 
         wp_send_json_success( array(
             'data'  => array(
-                'data'  => $reviews,
+                'data'  => $review_rows,
                 'stats' => $rating_stats,
             ),
         ) );
@@ -1431,7 +1457,9 @@ function ws_ajax_reviews_get() {
         $out[] = array(
             'id'                => (int) $r->id,
             'product_id'        => (int) $r->product_id,
-            'product_name'      => $r->product_name,
+            'location_id'       => (int) $r->location_id,
+            'product_name'      => $r->product_name ?? '',
+            'location_name'     => $r->location_name ?? '',
             'product_image'     => $r->product_image ?? '',
             'customer_id'       => (int) $r->customer_id,
             'customer_name'     => $r->customer_name,
@@ -1456,6 +1484,7 @@ function ws_ajax_reviews_save() {
 
     $data = array(
         'product_id' => (int) ( $_POST['product_id'] ?? 0 ),
+        'location_id' => (int) ( $_POST['location_id'] ?? 0 ),
         'customer_id' => (int) ( $_POST['customer_id'] ?? 0 ),
         'customer_name' => sanitize_text_field( $_POST['customer_name'] ?? '' ),
         'rating' => (int) ( $_POST['rating'] ?? 5 ),
@@ -1463,7 +1492,9 @@ function ws_ajax_reviews_save() {
         'comment' => sanitize_textarea_field( $_POST['comment'] ?? '' ),
     );
 
-    if ( ! $data['product_id'] || ! $data['customer_name'] ) {
+    // Las valoraciones públicas son de la TIENDA (location_id). Se admite
+    // product_id solo para compatibilidad (modo antiguo de producto).
+    if ( ( ! $data['location_id'] && ! $data['product_id'] ) || ! $data['customer_name'] ) {
         wp_send_json_error( array( 'msg' => __( 'Datos incompletos.', 'workshop' ) ) );
     }
 

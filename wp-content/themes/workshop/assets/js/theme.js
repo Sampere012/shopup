@@ -254,10 +254,12 @@
             productOpen: false,
             activeProduct: null,
             modalQty: 1,
-            // Valoraciones de producto.
-            productReviews: [],
-            productRating: 0,
-            showReviewForm: false,
+            // Valoraciones de la TIENDA (las estrellas valoran al negocio,
+            // no a los productos individuales).
+            storeReviews: [],
+            storeRating: 0,
+            showStoreReviewForm: false,
+            reviewSubmitted: false,
             reviewBusy: false,
             reviewForm: { customer_name: '', rating: 5, comment: '' },
             // Consulta de estado de pedido.
@@ -280,6 +282,9 @@
                 if (seed && seed.currencies) { this.currencies = seed.currencies; }
                 if (seed && seed.whatsappNumbers) { this.whatsappNumbers = seed.whatsappNumbers; }
                 this.loadCart();
+                // Valoraciones de la tienda: se cargan al entrar (las estrellas
+                // reflejan la opinión sobre el negocio, no sobre un producto).
+                this.loadStoreReviews();
                 try {
                     const s = localStorage.getItem('ws_cart_sound');
                     if (s !== null) this.soundOn = s === '1';
@@ -389,22 +394,27 @@
                 this.activeProduct = p;
                 this.modalQty = 1;
                 this.productOpen = true;
-                this.loadReviews(p.id);
             },
             closeProduct() { this.productOpen = false; this.activeProduct = null; },
-            // --- Valoraciones de producto ---
-            loadReviews(productId) {
-                if (!productId) return;
+            // --- Valoraciones de la tienda ---
+            loadStoreReviews() {
+                if (!this.locationId) return;
                 this.reviewBusy = true;
-                $('ws_reviews_get', { product_id: productId })
+                $('ws_reviews_get', { location_id: this.locationId })
                     .then(res => {
                         if (res.success) {
-                            this.productReviews = res.data.data || [];
-                            this.productRating = (res.data.stats && res.data.stats.average) || 0;
+                            this.storeReviews = res.data.data || [];
+                            this.storeRating = (res.data.stats && res.data.stats.average) || 0;
                         }
                     })
                     .catch(err => console.error('Error cargando valoraciones:', err))
                     .then(() => { this.reviewBusy = false; });
+            },
+            formatReviewDate(v) {
+                if (!v) return '';
+                const d = new Date(String(v).replace(' ', 'T'));
+                if (isNaN(d.getTime())) return '';
+                return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
             },
             submitReview() {
                 const form = this.reviewForm;
@@ -412,10 +422,10 @@
                     toast('warning', 'Completa tu nombre y valoración');
                     return;
                 }
-                if (!this.activeProduct) return;
+                if (!this.locationId) return;
                 this.reviewBusy = true;
                 $('ws_reviews_save', {
-                    product_id: this.activeProduct.id,
+                    location_id: this.locationId,
                     customer_name: form.customer_name,
                     rating: form.rating,
                     comment: form.comment
@@ -423,7 +433,8 @@
                     .then(res => {
                         if (res.success) {
                             toast('success', 'Reseña enviada', 'Se revisará antes de publicarse.');
-                            this.showReviewForm = false;
+                            this.showStoreReviewForm = false;
+                            this.reviewSubmitted = true;
                             this.reviewForm = { customer_name: '', rating: 5, comment: '' };
                         } else {
                             toast('error', 'Error', res.data && res.data.msg);

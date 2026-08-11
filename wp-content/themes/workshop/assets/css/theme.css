@@ -1567,6 +1567,24 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 /* ---------- Módulo Valoraciones ---------- */
 .ws-store-reviews { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--ws-border); }
 .ws-store-reviews h4 { margin-bottom: 12px; }
+/* Sección de valoraciones de la TIENDA (las estrellas valoran al negocio). */
+.ws-store-reviews.ws-card { margin-top: 26px; }
+.ws-store-reviews-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.ws-store-reviews-head h3 { margin: 0; font-size: 1.12rem; display: inline-flex; align-items: center; gap: 8px; }
+.ws-store-reviews-head h3 i { color: var(--ws-accent); }
+.ws-store-rating-num {
+    font-family: var(--ws-font-display); font-weight: 800; font-size: 1.15rem;
+    color: var(--ws-primary); background: #eef2ff; padding: 4px 12px; border-radius: 999px;
+}
+.ws-store-reviews-sub { margin: 6px 0 14px; }
+.ws-rating-stars-lg { font-size: 1.5em; }
+.ws-store-review-thanks { margin: 10px 0 0; display: inline-flex; align-items: center; gap: 6px; }
+.ws-review-form-actions { display: flex; gap: 10px; margin-top: 4px; flex-wrap: wrap; }
+.ws-review-thumb {
+    width: 60px; height: 60px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 1.3rem; flex-shrink: 0;
+}
+.ws-review-thumb-store { background: linear-gradient(135deg, var(--ws-primary), var(--ws-primary-light)); }
 .ws-reviews-summary { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
 .ws-reviews-summary .ws-rating-stars { display: inline-flex; gap: 2px; font-size: 1.1em; }
 .ws-reviews-list { display: flex; flex-direction: column; gap: 16px; }
@@ -2366,14 +2384,19 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 }
 .ws-fab-backdrop.show { opacity: 1; visibility: visible; }
 
-/* Re-posicionar los botones dentro del grupo (anulan su fixed original) */
+/* Re-posicionar los botones dentro del grupo (anulan su fixed original).
+   El offset vertical lo da .ws-fab-item con --i (apilados uno sobre otro,
+   subiendo desde el trigger); NINGÚN ítem fija bottom:0 aquí, o todos
+   quedarían superpuestos en el mismo punto. Solo cuando el chat está
+   abierto (chat-open) su ventana se ancla a la esquina (bottom:0). */
 .ws-fab-group #wsb-root {
-    position: absolute; top: auto; left: auto; right: 0; bottom: 0;
+    position: absolute; top: auto; left: auto; right: 0;
     width: auto; z-index: 3;
 }
+.ws-fab-group.chat-open .ws-fab-item#wsb-root { bottom: 0; }
 .ws-fab-group #wsb-teaser { display: none; }
-.ws-fab-group .ws-cart-fab { position: absolute; right: 0; bottom: 0; z-index: 1; }
-.ws-fab-group .ws-pos-cart-toggle { position: absolute; right: 0; bottom: 0; z-index: 1; }
+.ws-fab-group .ws-cart-fab { position: absolute; right: 0; z-index: 1; }
+.ws-fab-group .ws-pos-cart-toggle { position: absolute; right: 0; z-index: 1; }
 
 @media (max-width: 520px) {
     .ws-fab-group { right: 12px; bottom: 12px; }

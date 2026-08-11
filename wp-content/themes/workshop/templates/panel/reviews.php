@@ -13,8 +13,8 @@ $can_moderate = ws_can( 'reviews_moderate' );
 <div class="ws-module-reviews" x-data="wsReviews()">
     <div class="ws-module-header">
         <div class="ws-header-left">
-            <h2><?php esc_html_e( 'Valoraciones de Productos', 'workshop' ); ?></h2>
-            <p class="ws-header-desc"><?php esc_html_e( 'Gestiona las reseñas y valoraciones de los clientes.', 'workshop' ); ?></p>
+            <h2><?php esc_html_e( 'Valoraciones de la tienda', 'workshop' ); ?></h2>
+            <p class="ws-header-desc"><?php esc_html_e( 'Gestiona las reseñas y valoraciones de los clientes sobre tu tienda y tus productos.', 'workshop' ); ?></p>
         </div>
     </div>
 
@@ -90,9 +90,15 @@ $can_moderate = ws_can( 'reviews_moderate' );
             <div class="ws-review-card">
                 <div class="ws-review-header">
                     <div class="ws-review-product">
-                        <img :src="review.product_image || '<?php echo WS_URL; ?>assets/images/placeholder.png'" :alt="review.product_name">
+                        <!-- Reseña de tienda (location_id) o de producto. -->
+                        <template x-if="review.location_id">
+                            <div class="ws-review-thumb ws-review-thumb-store"><i class="fa-solid fa-store"></i></div>
+                        </template>
+                        <template x-if="!review.location_id">
+                            <img :src="review.product_image || '<?php echo WS_URL; ?>assets/images/placeholder.png'" :alt="review.product_name">
+                        </template>
                         <div>
-                            <div class="ws-product-name" x-text="review.product_name"></div>
+                            <div class="ws-product-name" x-text="review.location_id ? review.location_name : review.product_name"></div>
                             <div class="ws-review-date" x-text="formatDate(review.created_at)"></div>
                         </div>
                     </div>

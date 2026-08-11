@@ -19,9 +19,14 @@ class WS_Reviews {
         global $wpdb;
         $table = self::table( 'reviews' );
         $where = self::reviews_where( $args );
-        $sql = "SELECT r.*, p.name as product_name, p.image as product_image 
+        // LEFT JOIN: las reseñas pueden ser de un producto (product_id>0) o de
+        // la tienda (location_id>0 con product_id=0); se trae el nombre de la
+        // ubicación para el panel y se mantiene el de producto cuando exista.
+        $sql = "SELECT r.*, p.name as product_name, p.image as product_image,
+                       l.name as location_name
                 FROM {$table} r
-                JOIN " . self::table( 'products' ) . " p ON p.id = r.product_id
+                LEFT JOIN " . self::table( 'products' ) . " p ON p.id = r.product_id
+                LEFT JOIN " . self::table( 'locations' ) . " l ON l.id = r.location_id
                 WHERE " . implode( ' AND ', $where ) . " 
                 ORDER BY " . self::reviews_orderby( $args['orderby'] ?? '', $args['order'] ?? 'DESC' );
         
@@ -40,7 +45,8 @@ class WS_Reviews {
         $table = self::table( 'reviews' );
         $where = self::reviews_where( $args );
         $sql = "SELECT COUNT(*) FROM {$table} r
-                JOIN " . self::table( 'products' ) . " p ON p.id = r.product_id
+                LEFT JOIN " . self::table( 'products' ) . " p ON p.id = r.product_id
+                LEFT JOIN " . self::table( 'locations' ) . " l ON l.id = r.location_id
                 WHERE " . implode( ' AND ', $where );
         return (int) $wpdb->get_var( $sql );
     }
@@ -51,6 +57,10 @@ class WS_Reviews {
         
         if ( ! empty( $args['product_id'] ) ) {
             $where[] = $wpdb->prepare( 'product_id = %d', $args['product_id'] );
+        }
+
+        if ( ! empty( $args['location_id'] ) ) {
+            $where[] = $wpdb->prepare( 'location_id = %d', $args['location_id'] );
         }
         
         if ( ! empty( $args['customer_id'] ) ) {
@@ -76,7 +86,7 @@ class WS_Reviews {
         
         if ( ! empty( $args['search'] ) ) {
             $like = '%' . $wpdb->esc_like( $args['search'] ) . '%';
-            $where[] = $wpdb->prepare( '(r.customer_name LIKE %s OR r.comment LIKE %s OR r.title LIKE %s OR p.name LIKE %s)', $like, $like, $like, $like );
+            $where[] = $wpdb->prepare( '(r.customer_name LIKE %s OR r.comment LIKE %s OR r.title LIKE %s OR p.name LIKE %s OR l.name LIKE %s)', $like, $like, $like, $like, $like );
         }
         
         return $where;
@@ -86,6 +96,7 @@ class WS_Reviews {
         $map = array(
             'created_at' => 'created_at', 'rating' => 'rating',
             'product_name' => 'product_name', 'customer_name' => 'customer_name',
+            'location_name' => 'location_name',
         );
         $col = isset( $map[ $key ] ) ? $map[ $key ] : 'created_at';
         return $col . ' ' . ( 'DESC' === strtoupper( $dir ) ? 'DESC' : 'ASC' );
@@ -109,6 +120,7 @@ class WS_Reviews {
         
         $fields = array(
             'product_id' => (int) ($data['product_id'] ?? 0),
+            'location_id' => (int) ($data['location_id'] ?? 0),
             'customer_id' => (int) ($data['customer_id'] ?? 0),
             'customer_name' => sanitize_text_field( $data['customer_name'] ?? '' ),
             'rating' => min( 5, max( 1, (int) ($data['rating'] ?? 5) ) ),
@@ -121,12 +133,12 @@ class WS_Reviews {
 
         if ( $id ) {
             $wpdb->update( $table, $fields, array( 'id' => $id ), 
-                array( '%d', '%d', '%s', '%d', '%s', '%s', '%d', '%s', '%d' ), 
+                array( '%d', '%d', '%d', '%s', '%d', '%s', '%s', '%d', '%s', '%d' ), 
                 array( '%d' ) );
             return $id;
         } else {
             $wpdb->insert( $table, $fields, 
-                array( '%d', '%d', '%s', '%d', '%s', '%s', '%d', '%s', '%d' ) );
+                array( '%d', '%d', '%d', '%s', '%d', '%s', '%s', '%d', '%s', '%d' ) );
             return $wpdb->insert_id;
         }
     }
@@ -182,6 +194,49 @@ class WS_Reviews {
             'average' => $result ? round( $result->avg_rating, 1 ) : 0,
             'total' => $result ? (int) $result->total_reviews : 0,
         );
+    }
+
+    /**
+     * Rating promedio de una TIENDA (ubicación): valoraciones aprobadas
+     * asociadas a la ubicación (location_id), independientes del producto.
+     */
+    public static function get_location_rating( $location_id ) {
+        global $wpdb;
+        $table = self::table( 'reviews' );
+
+        $result = $wpdb->get_row( $wpdb->prepare(
+            "SELECT AVG(rating) as avg_rating, COUNT(*) as total_reviews 
+            FROM {$table} WHERE location_id = %d AND approved = 1",
+            $location_id
+        ) );
+
+        return array(
+            'average' => $result ? round( $result->avg_rating, 1 ) : 0,
+            'total' => $result ? (int) $result->total_reviews : 0,
+        );
+    }
+
+    /**
+     * Distribución de estrellas de una TIENDA (ubicación).
+     */
+    public static function get_location_rating_distribution( $location_id ) {
+        global $wpdb;
+        $table = self::table( 'reviews' );
+
+        $distribution = array( 5 => 0, 4 => 0, 3 => 0, 2 => 0, 1 => 0 );
+
+        $results = $wpdb->get_results( $wpdb->prepare(
+            "SELECT rating, COUNT(*) as count 
+            FROM {$table} WHERE location_id = %d AND approved = 1 
+            GROUP BY rating",
+            $location_id
+        ) );
+
+        foreach ( $results as $row ) {
+            $distribution[ $row->rating ] = (int) $row->count;
+        }
+
+        return $distribution;
     }
 
     public static function get_rating_distribution( $product_id ) {

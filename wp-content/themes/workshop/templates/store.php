@@ -175,6 +175,78 @@ get_header();
                     </div>
                 </div>
             </div>
+
+            <!-- Valoraciones de la tienda: las estrellas valoran al NEGOCIO,
+                 no a los productos individuales. -->
+            <div class="ws-store-reviews ws-card" id="ws-store-reviews">
+                <div class="ws-store-reviews-head">
+                    <h3><i class="fa-solid fa-star"></i> <?php esc_html_e( 'Valoraciones de la tienda', 'workshop' ); ?></h3>
+                    <span class="ws-store-rating-num" x-text="storeRating ? storeRating.toFixed(1) + '/5' : '—'"></span>
+                </div>
+                <p class="ws-muted ws-store-reviews-sub"><?php esc_html_e( 'Comparte tu experiencia comprando aquí: las estrellas valoran a esta tienda.', 'workshop' ); ?></p>
+
+                <div class="ws-reviews-summary">
+                    <div class="ws-rating-stars ws-rating-stars-lg">
+                        <template x-for="i in 5" :key="i">
+                            <i class="fa-solid fa-star" :class="i <= Math.round(storeRating) ? 'ws-star-filled' : 'ws-star-empty'"></i>
+                        </template>
+                    </div>
+                    <span x-text="storeReviews.length ? '(' + storeReviews.length + ' reseñas)' : '(Aún sin reseñas)'"></span>
+                </div>
+
+                <div class="ws-reviews-list">
+                    <template x-if="storeReviews.length === 0 && !reviewBusy">
+                        <p class="ws-muted"><?php esc_html_e( 'Sé el primero en valorar esta tienda.', 'workshop' ); ?></p>
+                    </template>
+                    <template x-for="review in storeReviews.slice(0, 6)" :key="review.id">
+                        <div class="ws-review-item">
+                            <div class="ws-review-rating">
+                                <template x-for="i in 5" :key="i">
+                                    <i class="fa-solid fa-star" :class="i <= review.rating ? 'ws-star-filled' : 'ws-star-empty'"></i>
+                                </template>
+                            </div>
+                            <p x-text="review.comment"></p>
+                            <small><i class="fa-solid fa-user"></i> <span x-text="review.customer_name"></span> <span class="ws-muted" x-text="review.created_at ? '· ' + formatReviewDate(review.created_at) : ''"></span></small>
+                        </div>
+                    </template>
+                </div>
+
+                <button class="ws-btn ws-btn-ghost ws-btn-sm" @click="showStoreReviewForm = true" x-show="!showStoreReviewForm && !reviewSubmitted">
+                    <i class="fa-solid fa-pen"></i> <?php esc_html_e( 'Escribir reseña', 'workshop' ); ?>
+                </button>
+                <p class="ws-muted ws-store-review-thanks" x-show="reviewSubmitted"><i class="fa-solid fa-circle-check ws-text-success"></i> <?php esc_html_e( '¡Gracias! Tu reseña se publicará tras una breve revisión.', 'workshop' ); ?></p>
+
+                <!-- Formulario de reseña de la tienda -->
+                <div class="ws-review-form" x-show="showStoreReviewForm" x-cloak>
+                    <div class="ws-field">
+                        <label><?php esc_html_e( 'Tu nombre', 'workshop' ); ?></label>
+                        <input type="text" x-model="reviewForm.customer_name" placeholder="<?php esc_attr_e( 'Nombre', 'workshop' ); ?>">
+                    </div>
+                    <div class="ws-field">
+                        <label><?php esc_html_e( 'Valoración', 'workshop' ); ?></label>
+                        <div class="ws-rating-input">
+                            <template x-for="i in 5" :key="i">
+                                <i class="fa-solid fa-star"
+                                   :class="i <= reviewForm.rating ? 'ws-star-filled' : 'ws-star-empty'"
+                                   @click="reviewForm.rating = i"
+                                   style="cursor: pointer;"></i>
+                            </template>
+                        </div>
+                    </div>
+                    <div class="ws-field">
+                        <label><?php esc_html_e( 'Comentario', 'workshop' ); ?></label>
+                        <textarea x-model="reviewForm.comment" rows="3" placeholder="<?php esc_attr_e( 'Comparte tu experiencia...', 'workshop' ); ?>"></textarea>
+                    </div>
+                    <div class="ws-review-form-actions">
+                        <button class="ws-btn ws-btn-primary ws-btn-sm" @click="submitReview()" :disabled="reviewBusy">
+                            <i class="fa-solid fa-paper-plane"></i> <?php esc_html_e( 'Enviar reseña', 'workshop' ); ?>
+                        </button>
+                        <button class="ws-btn ws-btn-ghost ws-btn-sm" @click="showStoreReviewForm = false">
+                            <?php esc_html_e( 'Cancelar', 'workshop' ); ?>
+                        </button>
+                    </div>
+                </div>
+            </div>
         </main>
     </div>
 
@@ -320,64 +392,6 @@ get_header();
                         <button class="ws-btn ws-btn-primary ws-btn-block" :disabled="activeProduct.qty <= 0" @click="addFromModal()">
                             <i class="fa-solid fa-cart-plus"></i> <?php esc_html_e( 'Añadir al pedido', 'workshop' ); ?>
                         </button>
-                        
-                        <!-- Sección de valoraciones -->
-                        <div class="ws-store-reviews">
-                            <h4><?php esc_html_e( 'Valoraciones', 'workshop' ); ?></h4>
-                            <div class="ws-reviews-summary">
-                                <div class="ws-rating-stars">
-                                    <template x-for="i in 5" :key="i">
-                                        <i class="fa-solid fa-star" :class="i <= productRating ? 'ws-star-filled' : 'ws-star-empty'"></i>
-                                    </template>
-                                </div>
-                                <span x-text="'(' + productReviews.length + ' reseñas)'"></span>
-                            </div>
-                            <div class="ws-reviews-list">
-                                <template x-for="review in productReviews.slice(0, 3)" :key="review.id">
-                                    <div class="ws-review-item">
-                                        <div class="ws-review-rating">
-                                            <template x-for="i in 5" :key="i">
-                                                <i class="fa-solid fa-star" :class="i <= review.rating ? 'ws-star-filled' : 'ws-star-empty'"></i>
-                                            </template>
-                                        </div>
-                                        <p x-text="review.comment"></p>
-                                        <small x-text="review.customer_name"></small>
-                                    </div>
-                                </template>
-                            </div>
-                            <button class="ws-btn ws-btn-ghost ws-btn-sm" @click="showReviewForm = true" x-show="!showReviewForm">
-                                <i class="fa-solid fa-pen"></i> <?php esc_html_e( 'Escribir reseña', 'workshop' ); ?>
-                            </button>
-                            
-                            <!-- Formulario de reseña -->
-                            <div class="ws-review-form" x-show="showReviewForm">
-                                <div class="ws-field">
-                                    <label><?php esc_html_e( 'Tu nombre', 'workshop' ); ?></label>
-                                    <input type="text" x-model="reviewForm.customer_name" placeholder="<?php esc_attr_e( 'Nombre', 'workshop' ); ?>">
-                                </div>
-                                <div class="ws-field">
-                                    <label><?php esc_html_e( 'Valoración', 'workshop' ); ?></label>
-                                    <div class="ws-rating-input">
-                                        <template x-for="i in 5" :key="i">
-                                            <i class="fa-solid fa-star" 
-                                               :class="i <= reviewForm.rating ? 'ws-star-filled' : 'ws-star-empty'"
-                                               @click="reviewForm.rating = i"
-                                               style="cursor: pointer;"></i>
-                                        </template>
-                                    </div>
-                                </div>
-                                <div class="ws-field">
-                                    <label><?php esc_html_e( 'Comentario', 'workshop' ); ?></label>
-                                    <textarea x-model="reviewForm.comment" rows="3" placeholder="<?php esc_attr_e( 'Comparte tu experiencia...', 'workshop' ); ?>"></textarea>
-                                </div>
-                                <button class="ws-btn ws-btn-primary ws-btn-sm" @click="submitReview()">
-                                    <?php esc_html_e( 'Enviar reseña', 'workshop' ); ?>
-                                </button>
-                                <button class="ws-btn ws-btn-ghost ws-btn-sm" @click="showReviewForm = false">
-                                    <?php esc_html_e( 'Cancelar', 'workshop' ); ?>
-                                </button>
-                            </div>
-                        </div>
                     </div>
                 </div>
             </template>
