@@ -60,6 +60,14 @@ if ( $loc_ids ) {
     ) );
 }
 $currency = ws_currency_symbol();
+
+// Ventas de hoy con formato compacto cuando el monto es muy grande
+// (ej: 2.112.520 -> "2,1 M CUP"; 2.500.000.000 -> "2,5 mil M CUP"). El
+// monto exacto queda en el tooltip al pasar el cursor.
+$sales_today_display = ws_money( $sales_today, $currency );
+if ( abs( $sales_today ) >= 1000000 ) {
+    $sales_today_display = ws_compact_number( $sales_today ) . ' ' . $currency;
+}
 ?>
 <div class="ws-kpis">
     <div class="ws-kpi">
@@ -76,7 +84,7 @@ $currency = ws_currency_symbol();
     </div>
     <div class="ws-kpi">
         <div class="ws-kpi-icon ws-kpi-green"><i class="fa-solid fa-circle-dollar"></i></div>
-        <div><span><?php esc_html_e( 'Ventas de hoy', 'workshop' ); ?></span><strong><?php echo ws_money( $sales_today, $currency ); ?></strong></div>
+        <div><span><?php esc_html_e( 'Ventas de hoy', 'workshop' ); ?></span><strong title="<?php echo esc_attr( ws_money( $sales_today, $currency ) ); ?>"><?php echo esc_html( $sales_today_display ); ?></strong></div>
     </div>
 </div>
 
