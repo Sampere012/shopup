@@ -2324,3 +2324,120 @@
         });
     }
 })();
+
+/* ------------------------------------------------------------------ */
+/* Grupo de botones flotantes (⋮): si hay más de un botón flotante en  */
+/* la página, se agrupan detrás de un botón de tres puntos que los     */
+/* despliega apilados (evita que el chat opaque o tape a los demás).   */
+/* ------------------------------------------------------------------ */
+(function () {
+    'use strict';
+
+    function initFabGroup() {
+        if (document.getElementById('ws-fab-group')) { return; }
+
+        // Botones flotantes conocidos: chat, carrito de la tienda y carrito POS.
+        var fabs = [];
+        var chat = document.getElementById('wsb-root');
+        if (chat && chat.querySelector('#wsb-button')) { fabs.push(chat); }
+        var cartFab = document.querySelector('.ws-cart-fab');
+        if (cartFab) { fabs.push(cartFab); }
+        var posToggle = document.querySelector('.ws-pos-cart-toggle');
+        if (posToggle && window.getComputedStyle(posToggle).display !== 'none') { fabs.push(posToggle); }
+        document.querySelectorAll('[data-ws-fab]').forEach(function (el) {
+            if (fabs.indexOf(el) === -1) { fabs.push(el); }
+        });
+
+        // Solo se agrupa cuando hay más de uno; con uno solo queda como está.
+        if (fabs.length < 2) { return; }
+
+        var group = document.createElement('div');
+        group.id = 'ws-fab-group';
+        group.className = 'ws-fab-group';
+        group.innerHTML = '<button type="button" class="ws-fab-trigger" aria-label="Más acciones" aria-expanded="false">' +
+            '<i class="fa-solid fa-ellipsis-vertical"></i><i class="fa-solid fa-xmark"></i></button>';
+        document.body.appendChild(group);
+
+        var backdrop = document.createElement('div');
+        backdrop.className = 'ws-fab-backdrop';
+        document.body.appendChild(backdrop);
+
+        var trigger = group.querySelector('.ws-fab-trigger');
+
+        // Mini-badge de no leídas en el botón ⋮ (el chat queda oculto al colapsar).
+        var chatBtn = chat && chat.querySelector('#wsb-button');
+        var dot = document.createElement('span');
+        dot.className = 'ws-fab-dot';
+        dot.setAttribute('aria-hidden', 'true');
+        trigger.appendChild(dot);
+        function syncDot() {
+            var b = chatBtn && chatBtn.querySelector('.wsb-badge');
+            var has = chatBtn && (chatBtn.classList.contains('has-badge') || chatBtn.classList.contains('wsb-unseen'));
+            dot.textContent = has && b ? b.textContent : '';
+            dot.style.display = has ? 'flex' : 'none';
+        }
+        syncDot();
+        if (chatBtn && window.MutationObserver) {
+            // Clase del botón (tiene/no tiene no leídas).
+            new MutationObserver(syncDot).observe(chatBtn, { attributes: true, attributeFilter: ['class'] });
+            // Texto del contador: si pasa de 3 a 4 la clase no cambia y el dot quedaría viejo.
+            var badgeEl = chatBtn.querySelector('.wsb-badge');
+            if (badgeEl) {
+                new MutationObserver(syncDot).observe(badgeEl, { childList: true, characterData: true, subtree: true });
+            }
+        }
+
+        var open = false;
+
+        function setOpen(next) {
+            open = next;
+            group.classList.toggle('is-open', open);
+            backdrop.classList.toggle('show', open);
+            trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+        }
+
+        trigger.addEventListener('click', function () { setOpen(!open); });
+        backdrop.addEventListener('click', function () { setOpen(false); });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') { setOpen(false); }
+        });
+
+        // Cada botón flotante pasa a ser un ítem apilado del grupo.
+        fabs.forEach(function (fab, i) {
+            fab.classList.add('ws-fab-item');
+            fab.style.setProperty('--i', i);
+            group.appendChild(fab);
+            // Cualquier acción cierra el menú (el botón hace su función).
+            fab.addEventListener('click', function () { setOpen(false); }, true);
+        });
+
+        // Cuando el chat se abre, colapsa el grupo y lo deja visible a él solo.
+        var chatRoot = document.getElementById('wsb-root');
+        if (chatRoot && window.MutationObserver) {
+            var obs = new MutationObserver(function () {
+                var chatOpen = chatRoot.classList.contains('is-open');
+                group.classList.toggle('chat-open', chatOpen);
+                if (chatOpen) { setOpen(false); }
+            });
+            obs.observe(chatRoot, { attributes: true, attributeFilter: ['class'] });
+        }
+    }
+
+    // El widget del chat se crea al final del footer; reintenta hasta que exista.
+    var tries = 0;
+    function tryInit() {
+        if (document.getElementById('wsb-root') || tries > 16) {
+            initFabGroup();
+            return;
+        }
+        tries++;
+        window.setTimeout(tryInit, 250);
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', tryInit);
+    } else {
+        tryInit();
+    }
+    // Segunda pasada: si algún FAB se renderiza después (async), se agrupa igualmente.
+    window.setTimeout(initFabGroup, 1200);
+})();

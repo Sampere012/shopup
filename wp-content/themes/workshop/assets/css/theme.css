@@ -2292,33 +2292,66 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 }
 .ws-offline-mode-badge i { color: #d97706; }
 
-/* ---------- PWA: botón de instalación ---------- */
-#ws-pwa-install {
-    position: fixed; right: 20px; bottom: 20px; z-index: 9999;
-    display: flex; align-items: center; gap: 12px;
-    padding: 12px 20px; border: none; border-radius: 14px; cursor: pointer;
-    background: linear-gradient(135deg, #4f46e5, #7c3aed); color: #fff;
-    box-shadow: 0 10px 30px rgba(79, 70, 229, .4);
-    font-family: inherit; text-align: left;
-    opacity: 0; transform: translateY(16px) scale(.95); pointer-events: none;
-    transition: opacity .3s ease, transform .3s cubic-bezier(.34, 1.56, .64, 1), box-shadow .2s ease;
+/* ---------- Grupo de botones flotantes (⋮) ----------
+   Cuando hay más de un botón flotante (chat + carrito, etc.) se agrupan
+   tras un botón de tres puntos; al tocarlo se despliegan apilados. */
+.ws-fab-group {
+    position: fixed; right: 20px; bottom: 20px; z-index: 99980;
 }
-#ws-pwa-install.ws-pwa-install-visible { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
-#ws-pwa-install:hover { box-shadow: 0 14px 36px rgba(79, 70, 229, .5); transform: translateY(-2px) scale(1.02); }
-#ws-pwa-install > i {
-    width: 40px; height: 40px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
-    background: rgba(255, 255, 255, .18); border-radius: 11px; font-size: 1.05rem;
-    animation: ws-pwa-bounce 2s ease-in-out infinite;
+.ws-fab-trigger {
+    width: 56px; height: 56px; border-radius: 50%; border: 0; cursor: pointer;
+    background: linear-gradient(135deg, #334155, #0f172a); color: #fff;
+    font-size: 1.3rem; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 10px 26px rgba(15, 23, 42, .4);
+    position: relative; z-index: 2; transition: transform .2s ease, background .2s ease;
 }
-.ws-pwa-install-text { display: flex; flex-direction: column; line-height: 1.2; }
-.ws-pwa-install-text strong { font-size: .95rem; font-weight: 800; }
-.ws-pwa-install-text small { font-size: .75rem; opacity: .85; }
-@keyframes ws-pwa-bounce {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-3px); }
+.ws-fab-trigger:hover { transform: scale(1.06); box-shadow: 0 12px 30px rgba(15, 23, 42, .5); }
+.ws-fab-trigger:active { transform: scale(.95); }
+.ws-fab-dot {
+    position: absolute; top: -2px; right: -2px; min-width: 17px; height: 17px;
+    padding: 0 4px; border-radius: 999px; background: #ef4444; border: 2px solid #fff;
+    color: #fff; font-size: .6rem; font-weight: 700; line-height: 13px;
+    align-items: center; justify-content: center; display: none; z-index: 4;
+    box-shadow: 0 3px 8px rgba(225, 29, 72, .45);
 }
+.ws-fab-trigger .fa-xmark { display: none; }
+.ws-fab-group.is-open .ws-fab-trigger .fa-ellipsis-vertical { display: none; }
+.ws-fab-group.is-open .ws-fab-trigger .fa-xmark { display: inline-flex; }
+.ws-fab-group.is-open .ws-fab-trigger { background: linear-gradient(135deg, #ef4444, #dc2626); }
+
+.ws-fab-group .ws-fab-item {
+    position: absolute; right: 0; bottom: calc(64px + 68px * var(--i, 0));
+    opacity: 0; pointer-events: none;
+    transform: translateY(12px) scale(.5); transform-origin: bottom right;
+    transition: opacity .18s ease, transform .3s cubic-bezier(.34, 1.56, .64, 1);
+    z-index: 1;
+}
+.ws-fab-group.is-open .ws-fab-item,
+.ws-fab-group.chat-open .ws-fab-item#wsb-root {
+    opacity: 1; pointer-events: auto; transform: translateY(0) scale(1);
+}
+.ws-fab-group.chat-open .ws-fab-trigger { opacity: 0; pointer-events: none; }
+
+.ws-fab-backdrop {
+    position: fixed; inset: 0; z-index: 99970; background: rgba(15, 23, 42, .35);
+    opacity: 0; visibility: hidden; transition: opacity .22s ease, visibility .22s;
+    backdrop-filter: blur(2px);
+}
+.ws-fab-backdrop.show { opacity: 1; visibility: visible; }
+
+/* Re-posicionar los botones dentro del grupo (anulan su fixed original) */
+.ws-fab-group #wsb-root {
+    position: absolute; top: auto; left: auto; right: 0; bottom: 0;
+    width: auto; z-index: 3;
+}
+.ws-fab-group #wsb-teaser { display: none; }
+.ws-fab-group .ws-cart-fab { position: absolute; right: 0; bottom: 0; z-index: 1; }
+.ws-fab-group .ws-pos-cart-toggle { position: absolute; right: 0; bottom: 0; z-index: 1; }
+
 @media (max-width: 520px) {
-    #ws-pwa-install { right: 12px; bottom: 12px; left: 12px; justify-content: center; }
+    .ws-fab-group { right: 12px; bottom: 12px; }
+    .ws-fab-trigger { width: 52px; height: 52px; }
+    .ws-fab-group .ws-fab-item { bottom: calc(60px + 62px * var(--i, 0)); }
 }
 
 /* ---------- Fraccionamiento de productos ---------- */

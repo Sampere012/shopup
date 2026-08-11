@@ -2,62 +2,8 @@
 (function() {
     'use strict';
 
-    // ---- Botón "Instalar app" (PWA) ----
-    let deferredPrompt = null;
-    const installKey = 'ws_pwa_install_dismissed';
-
-    function showInstallButton() {
-        var btn = document.getElementById('ws-pwa-install');
-        if (!btn) return;
-        btn.classList.add('ws-pwa-install-visible');
-    }
-
-    function hideInstallButton() {
-        var btn = document.getElementById('ws-pwa-install');
-        if (btn) btn.classList.remove('ws-pwa-install-visible');
-    }
-
-    window.addEventListener('beforeinstallprompt', function(e) {
-        e.preventDefault();
-        deferredPrompt = e;
-        // No molestar si el usuario ya lo descartó (guarda durante 7 días).
-        try {
-            if (localStorage.getItem(installKey) &&
-                Date.now() - Number(localStorage.getItem(installKey)) < 7 * 24 * 3600 * 1000) {
-                return;
-            }
-        } catch (err) { /* localStorage no disponible */ }
-        showInstallButton();
-    });
-
-    document.addEventListener('click', function(e) {
-        var btn = e.target.closest ? e.target.closest('#ws-pwa-install') : null;
-        if (!btn) return;
-        if (!deferredPrompt) {
-            // Ya instalada o no soportada: abrir el sitio en el navegador.
-            try {
-                localStorage.setItem(installKey, String(Date.now()));
-            } catch (err) {}
-            hideInstallButton();
-            return;
-        }
-        deferredPrompt.prompt();
-        deferredPrompt.userChoice.then(function(choice) {
-            deferredPrompt = null;
-            hideInstallButton();
-            try {
-                localStorage.setItem(installKey, String(Date.now()));
-            } catch (err) {}
-        });
-    });
-
-    window.addEventListener('appinstalled', function() {
-        deferredPrompt = null;
-        hideInstallButton();
-        try {
-            localStorage.setItem(installKey, String(Date.now()));
-        } catch (err) {}
-    });
+    // Nota: se eliminó el botón flotante "Instalar app" (PWA); el service
+    // worker sigue registrándose para el modo offline y las actualizaciones.
 
     // Verificar si el navegador soporta service workers
     if ('serviceWorker' in navigator) {
