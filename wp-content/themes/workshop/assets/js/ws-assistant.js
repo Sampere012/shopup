@@ -417,19 +417,39 @@
             removeTyping(t);
             if (json && json.success) {
                 var list = (json.data && json.data.products) || [];
-                if (!list.length) {
+                var stores = (json.data && json.data.stores) || [];
+                if (!list.length && !stores.length) {
                     reply('No encontré "' + q + '" disponible ahora mismo. ¿Pruebas con otra palabra o revisas todas las tiendas?',
                         [marketChip()].filter(Boolean), 'search:none');
                     return;
                 }
-                var rows = list.map(function (it) {
-                    return {
-                        name: it.name,
-                        meta: (it.price_text || '') + (it.stock_text ? ' <span class="wsb-badge-stock' + (it.in_stock === false ? ' is-out' : '') + '">' + escapeHtml(it.stock_text) + '</span>' : '') + (it.where ? ' <span class="wsb-where">' + escapeHtml(it.where) + '</span>' : ''),
-                        url: it.url
-                    };
-                });
-                appendCard('Resultados de "' + q + '":', rows, { chips: [marketChip()].filter(Boolean) });
+                var chips = [marketChip()].filter(Boolean);
+                // Tiendas/negocios que coinciden con la búsqueda (cards ricas).
+                if (stores.length) {
+                    appendWidget('Tiendas que coinciden con "' + q + '":', stores.map(function (s) {
+                        return {
+                            name: s.name,
+                            img: s.logo || '',
+                            icon: s.logo ? '' : 'fa-store',
+                            rating: s.rating,
+                            reviews: s.reviews ? '(' + s.reviews + ')' : '',
+                            desc: s.pvs ? (s.pvs + ' punto(s) de venta') : '',
+                            meta: s.reviews ? (s.reviews + ' reseña' + (s.reviews === 1 ? '' : 's')) : 'Nueva',
+                            url: s.url
+                        };
+                    }), { chips: chips.length ? chips : null });
+                }
+                if (list.length) {
+                    var rows = list.map(function (it) {
+                        return {
+                            name: it.name,
+                            meta: (it.price_text || '') + (it.stock_text ? ' <span class="wsb-badge-stock' + (it.in_stock === false ? ' is-out' : '') + '">' + escapeHtml(it.stock_text) + '</span>' : '') + (it.where ? ' <span class="wsb-where">' + escapeHtml(it.where) + '</span>' : ''),
+                            url: it.url
+                        };
+                    });
+                    appendCard('Resultados de "' + q + '":', rows, { chips: stores.length ? null : chips });
+                }
+                track('search:' + (list.length ? 'products' : 'stores'));
             } else {
                 reply((json && json.data && json.data.msg) || 'No pude buscar en este momento.', [marketChip()].filter(Boolean), 'search:error');
             }
@@ -502,7 +522,7 @@
 
     // Extrae el término de búsqueda de frases como "buscar camisa" o "¿tienes arroz?"
     function extractQuery(text) {
-        var m = String(text || '').match(/(?:buscar|busco|busca|tienes|tienen|tiene|hay|disponible|precio de|donde encuentro|encuentro)\s*(.+)$/i);
+        var m = String(text || '').match(/(?:buscar|busco|busca|tienes|tienen|tiene|hay|disponible|precio de|donde encuentro|donde compro|buscar tienda|encuentro)\s*(.+)$/i);
         if (m && m[1]) {
             return m[1].trim().replace(/[?.!]+$/, '');
         }
@@ -1340,12 +1360,14 @@
             ];
         }
         return [
+            { label: 'Buscar producto', icon: 'fa-magnifying-glass', send: 'buscar' },
+            { label: 'Ver tiendas', icon: 'fa-store', send: 'todas las tiendas' },
             { label: 'Cómo comprar', icon: 'fa-cart-shopping', send: 'como comprar' },
             { label: 'Seguimiento', icon: 'fa-truck', send: 'seguimiento de pedido' },
             { label: 'Devoluciones', icon: 'fa-rotate-left', send: 'devoluciones' },
             { label: 'Envíos', icon: 'fa-truck-fast', send: 'envio a domicilio' },
             { label: 'Planes', icon: 'fa-crown', send: 'planes y precios' },
-            { label: 'Crear mi tienda', icon: 'fa-store', send: 'crear mi tienda' },
+            { label: 'Crear mi tienda', icon: 'fa-rocket', send: 'crear mi tienda' },
             { label: 'Contacto', icon: 'fa-headset', send: 'contacto' }
         ];
     }
@@ -1368,7 +1390,7 @@
         chips.push(contactChip());
         reply(S.fallback + '\n\n' + (isPanel
             ? 'Puedo ayudarte con: productos, stock, pedidos, ventas, clientes, reportes, tu equipo, tu plan o programar reportes.'
-            : 'Puedo orientarte para comprar, seguir tu pedido, devoluciones, envíos o montar tu tienda.'), chips.filter(Boolean), 'fallback');
+            : 'Puedo buscarte productos, mostrarte las tiendas del mercado, ayudarte a comprar, seguir tu pedido o montar tu propia tienda.'), chips.filter(Boolean), 'fallback');
         // Auto-aprendizaje: la frase que el bot no supo responder se guarda
         // para que el admin la revise en wp-admin > Asistente > Aprender.
         learnCandidate(text);
@@ -1654,8 +1676,17 @@
                 if (locked) { actions.locked.run(); return; }
                 var q = extractQuery(lastUserText);
                 if (!q) {
-                    reply('¿Qué producto buscas? Escríbelo y lo busco al instante.', [], 'search:ask');
+                    reply('¿Qué quieres buscar? Puedo buscarte productos o tiendas.', [{ label: 'Buscar producto', icon: 'fa-magnifying-glass', send: 'buscar producto' }, { label: 'Ver tiendas', url: C.urls.stores, icon: 'fa-store' }], 'search:ask');
                     pendingAsk = { type: 'search' };
+                    return;
+                }
+                // Si pide una tienda/negocio: se busca el término específico
+                // (p. ej. "tienda de zapatos" → "zapatos") y se muestran las
+                // tiendas que coinciden; si es genérico ("tiendas", "donde
+                // compro") se listan todas las del mercado.
+                if (/tienda|tiendas|negocio|negocios|local|locales|donde compro|donde puedo comprar/i.test(q)) {
+                    var storeTerm = q.replace(/^(?:buscar|busca|busco)\s+/i, '').replace(/^(?:una|un|la|el|las|los|mi|mis)\s+/i, '').replace(/^(?:tienda|tiendas|negocio|negocios|local|locales)\s+(?:de|del|d)\s+/i, '').replace(/^(?:tienda|tiendas|negocio|negocios|local|locales|donde compro|donde puedo comprar)$/i, '').trim();
+                    if (storeTerm) { doSearch(storeTerm); } else { doStores(); }
                     return;
                 }
                 doSearch(q);
@@ -1851,10 +1882,42 @@
     }
 
     function resolveIntent(text) {
+        var low = String(text || '').toLowerCase();
+        // Las preguntas tipo FAQ ("¿cómo…?", "¿cuánto cuesta…?") las responde
+        // la base de conocimiento; solo si NO es pregunta se prioriza buscar.
+        var lowTrim = low.replace(/^[¿¡?!\s]+/, '');
+        // 'donde compro/encuentro' NO son preguntas (son búsquedas que están en
+        // SEARCH_HINTS), por eso 'donde' no está en este guard.
+        var isQuestion = /^(como|cómo|que|qué|cual|cuál|cuales|cuáles|cuando|cuándo|cuanto|cuánto|cuantos|cuántos|por que|por qué|puedo|puedes|existe|hay que|se puede|esta|está|es posible|me pueden)\b/.test(lowTrim);
+        // Verbos de BÚSQUEDA: si el usuario quiere buscar algo (producto, tienda),
+        // la intención de búsqueda gana sobre la base de conocimiento para que no
+        // responda un FAQ en vez de ejecutar la búsqueda. Solo hints fuertes, los
+        // ambiguos (hay/tienes/precio de/disponible) siguen por la vía normal.
+        var SEARCH_HINTS = ['buscar', 'busco', 'busca ', 'quiero buscar', 'encuentra', 'encuentro', 'donde compro', 'donde encuentro', 'ver tiendas', 'buscar tienda', 'las tiendas', 'negocio de', 'tienda de'];
+        var wantsSearch = !isQuestion;
+        if (wantsSearch) {
+            wantsSearch = false;
+            for (var si = 0; si < SEARCH_HINTS.length; si++) {
+                if (low.indexOf(SEARCH_HINTS[si]) > -1) { wantsSearch = true; break; }
+            }
+        }
+        if (wantsSearch) {
+            var sact = null, sactLen = 0;
+            ['searchProduct', 'tiendas'].forEach(function (key) {
+                var a = actions[key];
+                if (!a || !a.keys) { return; }
+                for (var i = 0; i < a.keys.length; i++) {
+                    if (low.indexOf(a.keys[i]) > -1 && a.keys[i].length > sactLen) { sact = actions[key]; sactLen = a.keys[i].length; }
+                }
+            });
+            if (sact) { return sact; }
+        }
+        // Base de conocimiento (FAQ del admin + Ayuda) para preguntas.
         var k = matchKnowledge(text);
         if (k) { return { knowledge: k }; }
-        var low = text.toLowerCase();
+        // Intenciones de acción del resto de claves (la más larga gana).
         var best = null;
+        best_key = '';
         Object.keys(actions).forEach(function (key) {
             var a = actions[key];
             if (!a.keys || !a.keys.length) { return; }

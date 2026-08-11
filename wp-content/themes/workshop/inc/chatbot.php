@@ -2045,7 +2045,35 @@ function ws_ajax_chatbot_search() {
             }
         }
     }
-    wp_send_json_success( array( 'products' => $out, 'q' => $q ) );
+    // Tiendas/negocios cuyo nombre matchee la consulta. Solo se consulta cuando
+    // la búsqueda parece de tienda (tienda/negocio/local/donde compro…) o cuando
+    // no se encontraron productos, para no pagar el costo de marketplace_ranked
+    // en cada búsqueda de producto.
+    $stores = array();
+    if ( ! $role && ( empty( $out ) || 1 === preg_match( '/tienda|tiendas|negocio|negocios|local|locales|donde compro|donde puedo comprar/i', $q ) ) ) {
+        if ( class_exists( 'WS_Business' ) ) {
+            foreach ( WS_Business::marketplace_ranked() as $sb ) {
+                $sname = (string) ( $sb->name ?? '' );
+                $sslug = (string) ( $sb->slug ?? '' );
+                if ( '' === $sname || ( false === mb_stripos( $sname, $q ) && false === mb_stripos( $sslug, $q ) ) ) {
+                    continue;
+                }
+                $stores[] = array(
+                    'id'      => (int) $sb->id,
+                    'name'    => $sname,
+                    'logo'    => (string) ( $sb->logo ?? '' ),
+                    'rating'  => (float) ( $sb->ws_rating ?? 0 ),
+                    'reviews' => (int) ( $sb->ws_reviews ?? 0 ),
+                    'pvs'     => (int) ( $sb->ws_pvs ?? 0 ),
+                    'url'     => '' !== $sslug ? ws_business_home( $sb ) : ws_business_url( $sslug ),
+                );
+                if ( count( $stores ) >= 4 ) {
+                    break;
+                }
+            }
+        }
+    }
+    wp_send_json_success( array( 'products' => $out, 'stores' => $stores ?? array(), 'q' => $q ) );
 }
 
 add_action( 'wp_ajax_ws_chatbot_summary', 'ws_ajax_chatbot_summary' );
