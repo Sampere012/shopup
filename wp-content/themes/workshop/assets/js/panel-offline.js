@@ -317,6 +317,21 @@
 
     // ---------- Inicialización ----------
 
+    // Al abrir el panel con conexión y acciones pendientes, sincroniza y
+    // refresca la caché de lecturas para que los datos estén al día (además
+    // del evento 'online'). Si no hay pendientes no toca la caché.
+    async function syncOnOpen() {
+        try {
+            if (!navigator.onLine || !window.WSOfflineQueue || !window.WSIndexedDB) return;
+            var st = await WSOfflineQueue.getQueueStatus();
+            if (st.pending > 0) {
+                await syncNow();
+            }
+        } catch (e) {
+            console.error('Error sincronizando al abrir el panel:', e);
+        }
+    }
+
     function init() {
         window.fetch = wsFetch;
         ensureBanner();
@@ -324,6 +339,8 @@
         if (window.WSOfflineQueue) {
             setTimeout(function() { WSOfflineQueue.updateQueueIndicator(); }, 2000);
         }
+        // Sincronización al abrir: espera a que IndexedDB esté listo.
+        setTimeout(function() { syncOnOpen(); }, 2500);
     }
 
     window.addEventListener('online', function() {

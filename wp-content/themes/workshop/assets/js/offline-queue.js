@@ -45,8 +45,17 @@
         }
     }
 
+    // Evita procesar la cola en paralelo (evento online + apertura de la app +
+    // botón sincronizar): un solo proceso a la vez para no duplicar envíos.
+    let processing = false;
+
     // Procesar cola cuando vuelva la conexión
     async function processQueue() {
+        if (processing) {
+            console.log('Cola ya en proceso, se omite esta llamada');
+            return;
+        }
+        processing = true;
         try {
             if (!window.WSIndexedDB) {
                 console.warn('IndexedDB no disponible, no se puede procesar cola');
@@ -139,6 +148,8 @@
             }
         } catch (error) {
             console.error('Error procesando cola:', error);
+        } finally {
+            processing = false;
         }
     }
 
@@ -298,11 +309,53 @@
         await WSIndexedDB.setSyncStatus('last_offline', new Date().toISOString());
     });
 
+    // Sincroniza la cola al ABRIR la app si ya hay conexión: cubre el caso de
+    // que la red haya vuelto mientras la app estaba cerrada (el evento 'online'
+    // no se dispara en la carga). Espera a que IndexedDB esté listo.
+    async function syncQueueOnOpen() {
+        try {
+            if (!navigator.onLine || !window.WSIndexedDB) return;
+            const status = await getQueueStatus();
+            if (status.pending > 0) {
+                console.log('Abriendo con ' + status.pending + ' acción(es) pendiente(s), sincronizando...');
+                await WSIndexedDB.setSyncStatus('last_online', new Date().toISOString());
+                await processQueue();
+            }
+        } catch (e) {
+            console.error('Error sincronizando cola al abrir:', e);
+        }
+    }
+
+    // Espera a que IndexedDB esté listo y sincroniza la cola al abrir. Usa el
+    // evento ws-indexeddb-ready (indexeddb.js) y, como respaldo, un polling
+    // corto por si el evento ya pasó o la BD tarda en abrirse.
+    let onOpenTried = false;
+    function trySyncOnOpen() {
+        if (onOpenTried) return;
+        onOpenTried = true;
+        // Hasta ~6s esperando WSIndexedDB antes de rendirse (la BD abre rápido).
+        let attempts = 0;
+        const poll = setInterval(() => {
+            attempts++;
+            if (window.WSIndexedDB && navigator.onLine) {
+                clearInterval(poll);
+                syncQueueOnOpen();
+            } else if (attempts >= 24) {
+                clearInterval(poll);
+                // Si sigue sin estar listo y hay conexión, un último intento
+                // directo (por si la BD abre después del polling).
+                if (window.WSIndexedDB && navigator.onLine) { syncQueueOnOpen(); }
+            }
+        }, 250);
+    }
+    window.addEventListener('ws-indexeddb-ready', trySyncOnOpen, { once: true });
+
     // Inicializar indicador
     document.addEventListener('DOMContentLoaded', () => {
         // Esperar a que IndexedDB se inicialice antes de actualizar el indicador
         setTimeout(() => {
             updateQueueIndicator();
-        }, 2000);
+            trySyncOnOpen();
+        }, 1500);
     });
 })();
