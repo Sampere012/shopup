@@ -50,6 +50,11 @@ get_header();
         <div class="ws-stores-hero-bg" aria-hidden="true"><span class="ws-mp-grid-overlay"></span></div>
         <div class="ws-stores-hero-overlay" aria-hidden="true"></div>
         <div class="ws-container ws-stores-hero-inner">
+            <nav class="ws-breadcrumbs" aria-label="<?php esc_attr_e( 'Migas de pan', 'workshop' ); ?>">
+                <a href="<?php echo esc_url( home_url( '/' ) ); ?>"><i class="fa-solid fa-house"></i> <?php esc_html_e( 'Inicio', 'workshop' ); ?></a>
+                <span class="ws-breadcrumb-sep"><i class="fa-solid fa-chevron-right"></i></span>
+                <span aria-current="page"><?php esc_html_e( 'Tiendas', 'workshop' ); ?></span>
+            </nav>
             <span class="ws-hero-badge ws-mp-hero-badge"><i class="fa-solid fa-store"></i> <?php esc_html_e( 'Directorio de tiendas', 'workshop' ); ?></span>
             <h1><?php esc_html_e( 'Todas las tiendas del mercado', 'workshop' ); ?></h1>
             <p class="ws-stores-hero-sub"><?php esc_html_e( 'Descubre qué vende cada negocio, por qué comprarle y entra directo a su tienda. Los dueños cuentan su historia: tú eliges.', 'workshop' ); ?></p>

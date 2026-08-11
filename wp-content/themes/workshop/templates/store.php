@@ -70,6 +70,8 @@ get_header();
     <div class="ws-container ws-store-layout">
         <main class="ws-store-products">
             <div class="ws-store-breadcrumb">
+                <a href="<?php echo esc_url( home_url( '/' ) ); ?>"><i class="fa-solid fa-house"></i> <?php esc_html_e( 'Inicio', 'workshop' ); ?></a>
+                <i class="fa-solid fa-chevron-right"></i>
                 <a href="<?php echo esc_url( ws_business_home() ); ?>"><?php esc_html_e( 'Tiendas', 'workshop' ); ?></a>
                 <i class="fa-solid fa-chevron-right"></i>
                 <span><?php echo esc_html( $location->name ); ?></span>

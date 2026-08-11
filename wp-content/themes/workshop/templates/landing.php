@@ -10,6 +10,7 @@ defined( 'ABSPATH' ) || exit;
 $locations = WS_CRUD::get_locations( 'pv' );
 $locations = array_values( array_filter( $locations, fn( $l ) => (int) $l->active === 1 ) );
 $currency  = ws_currency_symbol();
+$biz       = ws_current_business();
 
 global $wpdb;
 $store_count = count( $locations );
@@ -21,6 +22,11 @@ get_header();
 <div class="ws-landing">
     <section class="ws-landing-hero<?php echo ws_site_hero_has_bg() ? ' ws-has-bg' : ''; ?>" style="<?php echo esc_attr( ws_site_hero_bg_style() ); ?>">
         <div class="ws-container">
+            <nav class="ws-breadcrumbs" aria-label="<?php esc_attr_e( 'Migas de pan', 'workshop' ); ?>">
+                <a href="<?php echo esc_url( home_url( '/' ) ); ?>"><i class="fa-solid fa-house"></i> <?php esc_html_e( 'Inicio', 'workshop' ); ?></a>
+                <span class="ws-breadcrumb-sep"><i class="fa-solid fa-chevron-right"></i></span>
+                <span aria-current="page"><?php echo esc_html( ( $biz && ! empty( $biz->name ) ) ? $biz->name : ws_site_hero( 'hero_title' ) ); ?></span>
+            </nav>
             <span class="ws-hero-badge"><i class="fa-solid fa-bolt"></i> <?php echo esc_html( ws_site_hero( 'hero_badge' ) ); ?></span>
             <h1><?php echo esc_html( ws_site_hero( 'hero_title' ) ); ?></h1>
             <p class="ws-hero-sub"><?php echo esc_html( ws_site_hero( 'hero_sub' ) ); ?></p>
