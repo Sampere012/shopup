@@ -53,27 +53,47 @@ function ws_notification_add( $user_id, $type, $title, $message, $link = '', $re
 function ws_notification_sync( $user_id, $type, $title, $message, $link = '', $ref_key = '', $active = true, $biz = null ) {
     global $wpdb;
     $table = ws_notifications_table( $biz );
-    if ( $active ) {
-        $existing = $wpdb->get_var( $wpdb->prepare(
-            "SELECT id FROM {$table} WHERE user_id=%d AND ref_key=%s AND is_read=0 ORDER BY id DESC LIMIT 1",
-            $user_id, $ref_key
-        ) );
-        if ( $existing ) {
-            $wpdb->update(
-                $table,
-                array( 'title' => sanitize_text_field( $title ), 'message' => sanitize_text_field( $message ), 'link' => esc_url_raw( $link ), 'created_at' => current_time( 'mysql' ) ),
-                array( 'id' => (int) $existing )
-            );
-            return (int) $existing;
-        }
+    if ( ! $active ) {
+        $wpdb->update(
+            $table,
+            array( 'is_read' => 1 ),
+            array( 'user_id' => (int) $user_id, 'ref_key' => $ref_key )
+        );
+        return 0;
+    }
+    // Sin ref_key no hay forma de identificar la notificación: se crea una
+    // nueva directamente (nunca reutilizar una fila no relacionada).
+    if ( '' === $ref_key ) {
         return ws_notification_add( $user_id, $type, $title, $message, $link, $ref_key, $biz );
     }
-    $wpdb->update(
-        $table,
-        array( 'is_read' => 1 ),
-        array( 'user_id' => (int) $user_id, 'ref_key' => $ref_key )
-    );
-    return 0;
+    // Reutiliza la fila existente del ref_key (leída O no) en vez de crear
+    // una nueva cada vez. Antes solo miraba is_read=0, así que al marcar el
+    // bot una alerta como leída el siguiente poll creaba OTRA con el mismo
+    // ref_key → duplicados acumulados y badge que nunca bajaba.
+    $existing = $wpdb->get_row( $wpdb->prepare(
+        "SELECT id, created_at FROM {$table}
+         WHERE user_id=%d AND ref_key=%s ORDER BY id DESC LIMIT 1",
+        $user_id, $ref_key
+    ) );
+    if ( $existing ) {
+        $data = array(
+            'title'      => sanitize_text_field( $title ),
+            'message'    => sanitize_text_field( $message ),
+            'link'       => esc_url_raw( $link ),
+            'created_at' => current_time( 'mysql' ),
+        );
+        // Si la fila es de un día anterior, el aviso se vuelve a marcar como
+        // no leído (nueva oportunidad de avisar); si es del mismo día se
+        // actualiza sin molestar de nuevo (el usuario ya lo vio).
+        $today  = current_time( 'Ymd' );
+        $is_old = ( date( 'Ymd', strtotime( $existing->created_at ) ) !== $today );
+        if ( $is_old ) {
+            $data['is_read'] = 0;
+        }
+        $wpdb->update( $table, $data, array( 'id' => (int) $existing->id ) );
+        return (int) $existing->id;
+    }
+    return ws_notification_add( $user_id, $type, $title, $message, $link, $ref_key, $biz );
 }
 
 /**
@@ -539,6 +559,23 @@ function ws_notifications_cleanup( $user_id = 0 ) {
     // 2) Higiene: borra notificaciones leídas con más de 30 días.
     $wpdb->query( $wpdb->prepare(
         "DELETE FROM {$table} WHERE user_id=%d AND is_read=1 AND created_at < DATE_SUB(NOW(), INTERVAL 30 DAY)",
+        $user_id
+    ) );
+
+    // 3) Duplicados del mismo ref_key (leídos o no): conserva la fila más
+    // reciente. Limpia las copias acumuladas de sesiones anteriores. Solo se
+    // deduplican las que tienen ref_key (nunca colapsar las que no lo tienen).
+    $wpdb->query( $wpdb->prepare(
+        "DELETE n1 FROM {$table} n1
+         INNER JOIN {$table} n2
+             ON n2.user_id = n1.user_id AND n2.ref_key = n1.ref_key AND n2.id > n1.id
+         WHERE n1.user_id=%d AND n1.ref_key <> ''",
+        $user_id
+    ) );
+
+    // 4) Higiene extra: sin leer obsoletas (más de 30 días) también se borran.
+    $wpdb->query( $wpdb->prepare(
+        "DELETE FROM {$table} WHERE user_id=%d AND is_read=0 AND created_at < DATE_SUB(NOW(), INTERVAL 30 DAY)",
         $user_id
     ) );
 }
