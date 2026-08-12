@@ -55,7 +55,13 @@ function ws_can( $cap ) {
 function ws_dashboard_url() {
     $role = ws_user_role();
     if ( ! $role ) {
-        return current_user_can( 'manage_options' ) ? admin_url() : ws_business_home();
+        if ( current_user_can( 'manage_options' ) ) {
+            // Esquema de la petición (https si toca): la BD guarda http pero
+            // el sitio se sirve por https, y un admin logueado que pase por
+            // /login/ o wp-admin no debe rebotar http↔https (bucle).
+            return ws_login_scheme_url( admin_url() );
+        }
+        return ws_business_home();
     }
     return ws_panel_url( $role );
 }
