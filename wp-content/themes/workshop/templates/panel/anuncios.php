@@ -89,7 +89,7 @@ $ws_ann_types = array(
     <?php endif; ?>
 
     <div class="ws-card">
-        <h3 class="ws-card-title"><i class="fa-solid fa-list"></i> <?php esc_html_e( 'Anuncios enviados', 'workshop' ); ?> <span class="ws-count" x-text="list.length"></span></h3>
+        <h3 class="ws-card-title"><i class="fa-solid fa-list"></i> <?php esc_html_e( 'Anuncios enviados', 'workshop' ); ?> <span class="ws-ann-count" x-text="list.length"></span></h3>
 
         <template x-if="list.length === 0">
             <p class="ws-empty"><?php esc_html_e( 'Aún no has enviado anuncios. Crea el primero arriba.', 'workshop' ); ?></p>

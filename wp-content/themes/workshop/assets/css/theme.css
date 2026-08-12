@@ -1867,6 +1867,8 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-mp-hero-stats { margin-top: 30px; justify-content: flex-start; gap: 40px; }
 .ws-mp-hero-stats .ws-hero-stat strong { color: #fff; font-size: 2rem; }
 .ws-mp-hero-stats .ws-hero-stat span { color: rgba(255,255,255,.7); }
+/* Contadores del hero: números grandes (nunca como badge). */
+.ws-mp-hero-stats .ws-count { display: block; min-width: 0; height: auto; padding: 0; border-radius: 0; background: transparent; color: #fff; font-size: 2rem; font-weight: 800; line-height: 1.15; }
 /* Humo con mix-blend-mode: mezcla el brillo con el fondo (capa ligera). */
 .ws-mp-hero-smoke { position: absolute; inset: 0; z-index: 1; pointer-events: none; overflow: hidden; mix-blend-mode: screen; }
 .ws-smoke { position: absolute; border-radius: 50%; filter: blur(46px); opacity: 0; will-change: transform, opacity; }
@@ -1979,6 +1981,13 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 }
 @media (max-width: 760px) {
     .ws-mp-typewriter { min-height: 2.4em; }
+}
+@media (max-width: 560px) {
+    /* Estadísticas del hero: números grandes y etiquetas debajo, que no se aprieten. */
+    .ws-mp-hero-stats { gap: 18px 28px; margin-top: 26px; }
+    .ws-mp-hero-stats .ws-hero-stat strong,
+    .ws-mp-hero-stats .ws-count { font-size: 1.5rem; }
+    .ws-mp-hero-stats .ws-hero-stat { flex: 0 1 auto; }
 }
 @media (prefers-reduced-motion: reduce) {
     .ws-mp-typewriter-caret, .ws-smoke, .ws-mp-glow, .ws-mp-mock-inner, .ws-mp-mock-chip, .ws-mp-mock-bars span { animation: none; }
@@ -2530,7 +2539,7 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-ann-page .ws-card { margin-bottom: 1.25rem; }
 .ws-ann-form-actions { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; margin-top: .75rem; }
 .ws-ann-pin-check { display: flex; flex-direction: column; gap: .4rem; }
-.ws-count { display: inline-flex; min-width: 22px; height: 22px; padding: 0 6px; align-items: center; justify-content: center; border-radius: 999px; background: var(--ws-primary, #4f46e5); color: #fff; font-size: .8rem; font-weight: 700; }
+.ws-ann-count { display: inline-flex; min-width: 22px; height: 22px; padding: 0 6px; align-items: center; justify-content: center; border-radius: 999px; background: var(--ws-primary, #4f46e5); color: #fff; font-size: .8rem; font-weight: 700; }
 .ws-ann-list { display: flex; flex-direction: column; gap: .8rem; }
 .ws-ann-item { display: flex; gap: .9rem; align-items: flex-start; background: #fff; border: 1px solid var(--ws-border, #e2e8f0); border-left-width: 4px; border-radius: 12px; padding: .9rem 1rem; }
 .ws-ann-item.is-inactive { opacity: .55; }
