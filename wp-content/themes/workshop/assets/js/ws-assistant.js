@@ -1821,26 +1821,16 @@
         btn.classList.toggle('has-badge', !!n);
     }
 
-    // Alertas que el bot ya mostró en el chat: se recuerdan por id en
-    // localStorage para que CADA aviso (stock bajo, pedidos, anuncios del
-    // dueño, reportes programados, logs…) aparezca UNA sola vez como mensaje
-    // normal, aunque se abra el chat, se recargue la página o pase el poll.
-    var SHOWN_KEY = 'wsb_alerts_shown_v1';
-    function shownAlerts() {
-        try {
-            var v = JSON.parse(getF(SHOWN_KEY) || '[]');
-            return Array.isArray(v) ? v : [];
-        } catch (e) { return []; }
-    }
+    // Alertas que el bot ya mostró en ESTA sesión: se guardan en memoria para
+    // no repetir el mismo aviso cuando coinciden el boot y el poll de 60 s.
+    // La fuente de verdad es el servidor: al mostrar una notificación sin
+    // leer se marca como leída (is_read=1), así que al recargar la página no
+    // vuelve a aparecer (ya está leída) ni el badge se queda clavado.
+    var sessionShown = {};
     function rememberShown(ids) {
-        var s = shownAlerts();
-        (ids || []).forEach(function (id) {
-            if (s.indexOf(id) === -1) { s.push(id); }
-        });
-        if (s.length > 80) { s = s.slice(-80); }
-        try { setF(SHOWN_KEY, JSON.stringify(s)); } catch (e) {}
+        (ids || []).forEach(function (id) { sessionShown[id] = 1; });
     }
-    function isShown(id) { return shownAlerts().indexOf(id) !== -1; }
+    function isShown(id) { return !!sessionShown[id]; }
 
     // Chips útiles según la alerta (enlace de la notificación + Logs si es un
     // error de la app).
@@ -1855,9 +1845,14 @@
     }
 
     // Muestra TODAS las alertas pendientes como mensajes normales del chat,
-    // igual que el saludo de bienvenida. Cada notificación sin leer que el bot
-    // aún no haya mostrado se convierte en un mensaje; si el chat está cerrado
-    // se abre solo para avisar (y se vuelve a cerrar al tocar fuera).
+    // igual que el saludo de bienvenida. Cada notificación sin leer se
+    // convierte en un mensaje; si el chat está cerrado se abre solo para
+    // avisar (y se vuelve a cerrar al tocar fuera).
+    //
+    // IMPORTANTE: al mostrarlas se marcan como LEÍDAS en el servidor
+    // (ws_notifications_read). Sin ese paso el contador "no leídas" seguía en
+    // 2 en cada poll (la BD nunca se enteraba) y el bot repetía el badge para
+    // siempre sin volver a mostrar los avisos (dedup de localStorage).
     var alertsChecking = false;
     function showPendingAlerts(forceOpen) {
         // Una sola consulta a la vez: el poll de 60 s y el boot pueden coincidir.
@@ -1869,9 +1864,9 @@
             var unread = (json.data && json.data.unread) || 0;
             setBadge(unread);
             var items = (json.data && json.data.items) || [];
-            var fresh = items.filter(function (n) {
-                return !n.is_read && !isShown(n.id);
-            });
+            // Fuente de verdad: las no leídas del servidor. Al mostrarlas se
+            // marcan como leídas y el contador baja a 0.
+            var fresh = items.filter(function (n) { return !n.is_read; });
             if (!fresh.length) { return; }
             var openNow = forceOpen || !open;
             if (openNow && !open) {
@@ -1879,16 +1874,27 @@
                 if (!body.children.length) { boot(); }
             }
             window.setTimeout(function () {
-                // Re-filtra: si otro poll mostró algunas mientras tanto, solo
-                // pinta las que sigan sin mostrarse (dedup ante concurrencia).
+                // Solo se muestran como mensaje las que aún no se han visto en
+                // esta sesión (el boot y el poll pueden coincidir); las que el
+                // servidor ya marcó como leídas no vuelven a aparecer.
                 var pending = fresh.filter(function (n) { return !isShown(n.id); });
-                if (!pending.length) { return; }
-                rememberShown(pending.map(function (n) { return n.id; }));
-                pending.forEach(function (n) {
-                    var text = (n.title ? n.title : '🔔 Alerta') + (n.message ? ': ' + n.message : '');
-                    appendMsg(text, false);
-                    var chips = alertChips(n);
-                    if (chips.length) { appendChips(chips); }
+                // Se marcan TODAS las no leídas como leídas en el servidor
+                // (nuevas y viejas): el badge del bot y la campana del panel
+                // dejan de marcar, y el contador baja siempre a 0.
+                var ids = fresh.map(function (n) { return n.id; });
+                if (pending.length) {
+                    rememberShown(ids);
+                    pending.forEach(function (n) {
+                        var text = (n.title ? n.title : '🔔 Alerta') + (n.message ? ': ' + n.message : '');
+                        appendMsg(text, false);
+                        var chips = alertChips(n);
+                        if (chips.length) { appendChips(chips); }
+                    });
+                }
+                setBadge(Math.max(0, unread - ids.length));
+                if (!ids.length) { return; }
+                api('ws_notifications_read', { ids: ids }, function () {
+                    setBadge(0);
                 });
             }, openNow ? 900 : 0);
         });
