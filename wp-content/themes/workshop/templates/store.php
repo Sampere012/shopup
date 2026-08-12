@@ -211,10 +211,11 @@ get_header();
                     </template>
                 </div>
 
-                <button class="ws-btn ws-btn-ghost ws-btn-sm" @click="showStoreReviewForm = true" x-show="!showStoreReviewForm && !reviewSubmitted">
+                <button class="ws-btn ws-btn-ghost ws-btn-sm" @click="showStoreReviewForm = true" x-show="!showStoreReviewForm && !reviewSubmitted && !alreadyReviewed">
                     <i class="fa-solid fa-pen"></i> <?php esc_html_e( 'Escribir reseña', 'workshop' ); ?>
                 </button>
                 <p class="ws-muted ws-store-review-thanks" x-show="reviewSubmitted"><i class="fa-solid fa-circle-check ws-text-success"></i> <?php esc_html_e( '¡Gracias! Tu reseña se publicará tras una breve revisión.', 'workshop' ); ?></p>
+                <p class="ws-muted ws-store-review-thanks" x-show="alreadyReviewed && !reviewSubmitted"><i class="fa-solid fa-circle-info"></i> <?php esc_html_e( 'Ya enviaste una reseña para esta tienda. Solo se permite una por persona.', 'workshop' ); ?></p>
 
                 <!-- Formulario de reseña de la tienda -->
                 <div class="ws-review-form" x-show="showStoreReviewForm" x-cloak>

@@ -261,6 +261,7 @@
             showStoreReviewForm: false,
             reviewSubmitted: false,
             reviewBusy: false,
+            alreadyReviewed: false,
             reviewForm: { customer_name: '', rating: 5, comment: '' },
             // Consulta de estado de pedido.
             trackOpen: false,
@@ -397,10 +398,22 @@
             },
             closeProduct() { this.productOpen = false; this.activeProduct = null; },
             // --- Valoraciones de la tienda ---
+            // Hash persistente del visitante: identifica al anónimo en el
+            // servidor para que solo pueda enviar UNA reseña por tienda
+            // (anti puntuación infinita). Se guarda en localStorage.
+            clientHash() {
+                let h = '';
+                try { h = localStorage.getItem('ws_reviewer_hash'); } catch (e) {}
+                if (!h) {
+                    h = 'c_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 12);
+                    try { localStorage.setItem('ws_reviewer_hash', h); } catch (e) {}
+                }
+                return h;
+            },
             loadStoreReviews() {
                 if (!this.locationId) return;
                 this.reviewBusy = true;
-                $('ws_reviews_get', { location_id: this.locationId })
+                $('ws_reviews_get', { location_id: this.locationId, client_hash: this.clientHash() })
                     .then(res => {
                         if (res.success) {
                             // Normaliza SIEMPRE a array: el endpoint público
@@ -410,6 +423,7 @@
                             const raw = res.data && res.data.data !== undefined ? res.data.data : (res.data || []);
                             this.storeReviews = Array.isArray(raw) ? raw : [];
                             this.storeRating = (res.data && res.data.stats && res.data.stats.average) || 0;
+                            this.alreadyReviewed = !!(res.data && res.data.already_reviewed);
                         }
                     })
                     .catch(err => console.error('Error cargando valoraciones:', err))
@@ -428,21 +442,35 @@
                     return;
                 }
                 if (!this.locationId) return;
+                if (this.alreadyReviewed) {
+                    toast('info', 'Ya enviaste una reseña', 'Solo se permite una por persona.');
+                    this.showStoreReviewForm = false;
+                    return;
+                }
                 this.reviewBusy = true;
                 $('ws_reviews_save', {
                     location_id: this.locationId,
                     customer_name: form.customer_name,
                     rating: form.rating,
-                    comment: form.comment
+                    comment: form.comment,
+                    client_hash: this.clientHash()
                 })
                     .then(res => {
                         if (res.success) {
                             toast('success', 'Reseña enviada', 'Se revisará antes de publicarse.');
                             this.showStoreReviewForm = false;
                             this.reviewSubmitted = true;
+                            this.alreadyReviewed = true;
                             this.reviewForm = { customer_name: '', rating: 5, comment: '' };
+                            // Si la reseña se reabrió (rechazada → pendiente),
+                            // la tienda sigue sin publicar nada nuevo.
+                            this.loadStoreReviews();
                         } else {
-                            toast('error', 'Error', res.data && res.data.msg);
+                            // Duplicado (u otro motivo): se bloquea el form y
+                            // se muestra el motivo del servidor.
+                            this.alreadyReviewed = true;
+                            this.showStoreReviewForm = false;
+                            toast('error', 'No se pudo enviar', res.data && res.data.msg);
                         }
                     })
                     .catch(() => toast('error', 'Error de red'))

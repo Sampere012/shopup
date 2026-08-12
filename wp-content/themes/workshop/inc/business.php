@@ -411,11 +411,21 @@ function ws_current_business() {
     }
     if ( wp_doing_ajax() ) {
         $pslug = sanitize_title( (string) ( $_POST['ws_biz'] ?? '' ) );
-        if ( '' !== $pslug && current_user_can( 'manage_options' ) ) {
-            $b = WS_Business::get_by_slug( $pslug );
-            if ( $b ) {
-                $biz = $b;
-                return $biz;
+        if ( '' !== $pslug ) {
+            // El AJAX del frontend adjunta ws_biz (slug del negocio de la URL)
+            // a TODAS las peticiones. Para el admin siempre se respeta; para
+            // un visitante sin sesión también (la reseña/carrito de una tienda
+            // de /negocio/tienda/… debe ir a la tabla de ESE negocio, no a la
+            // del negocio por defecto). Los usuarios con rol de negocio usan
+            // su propio negocio (user meta) y nunca el slug ajeno.
+            $is_admin = current_user_can( 'manage_options' );
+            $has_role = ( '' !== (string) ws_user_role() );
+            if ( $is_admin || ! $has_role ) {
+                $b = WS_Business::get_by_slug( $pslug );
+                if ( $b ) {
+                    $biz = $b;
+                    return $biz;
+                }
             }
         }
     }

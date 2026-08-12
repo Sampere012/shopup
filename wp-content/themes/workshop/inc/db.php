@@ -258,6 +258,7 @@ function ws_db_tables() {
             verified_purchase TINYINT(1) NOT NULL DEFAULT 0,
             status VARCHAR(20) NOT NULL DEFAULT 'pending',
             approved TINYINT(1) NOT NULL DEFAULT 0,
+            client_hash VARCHAR(64) NOT NULL DEFAULT '',
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -265,7 +266,8 @@ function ws_db_tables() {
             KEY location_id (location_id),
             KEY customer_id (customer_id),
             KEY approved (approved),
-            KEY status (status)
+            KEY status (status),
+            KEY client_hash (client_hash)
         ) {charset};",
 
         'loyalty_transactions' => "CREATE TABLE {prefix}ws_loyalty_transactions (
@@ -539,14 +541,36 @@ function ws_db_migrate() {
         }
     }
 
-    // Columna `status` en reseñas: moderación con 3 estados
-    // (pending/approved/rejected). Se rellena desde `approved` (legacy).
-    $rt = $wpdb->prefix . WS_TABLE_PREFIX . 'reviews';
-    if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $rt ) ) === $rt ) {
+    // Columnas en reseñas: `status` (moderación con 3 estados) y `client_hash`
+    // (anti-duplicados de reseñas anónimas). Se aplica a la tabla por defecto
+    // Y a la de cada negocio con slug: las reseñas de una tienda /negocio/
+    // viven en la tabla del negocio y sin la columna save_review fallaría con
+    // "Unknown column".
+    $ws_review_suffixes = array( '' );
+    if ( class_exists( 'WS_Business' ) && $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', WS_Business::table() ) ) === WS_Business::table() ) {
+        foreach ( WS_Business::all() as $ws_rb ) {
+            $r_slug = (string) ( $ws_rb->slug ?? '' );
+            if ( '' !== $r_slug ) {
+                $ws_review_suffixes[] = ws_biz_table_suffix( $r_slug );
+            }
+        }
+    }
+    foreach ( $ws_review_suffixes as $ws_rev_suffix ) {
+        $rt = ws_table_for( $ws_rev_suffix, 'reviews' );
+        if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $rt ) ) !== $rt ) {
+            continue;
+        }
         $r_cols = $wpdb->get_col( "SHOW COLUMNS FROM {$rt}", 0 );
         if ( ! in_array( 'status', $r_cols, true ) ) {
             $wpdb->query( "ALTER TABLE {$rt} ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'pending' AFTER comment" );
             $wpdb->query( "UPDATE {$rt} SET status = 'approved' WHERE approved = 1" );
+        }
+        if ( ! in_array( 'client_hash', $r_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$rt} ADD COLUMN client_hash VARCHAR(64) NOT NULL DEFAULT '' AFTER approved" );
+        }
+        $has_hash_idx = $wpdb->get_var( "SHOW INDEX FROM {$rt} WHERE Key_name='client_hash'" );
+        if ( ! $has_hash_idx ) {
+            $wpdb->query( "ALTER TABLE {$rt} ADD KEY client_hash (client_hash)" );
         }
     }
 

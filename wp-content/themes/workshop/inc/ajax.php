@@ -1431,10 +1431,39 @@ function ws_ajax_reviews_get() {
             ? WS_Reviews::get_location_rating( $location_id )
             : WS_Reviews::get_product_rating( $product_id );
 
+        // ¿Este visitante ya reseñó esta tienda? (anti-duplicados): se devuelve
+        // para que la tienda oculte el formulario y muestre el aviso. Una
+        // reseña RECHAZADA no cuenta: el autor puede reintentar y el servidor
+        // reabre la misma fila como pendiente. Lógica idéntica a save.
+        $already_reviewed = false;
+        $uid = get_current_user_id();
+        $dup = null;
+        if ( $uid ) {
+            $cid = (int) get_user_meta( $uid, 'ws_customer_id', true );
+            if ( $cid ) {
+                $dup = WS_Reviews::find_duplicate( $location_id, $product_id, (int) $cid, '' );
+            }
+            if ( ! $dup ) {
+                $dup = WS_Reviews::find_duplicate( $location_id, $product_id, 0, 'u_' . (int) $uid );
+            }
+        } else {
+            $chash = sanitize_key( $_POST['client_hash'] ?? '' );
+            if ( '' === $chash ) {
+                $chash = 'ip_' . md5( (string) ( $_SERVER['REMOTE_ADDR'] ?? '' ) . '|' . (string) ( $_SERVER['HTTP_USER_AGENT'] ?? '' ) );
+            }
+            $dup = WS_Reviews::find_duplicate( $location_id, $product_id, 0, $chash );
+        }
+        if ( $dup ) {
+            // Si la reseña anterior fue rechazada, el form vuelve a mostrarse
+            // (el autor puede enviar una corregida, que reabre la misma fila).
+            $already_reviewed = ( 'rejected' !== ( $dup->status ?? '' ) );
+        }
+
         wp_send_json_success( array(
             'data'  => array(
-                'data'  => $review_rows,
-                'stats' => $rating_stats,
+                'data'              => $review_rows,
+                'stats'             => $rating_stats,
+                'already_reviewed'  => $already_reviewed,
             ),
         ) );
     }
@@ -1509,6 +1538,50 @@ function ws_ajax_reviews_save() {
         $status = 'pending';
     }
     $data['status'] = $status;
+
+    // Anti-duplicados: una persona = una reseña por tienda (o producto).
+    // El usuario logueado se identifica por customer_id (solo si tiene ficha
+    // de cliente real en ws_customers); el resto — clientes WP sin ficha y
+    // visitantes anónimos — por un client_hash (el del navegador enviado por
+    // theme.js, o uno estable por IP+UA si no llega).
+    $uid = get_current_user_id();
+    $cid = (int) $data['customer_id'];
+    if ( ! $cid && $uid ) {
+        // Un usuario de WordPress (cliente) con ficha en ws_customers.
+        $cid = (int) get_user_meta( $uid, 'ws_customer_id', true );
+        $data['customer_id'] = $cid;
+    }
+    if ( ! $cid ) {
+        $client_hash = sanitize_key( $_POST['client_hash'] ?? '' );
+        if ( '' === $client_hash ) {
+            if ( $uid ) {
+                // Cliente WP sin ficha: espacio de nombres propio, no colisiona
+                // con los ids reales de ws_customers.
+                $client_hash = 'u_' . $uid;
+            } else {
+                // Visitante anónimo sin JS/localStorage: hash estable por IP.
+                $client_hash = 'ip_' . md5( (string) ( $_SERVER['REMOTE_ADDR'] ?? '' ) . '|' . (string) ( $_SERVER['HTTP_USER_AGENT'] ?? '' ) );
+            }
+        }
+        $data['client_hash'] = $client_hash;
+    }
+
+    $existing = WS_Reviews::find_duplicate(
+        (int) $data['location_id'],
+        (int) $data['product_id'],
+        (int) $data['customer_id'],
+        (string) ( $data['client_hash'] ?? '' )
+    );
+    if ( $existing ) {
+        // Reseña rechazada: se reabre la MISMA fila como pendiente (el autor
+        // corrige su opinión) en vez de crear otra. Pendiente/aprobada: la
+        // persona ya votó; se bloquea para evitar puntuación infinita.
+        if ( 'rejected' === $existing->status ) {
+            $review_id = WS_Reviews::save_review( $data, (int) $existing->id );
+            wp_send_json_success( array( 'data' => array( 'review_id' => $review_id, 'status' => 'pending', 'reopened' => true ) ) );
+        }
+        wp_send_json_error( array( 'msg' => __( 'Ya enviaste una reseña para esta tienda. Solo se permite una por persona.', 'workshop' ) ) );
+    }
 
     $review_id = WS_Reviews::save_review( $data );
     wp_send_json_success( array( 'data' => array( 'review_id' => $review_id, 'status' => $status ) ) );

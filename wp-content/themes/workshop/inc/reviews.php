@@ -129,18 +129,50 @@ class WS_Reviews {
             'verified_purchase' => (int) ($data['verified_purchase'] ?? 0),
             'status' => $status,
             'approved' => 'approved' === $status ? 1 : 0,
+            'client_hash' => sanitize_text_field( $data['client_hash'] ?? '' ),
         );
 
         if ( $id ) {
             $wpdb->update( $table, $fields, array( 'id' => $id ), 
-                array( '%d', '%d', '%d', '%s', '%d', '%s', '%s', '%d', '%s', '%d' ), 
+                array( '%d', '%d', '%d', '%s', '%d', '%s', '%s', '%d', '%s', '%d', '%s' ), 
                 array( '%d' ) );
             return $id;
         } else {
             $wpdb->insert( $table, $fields, 
-                array( '%d', '%d', '%d', '%s', '%d', '%s', '%s', '%d', '%s', '%d' ) );
+                array( '%d', '%d', '%d', '%s', '%d', '%s', '%s', '%d', '%s', '%d', '%s' ) );
             return $wpdb->insert_id;
         }
+    }
+
+    /**
+     * Anti-duplicados: comprueba si el autor ya envió una reseña para esa
+     * tienda (location_id) o producto. Para usuarios logueados se usa el
+     * customer_id; para visitantes anónimos un client_hash del navegador.
+     * Devuelve la fila existente (id + status) o null si no hay ninguna.
+     * Una persona = UNA reseña por tienda: si ya existe una (pendiente,
+     * aprobada o rechazada) nunca se crea otra; el reenvío reabre la misma.
+     */
+    public static function find_duplicate( $location_id = 0, $product_id = 0, $customer_id = 0, $client_hash = '' ) {
+        global $wpdb;
+        $table = self::table( 'reviews' );
+        if ( $customer_id > 0 ) {
+            return $wpdb->get_row( $wpdb->prepare(
+                "SELECT id, status FROM {$table}
+                 WHERE customer_id = %d AND location_id = %d AND product_id = %d
+                 ORDER BY id DESC LIMIT 1",
+                $customer_id, (int) $location_id, (int) $product_id
+            ) );
+        }
+        $hash = sanitize_text_field( $client_hash );
+        if ( '' === $hash ) {
+            return null;
+        }
+        return $wpdb->get_row( $wpdb->prepare(
+            "SELECT id, status FROM {$table}
+             WHERE client_hash = %s AND location_id = %d AND product_id = %d
+             ORDER BY id DESC LIMIT 1",
+            $hash, (int) $location_id, (int) $product_id
+        ) );
     }
 
     public static function delete_review( $id ) {
