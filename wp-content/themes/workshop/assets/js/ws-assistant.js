@@ -1821,49 +1821,81 @@
         btn.classList.toggle('has-badge', !!n);
     }
 
-    // Evita repetir el aviso del mismo error incluso tras recargar la página.
-    var lastLogAlert = getF('wsb_log_alert_seen') || '';
-    function rememberLogAlert(key) { lastLogAlert = key; setF('wsb_log_alert_seen', key); }
+    // Alertas que el bot ya mostró en el chat: se recuerdan por id en
+    // localStorage para que CADA aviso (stock bajo, pedidos, anuncios del
+    // dueño, reportes programados, logs…) aparezca UNA sola vez como mensaje
+    // normal, aunque se abra el chat, se recargue la página o pase el poll.
+    var SHOWN_KEY = 'wsb_alerts_shown_v1';
+    function shownAlerts() {
+        try {
+            var v = JSON.parse(getF(SHOWN_KEY) || '[]');
+            return Array.isArray(v) ? v : [];
+        } catch (e) { return []; }
+    }
+    function rememberShown(ids) {
+        var s = shownAlerts();
+        (ids || []).forEach(function (id) {
+            if (s.indexOf(id) === -1) { s.push(id); }
+        });
+        if (s.length > 80) { s = s.slice(-80); }
+        try { setF(SHOWN_KEY, JSON.stringify(s)); } catch (e) {}
+    }
+    function isShown(id) { return shownAlerts().indexOf(id) !== -1; }
 
-    // En el panel y en wp-admin: muestra el badge, avisa de pedidos nuevos y
-    // — lo más importante — el bot abre SOLO cuando llega un error de la app
-    // (logs) o un evento de seguridad, sin que el admin tenga que preguntar.
-    function checkNotifications() {
-        if (!isPanel || locked) { return; }
+    // Chips útiles según la alerta (enlace de la notificación + Logs si es un
+    // error de la app).
+    function alertChips(n) {
+        var chips = [];
+        if (n.link) { chips.push({ label: 'Ver', url: n.link, icon: 'fa-arrow-pointer' }); }
+        if (n.ref_key && n.ref_key.indexOf('ws_log_') === 0) {
+            if (C.logsUrl) { chips.push({ label: 'Ver Logs', url: C.logsUrl, icon: 'fa-file-lines' }); }
+            chips.push({ label: 'Reporte de logs', icon: 'fa-chart-line', send: 'reporte de logs' });
+        }
+        return chips;
+    }
+
+    // Muestra TODAS las alertas pendientes como mensajes normales del chat,
+    // igual que el saludo de bienvenida. Cada notificación sin leer que el bot
+    // aún no haya mostrado se convierte en un mensaje; si el chat está cerrado
+    // se abre solo para avisar (y se vuelve a cerrar al tocar fuera).
+    var alertsChecking = false;
+    function showPendingAlerts(forceOpen) {
+        // Una sola consulta a la vez: el poll de 60 s y el boot pueden coincidir.
+        if (!isPanel || locked || alertsChecking) { return; }
+        alertsChecking = true;
         api('ws_notifications_list', {}, function (json) {
+            alertsChecking = false;
             if (!json || !json.success) { return; }
             var unread = (json.data && json.data.unread) || 0;
             setBadge(unread);
             var items = (json.data && json.data.items) || [];
-            var hasNew = items.some(function (n) { return !n.is_read && (n.type === 'order_new' || n.type === 'order_pending'); });
-            if (hasNew && !open && !getF('wsb_pro_alert')) {
-                setF('wsb_pro_alert', '1');
-                var ordersUrl = C.shortcuts && C.shortcuts.panel && C.shortcuts.panel.orders && C.shortcuts.panel.orders.url;
-                window.setTimeout(function () {
-                    setOpen(true);
-                    if (!body.children.length) { boot(); }
-                    appendMsg('🔔 Tienes pedidos nuevos esperando tu revisión.', false);
-                    if (ordersUrl) { appendChips([{ label: 'Ver pedidos', url: ordersUrl, icon: 'fa-cart-shopping' }]); }
-                }, 600);
+            var fresh = items.filter(function (n) {
+                return !n.is_read && !isShown(n.id);
+            });
+            if (!fresh.length) { return; }
+            var openNow = forceOpen || !open;
+            if (openNow && !open) {
+                setOpen(true);
+                if (!body.children.length) { boot(); }
             }
-            // Errores de la app (ref_key ws_log_*) y alertas de seguridad
-            // (sec_alert_*): el bot avisa automáticamente al admin de WP.
-            var logErr = items.filter(function (n) {
-                return !n.is_read && n.ref_key && (n.ref_key.indexOf('ws_log_') === 0 || n.ref_key.indexOf('sec_alert_') === 0);
-            })[0];
-            if (logErr && !open && logErr.ref_key !== lastLogAlert) {
-                rememberLogAlert(logErr.ref_key);
-                window.setTimeout(function () {
-                    setOpen(true);
-                    if (!body.children.length) { boot(); }
-                    appendMsg((logErr.title ? logErr.title + ': ' : '⚠️ ') + logErr.message, false);
-                    var chips = [];
-                    if (C.logsUrl) { chips.push({ label: 'Ver Logs', url: C.logsUrl, icon: 'fa-file-lines' }); }
-                    chips.push({ label: 'Reporte de logs', icon: 'fa-chart-line', send: 'reporte de logs' });
-                    appendChips(chips);
-                }, 800);
-            }
+            window.setTimeout(function () {
+                // Re-filtra: si otro poll mostró algunas mientras tanto, solo
+                // pinta las que sigan sin mostrarse (dedup ante concurrencia).
+                var pending = fresh.filter(function (n) { return !isShown(n.id); });
+                if (!pending.length) { return; }
+                rememberShown(pending.map(function (n) { return n.id; }));
+                pending.forEach(function (n) {
+                    var text = (n.title ? n.title : '🔔 Alerta') + (n.message ? ': ' + n.message : '');
+                    appendMsg(text, false);
+                    var chips = alertChips(n);
+                    if (chips.length) { appendChips(chips); }
+                });
+            }, openNow ? 900 : 0);
         });
+    }
+
+    function checkNotifications() {
+        showPendingAlerts(false);
     }
 
     // Visitantes con carrito: el bot se adelanta al terminar el pedido.
@@ -2381,6 +2413,10 @@
                 appendMsg('La última vez estuvimos con "' + mem.lastEntity + '" ✨ ¿Seguimos con eso o prefieres otra cosa?', false);
                 appendChips(resumeChip ? [resumeChip, { label: 'Otra cosa', icon: 'fa-bolt', send: 'atajos' }] : [{ label: 'Otra cosa', icon: 'fa-bolt', send: 'atajos' }]);
             }
+            // Al entrar al panel, el bot muestra de inmediato las alertas
+            // pendientes (stock, pedidos, anuncios…) como mensajes normales,
+            // sin que el usuario tenga que preguntar por ellas.
+            showPendingAlerts(false);
         } else if (!C.logged) {
             reply(S.welcomeGuest + ' ' + S.registerHook, [
                 { label: 'Buscar producto', icon: 'fa-magnifying-glass', send: 'buscar' },

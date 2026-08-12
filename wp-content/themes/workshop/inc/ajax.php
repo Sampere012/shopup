@@ -2204,3 +2204,86 @@ function ws_ajax_loyalty_adjust_points() {
     WS_Loyalty::adjust_points( $customer_id, $points, $reason );
     wp_send_json_success();
 }
+
+/* ---------------------------------------------------------------------
+ * Anuncios del negocio (ShopUp → Anuncios)
+ * ------------------------------------------------------------------ */
+
+function ws_announcements_json() {
+    if ( ! function_exists( 'ws_announcements_for_business' ) ) {
+        return array();
+    }
+    return array_map( static function ( $a ) {
+        return array(
+            'id'      => (int) $a->id,
+            'title'   => (string) $a->title,
+            'message' => (string) $a->message,
+            'type'    => (string) $a->type,
+            'pinned'  => (int) $a->pinned,
+            'active'  => (int) $a->active,
+            'date'    => mysql2date( 'd/m/Y H:i', $a->created_at ),
+        );
+    }, ws_announcements_for_business() );
+}
+
+add_action( 'wp_ajax_ws_announcement_save', 'ws_ajax_announcement_save' );
+function ws_ajax_announcement_save() {
+    if ( ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Sesión expirada.', 'workshop' ) ) );
+    }
+    if ( ! function_exists( 'ws_announcement_can' ) || ! ws_announcement_can() ) {
+        wp_send_json_error( array( 'msg' => __( 'No tienes permiso.', 'workshop' ) ) );
+    }
+    $id = ws_announcement_save( $_POST, (int) ( $_POST['id'] ?? 0 ) );
+    if ( ! $id ) {
+        wp_send_json_error( array( 'msg' => __( 'El título es obligatorio.', 'workshop' ) ) );
+    }
+    ws_log_audit( 'announcement_save', 'announcement', $id );
+    wp_send_json_success( array(
+        'msg'  => (int) ( $_POST['id'] ?? 0 ) ? __( 'Anuncio actualizado.', 'workshop' ) : __( 'Anuncio enviado a todo tu equipo.', 'workshop' ),
+        'list' => ws_announcements_json(),
+    ) );
+}
+
+add_action( 'wp_ajax_ws_announcement_toggle', 'ws_ajax_announcement_toggle' );
+function ws_ajax_announcement_toggle() {
+    if ( ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Sesión expirada.', 'workshop' ) ) );
+    }
+    if ( ! function_exists( 'ws_announcement_can' ) || ! ws_announcement_can() ) {
+        wp_send_json_error( array( 'msg' => __( 'No tienes permiso.', 'workshop' ) ) );
+    }
+    $ann = ws_announcement_get( (int) ( $_POST['id'] ?? 0 ) );
+    if ( ! $ann || (int) $ann->business_id !== ws_current_business_id() ) {
+        wp_send_json_error( array( 'msg' => __( 'Anuncio no encontrado.', 'workshop' ) ) );
+    }
+    $field = in_array( (string) ( $_POST['field'] ?? '' ), array( 'active', 'pinned' ), true ) ? sanitize_key( $_POST['field'] ) : 'active';
+    ws_announcement_toggle( (int) $ann->id, $field );
+    // Al ACTIVAR un anuncio que estaba inactivo, se entrega la notificación a
+    // todos los usuarios del negocio (el broadcast inicial solo ocurre al crear).
+    if ( 'active' === $field ) {
+        $after = ws_announcement_get( (int) $ann->id );
+        if ( $after && (int) $after->active === 1 ) {
+            ws_announcement_broadcast( (int) $ann->id );
+        }
+    }
+    ws_log_audit( 'announcement_toggle_' . $field, 'announcement', (int) $ann->id );
+    wp_send_json_success( array( 'list' => ws_announcements_json() ) );
+}
+
+add_action( 'wp_ajax_ws_announcement_delete', 'ws_ajax_announcement_delete' );
+function ws_ajax_announcement_delete() {
+    if ( ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Sesión expirada.', 'workshop' ) ) );
+    }
+    if ( ! function_exists( 'ws_announcement_can' ) || ! ws_announcement_can() ) {
+        wp_send_json_error( array( 'msg' => __( 'No tienes permiso.', 'workshop' ) ) );
+    }
+    $ann = ws_announcement_get( (int) ( $_POST['id'] ?? 0 ) );
+    if ( ! $ann || (int) $ann->business_id !== ws_current_business_id() ) {
+        wp_send_json_error( array( 'msg' => __( 'Anuncio no encontrado.', 'workshop' ) ) );
+    }
+    ws_announcement_delete( (int) $ann->id );
+    ws_log_audit( 'announcement_delete', 'announcement', (int) $ann->id );
+    wp_send_json_success( array( 'list' => ws_announcements_json() ) );
+}

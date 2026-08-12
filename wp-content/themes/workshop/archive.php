@@ -1,25 +1,14 @@
 <?php
 /**
- * Índice de entradas (blog) de WordPress.
- *
- * Se muestra en la página asignada como «página de entradas» desde wp-admin
- * (Ajustes → Portada). Lista las Entradas del sitio con el diseño del tema.
+ * Archivo de entradas de WordPress (categorías, etiquetas, fechas…).
  *
  * @package Workshop
  */
 
 defined( 'ABSPATH' ) || exit;
 
-// Fallback del tema: si WordPress llega aquí sin un contexto de blog (URL no
-// capturada por el router ni por ninguna plantilla más específica), se muestra
-// la portada por defecto como antes.
-if ( ! is_home() && ! is_archive() && ! is_search() ) {
-    include WS_PATH . 'templates/landing.php';
-    exit;
-}
-
 get_header();
-$ws_blog_title = ( get_option( 'page_for_posts' ) ) ? get_the_title( get_option( 'page_for_posts' ) ) : __( 'Entradas', 'workshop' );
+$ws_arch_title = is_category() || is_tag() || is_tax() ? single_term_title( '', false ) : get_the_archive_title();
 ?>
 <div class="ws-landing ws-static-page">
     <section class="ws-static-hero">
@@ -27,13 +16,11 @@ $ws_blog_title = ( get_option( 'page_for_posts' ) ) ? get_the_title( get_option(
             <nav class="ws-breadcrumbs" aria-label="<?php esc_attr_e( 'Migas de pan', 'workshop' ); ?>">
                 <a href="<?php echo esc_url( home_url( '/' ) ); ?>"><i class="fa-solid fa-house"></i> <?php esc_html_e( 'Inicio', 'workshop' ); ?></a>
                 <span class="ws-breadcrumb-sep"><i class="fa-solid fa-chevron-right"></i></span>
-                <span aria-current="page"><?php echo esc_html( $ws_blog_title ); ?></span>
+                <span aria-current="page"><?php echo esc_html( wp_strip_all_tags( $ws_arch_title ) ); ?></span>
             </nav>
-            <span class="ws-hero-badge"><i class="fa-solid fa-newspaper"></i> <?php esc_html_e( 'Blog', 'workshop' ); ?></span>
-            <h1><?php echo esc_html( $ws_blog_title ); ?></h1>
-            <?php if ( is_archive() ) : ?>
-                <p class="ws-static-hero-sub"><?php the_archive_description(); ?></p>
-            <?php endif; ?>
+            <span class="ws-hero-badge"><i class="fa-solid fa-folder-open"></i> <?php esc_html_e( 'Archivo', 'workshop' ); ?></span>
+            <h1><?php echo esc_html( wp_strip_all_tags( $ws_arch_title ) ); ?></h1>
+            <?php the_archive_description( '<p class="ws-static-hero-sub">', '</p>' ); ?>
         </div>
     </section>
 
@@ -59,7 +46,6 @@ $ws_blog_title = ( get_option( 'page_for_posts' ) ) ? get_the_title( get_option(
                     </article>
                 <?php endwhile; ?>
             </div>
-
             <?php
             the_posts_pagination( array(
                 'mid_size'  => 2,
@@ -68,7 +54,7 @@ $ws_blog_title = ( get_option( 'page_for_posts' ) ) ? get_the_title( get_option(
             ) );
             ?>
         <?php else : ?>
-            <p class="ws-empty ws-wp-empty"><?php esc_html_e( 'Aún no hay entradas publicadas.', 'workshop' ); ?></p>
+            <p class="ws-empty ws-wp-empty"><?php esc_html_e( 'No hay entradas en esta sección.', 'workshop' ); ?></p>
         <?php endif; ?>
     </main>
 </div>

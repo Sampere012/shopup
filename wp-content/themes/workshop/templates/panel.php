@@ -30,6 +30,7 @@ $items = array(
     'pos-sales' => array( 'icon' => 'fa-chart-line',   'label' => __( 'Ventas POS', 'workshop' ), 'caps' => array( 'pos_view' ) ),
     'reviews'   => array( 'icon' => 'fa-star',         'label' => __( 'Valoraciones', 'workshop' ), 'caps' => array( 'reviews_view' ) ),
     'loyalty'   => array( 'icon' => 'fa-gift',         'label' => __( 'Fidelización', 'workshop' ), 'caps' => array( 'loyalty_manage' ) ),
+    'anuncios'  => array( 'icon' => 'fa-bullhorn',     'label' => __( 'Anuncios', 'workshop' ), 'caps' => array( 'settings_manage', 'workers_manage' ) ),
     'plan'      => array( 'icon' => 'fa-crown',        'label' => __( 'Plan', 'workshop' ), 'caps' => array() ),
     'permissions' => array( 'icon' => 'fa-shield-halved','label' => __( 'Permisos', 'workshop' ), 'caps' => array( 'permissions_manage' ) ),
     'reports'   => array( 'icon' => 'fa-chart-pie',    'label' => __( 'Reportes', 'workshop' ), 'caps' => array( 'reports_view' ) ),
@@ -208,6 +209,28 @@ get_header();
                 </div>
             <?php endif; ?>
             <?php
+            // Anuncios anclados del negocio: notificaciones destacadas que el
+            // dueño fija desde ShopUp → Anuncios. Se ven en todo el panel.
+            if ( function_exists( 'ws_announcements_pinned' ) ) :
+                foreach ( ws_announcements_pinned() as $ws_ann ) :
+                    $ws_ann_kind = 'warning' === $ws_ann->type ? 'warn' : $ws_ann->type;
+                    if ( ! in_array( $ws_ann_kind, array( 'danger', 'info', 'warn' ), true ) ) {
+                        $ws_ann_kind = 'info';
+                    }
+                    ?>
+                    <div class="ws-banner ws-banner-<?php echo esc_attr( $ws_ann_kind ); ?> ws-ann-banner" data-ann="<?php echo (int) $ws_ann->id; ?>">
+                        <i class="fa-solid fa-bullhorn"></i>
+                        <div>
+                            <strong><?php echo esc_html( $ws_ann->title ); ?></strong>
+                            <span><?php echo esc_html( $ws_ann->message ); ?></span>
+                        </div>
+                        <button type="button" class="ws-banner-close" onclick="wsDismissAnnouncement(<?php echo (int) $ws_ann->id; ?>, this)" aria-label="<?php esc_attr_e( 'Ocultar anuncio', 'workshop' ); ?>"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                    <?php
+                endforeach;
+            endif;
+            ?>
+            <?php
             $file = WS_PATH . 'templates/panel/' . $page . '.php';
             if ( file_exists( $file ) ) {
                 include $file;
@@ -314,4 +337,25 @@ get_header();
         </div>
     </div>
 </div>
+<script>
+// Anuncios anclados del panel: se pueden ocultar y no vuelven a aparecer.
+(function () {
+    var KEY = 'ws_dismissed_announcements';
+    function getDismissed() {
+        try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (e) { return []; }
+    }
+    window.wsDismissAnnouncement = function (id, btn) {
+        var list = getDismissed();
+        if (list.indexOf(id) === -1) { list.push(id); }
+        try { localStorage.setItem(KEY, JSON.stringify(list)); } catch (e) {}
+        var banner = btn && btn.closest ? btn.closest('.ws-ann-banner') : null;
+        if (banner) { banner.remove(); }
+    };
+    var dismissed = getDismissed();
+    document.querySelectorAll('.ws-ann-banner').forEach(function (b) {
+        var id = parseInt(b.getAttribute('data-ann') || '0', 10);
+        if (dismissed.indexOf(id) !== -1) { b.remove(); }
+    });
+})();
+</script>
 <?php get_footer(); ?>

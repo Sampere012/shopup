@@ -6,7 +6,7 @@
     // worker sigue registrándose para el modo offline y las actualizaciones.
 
     // Páginas del panel del negocio (coinciden con el router del tema).
-    var WS_PANEL_PAGES = ['dashboard','products','locations','suppliers','stock','movements','orders','shifts','workers','permissions','reports','settings','account','appearance','customers','reviews','loyalty','pos','pos-sales','plan'];
+    var WS_PANEL_PAGES = ['dashboard','products','locations','suppliers','stock','movements','orders','shifts','workers','permissions','reports','settings','account','appearance','customers','reviews','loyalty','pos','pos-sales','plan','anuncios'];
 
     // Base path de la instalación ('' en producción, '/workshop' en local). La
     // usa offline.html para construir enlaces absolutos hacia las secciones.
@@ -22,6 +22,9 @@
     // (para trabajar offline) y guarda la URL del panel para la página offline.
     function wsPrecachePanel() {
         if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) return;
+        // Sin conexión no tiene sentido pedir páginas (y evita que el SW
+        // intente descargar en ráfaga al volver la señal en móvil).
+        if (navigator.onLine === false) return;
         var path = location.pathname;
         var idx = path.indexOf('panel/');
         if (idx === -1) return;

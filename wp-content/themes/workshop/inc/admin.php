@@ -333,3 +333,90 @@ function ws_admin_page_marketplace() {
     </script>
     <?php
 }
+
+/* -------------------------------------------------------------------------
+ * Contenido del sitio: la plantilla está conectada con WordPress
+ * ---------------------------------------------------------------------- */
+
+add_action( 'admin_menu', 'ws_site_content_admin_menu', 25 );
+function ws_site_content_admin_menu() {
+    add_submenu_page(
+        'ws-permissions',
+        __( 'Contenido del sitio', 'workshop' ),
+        __( 'Contenido del sitio', 'workshop' ),
+        'manage_options',
+        'ws-site-content',
+        'ws_admin_page_site_content'
+    );
+}
+
+function ws_admin_page_site_content() {
+    if ( ! current_user_can( 'manage_options' ) ) {
+        wp_die( esc_html__( 'No tienes permiso para acceder a esta página.', 'workshop' ) );
+    }
+    $cards = array(
+        array(
+            'icon'  => 'dashicons-admin-page',
+            'title' => __( 'Páginas', 'workshop' ),
+            'desc'  => __( 'Crea páginas del sitio (promociones, términos, políticas…) con el editor de WordPress: textos, fotos y bloques. Se publican en tu dominio con el diseño de la plantilla.', 'workshop' ),
+            'url'   => admin_url( 'edit.php?post_type=page' ),
+            'label' => __( 'Editar páginas', 'workshop' ),
+        ),
+        array(
+            'icon'  => 'dashicons-admin-post',
+            'title' => __( 'Entradas (blog)', 'workshop' ),
+            'desc'  => __( 'Escribe noticias o anuncios del sitio. Para mostrar el listado crea una página y asígnala en Ajustes → Portada como «página de entradas».', 'workshop' ),
+            'url'   => admin_url( 'edit.php' ),
+            'label' => __( 'Editar entradas', 'workshop' ),
+        ),
+        array(
+            'icon'  => 'dashicons-menu',
+            'title' => __( 'Menús', 'workshop' ),
+            'desc'  => __( 'El menú superior (navbar) de la plantilla se edita aquí. Asigna un menú a la ubicación «Menú principal» y añade tus páginas o enlaces personalizados.', 'workshop' ),
+            'url'   => admin_url( 'nav-menus.php' ),
+            'label' => __( 'Editar menús', 'workshop' ),
+        ),
+        array(
+            'icon'  => 'dashicons-edit-page',
+            'title' => __( 'Páginas y pie (Ayuda, Contacto, Acerca)', 'workshop' ),
+            'desc'  => __( 'Edita los textos de las páginas Ayuda, Contacto y Acerca de nosotros, las preguntas frecuentes, las columnas del pie y las redes sociales.', 'workshop' ),
+            'url'   => admin_url( 'admin.php?page=ws-site-pages' ),
+            'label' => __( 'Abrir Páginas y pie', 'workshop' ),
+        ),
+        array(
+            'icon'  => 'dashicons-admin-customizer',
+            'title' => __( 'Apariencia del sitio', 'workshop' ),
+            'desc'  => __( 'Logo, colores y textos del índice (mercado). El logo y colores de cada negocio los configura su dueño desde el panel.', 'workshop' ),
+            'url'   => admin_url( 'customize.php' ),
+            'label' => __( 'Personalizar', 'workshop' ),
+        ),
+    );
+    ?>
+    <div class="wrap">
+        <h1><span class="dashicons dashicons-layout" style="vertical-align:middle"></span> <?php esc_html_e( 'Contenido del sitio', 'workshop' ); ?></h1>
+        <p class="description"><?php esc_html_e( 'Tu plantilla está conectada con WordPress: crea y edita páginas, entradas, menús e imágenes con las herramientas normales de WordPress y todo se publica en el sitio con el diseño de la plantilla. No necesitas saber de código ni instalar plugins.', 'workshop' ); ?></p>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;margin-top:18px">
+            <?php foreach ( $cards as $card ) : ?>
+                <div class="ws-mp-admin-group" style="display:flex;flex-direction:column;gap:8px;margin:0">
+                    <h2 style="border:0;padding:0;margin:0;display:flex;align-items:center;gap:8px">
+                        <span class="dashicons <?php echo esc_attr( $card['icon'] ); ?>" style="color:#4f46e5"></span>
+                        <?php echo esc_html( $card['title'] ); ?>
+                    </h2>
+                    <p style="margin:0;color:#50575e;flex:1"><?php echo esc_html( $card['desc'] ); ?></p>
+                    <a class="button button-primary" href="<?php echo esc_url( $card['url'] ); ?>"><?php echo esc_html( $card['label'] ); ?> <span class="dashicons dashicons-external" style="font-size:14px;line-height:inherit;margin-left:2px"></span></a>
+                </div>
+            <?php endforeach; ?>
+        </div>
+
+        <div class="ws-mp-admin-group" style="margin-top:18px">
+            <h2><span class="dashicons dashicons-info" style="margin-right:6px"></span><?php esc_html_e( 'Cómo publicar contenido', 'workshop' ); ?></h2>
+            <ol style="margin:0;padding-left:20px;line-height:1.9">
+                <li><?php esc_html_e( 'Crea una página en Páginas, escribe el texto, añade fotos desde la biblioteca de medios y pulsa Publicar.', 'workshop' ); ?></li>
+                <li><?php esc_html_e( 'Añádela al menú superior desde Menús (ubicación «Menú principal») o enlázala desde el pie en Páginas y pie.', 'workshop' ); ?></li>
+                <li><?php esc_html_e( 'Para un blog: crea una página «Blog» y asígnala en Ajustes → Portada → Página de entradas.', 'workshop' ); ?></li>
+            </ol>
+        </div>
+    </div>
+    <?php
+}

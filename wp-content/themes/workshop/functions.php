@@ -10,10 +10,10 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'WS_VERSION', '0.3.2' );
+define( 'WS_VERSION', '0.4.0' );
 // Versión del esquema de BD: subir al añadir columnas/tablas para forzar la
 // instalación/migración diferida (ws_lazy_install / ws_db_migrate).
-define( 'WS_DB_VERSION', '0.8.0' );
+define( 'WS_DB_VERSION', '0.9.0' );
 define( 'WS_PATH', get_template_directory() . '/' );
 define( 'WS_URL', get_template_directory_uri() . '/' );
 define( 'WS_TABLE_PREFIX', 'ws_' );
@@ -35,6 +35,7 @@ require_once WS_PATH . 'inc/router.php';
 require_once WS_PATH . 'inc/login.php';
 require_once WS_PATH . 'inc/ajax.php';
 require_once WS_PATH . 'inc/notifications.php';
+require_once WS_PATH . 'inc/announcements.php';
 require_once WS_PATH . 'inc/crm.php';
 require_once WS_PATH . 'inc/cart.php';
 require_once WS_PATH . 'inc/reviews.php';

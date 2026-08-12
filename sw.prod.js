@@ -1,5 +1,5 @@
 /* Workshop MultiTienda Service Worker */
-const CACHE_NAME = 'workshop-v40';
+const CACHE_NAME = 'workshop-v41';
 const STATIC_CACHE = 'workshop-static-v7';
 const DYNAMIC_CACHE = 'workshop-dynamic-v7';
 const DATA_CACHE = 'workshop-data-v7';
@@ -106,6 +106,15 @@ self.addEventListener('fetch', (event) => {
 
     // Ignorar el resto de peticiones a otros dominios (análisis, etc.).
     if (url.origin !== self.location.origin) {
+        return;
+    }
+
+    // NO interceptar el panel de WordPress (wp-admin / wp-login): el SW no
+    // debe añadir tráfico ni retrasos al acceso del administrador. Antes se
+    // cacheaba/reejecutaba todo (Network First + guardado), lo que en móviles
+    // con conexiones lentas producía ráfagas de peticiones que algunos hosts
+    // respondían con «Too Many Requests» y bloqueaban la entrada al panel.
+    if (url.pathname.indexOf('/wp-admin') !== -1 || url.pathname.indexOf('/wp-login.php') !== -1) {
         return;
     }
 
@@ -220,22 +229,36 @@ self.addEventListener('message', (event) => {
     const urls = Array.isArray(event.data.urls) ? event.data.urls : [];
     if (!urls.length) return;
     event.waitUntil(
-        caches.open(DYNAMIC_CACHE).then((cache) =>
-            Promise.allSettled(
-                urls.map((u) =>
-                    // No re-descargar lo que ya está en caché (se revalida en
-                    // la siguiente navegación con Network First).
-                    cache.match(u).then((hit) => {
-                        if (hit) return Promise.resolve();
-                        return fetch(u, { credentials: 'same-origin', redirect: 'manual' })
-                            .then((res) => { if (res.ok) cache.put(u, res.clone()); })
-                            .catch(() => {});
-                    }).catch(() => {})
-                )
-            )
-        )
+        caches.open(DYNAMIC_CACHE).then((cache) => precachePanelSequential(urls, cache))
     );
 });
+
+// Precarga los módulos del panel UNO A UNO con un pequeño espacio entre
+// peticiones (en vez de disparar 20 a la vez). Las ráfagas de peticiones en
+// paralelo desde móvil disparaban el límite de peticiones del host («Too Many
+// Requests») y bloqueaban la entrada al panel. Solo descarga lo que falta en
+// caché; las siguientes visitas no vuelven a pedir nada.
+function precachePanelSequential(urls, cache) {
+    const delay = () => new Promise((r) => setTimeout(r, 300));
+    let i = 0;
+    function next() {
+        if (i >= urls.length) return Promise.resolve();
+        const u = urls[i++];
+        return cache.match(u)
+            .then((hit) => {
+                if (hit) return next();
+                return fetch(u, { credentials: 'same-origin', redirect: 'manual' })
+                    .then((res) => {
+                        if (res.ok) cache.put(u, res.clone()).catch(() => {});
+                    })
+                    .catch(() => {})
+                    .then(delay)
+                    .then(next);
+            })
+            .catch(() => next());
+    }
+    return next();
+}
 
 // Sincronización en background
 self.addEventListener('sync', (event) => {

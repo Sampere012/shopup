@@ -27,6 +27,12 @@ $is_panel  = ! empty( $ws_role );
 // En las pantallas de acceso y registro el topbar se oculta: el formulario
 // ocupa todo el protagonismo (patrón de login/registro de SaaS).
 $ws_hide_topbar = in_array( $ws_public, array( 'login', 'register' ), true );
+// El administrador del SISTEMA (WordPress sin rol de negocio) no ve el navbar
+// de la plantilla: WordPress ya le muestra su propia barra superior con la
+// navegación, el avatar y sus notificaciones.
+if ( ! $ws_hide_topbar && is_user_logged_in() && current_user_can( 'manage_options' ) && '' === ws_user_role() ) {
+    $ws_hide_topbar = true;
+}
 ?>
 <?php if ( ! $is_panel && ! $ws_hide_topbar ) : ?>
 <header class="ws-topbar">
@@ -38,10 +44,27 @@ $ws_hide_topbar = in_array( $ws_public, array( 'login', 'register' ), true );
             <span class="ws-brand-name"><?php echo esc_html( ws_site_name() ); ?></span>
         </a>
         <nav class="ws-topbar-nav" aria-label="<?php esc_attr_e( 'Enlaces útiles', 'workshop' ); ?>">
-            <a href="<?php echo esc_url( home_url( '/marketplace/' ) ); ?>"><?php esc_html_e( 'Tiendas', 'workshop' ); ?></a>
-            <a href="<?php echo esc_url( home_url( '/ayuda/' ) ); ?>"><?php esc_html_e( 'Ayuda', 'workshop' ); ?></a>
-            <a href="<?php echo esc_url( home_url( '/contacto/' ) ); ?>"><?php esc_html_e( 'Contacto', 'workshop' ); ?></a>
-            <a href="<?php echo esc_url( home_url( '/acerca/' ) ); ?>"><?php esc_html_e( 'Acerca de nosotros', 'workshop' ); ?></a>
+            <?php
+            // El menú superior se edita desde wp-admin → Apariencia → Menús
+            // (ubicación «Menú principal»). Si no hay menú asignado se muestra
+            // el menú por defecto de la plantilla.
+            if ( has_nav_menu( 'primary' ) ) {
+                wp_nav_menu( array(
+                    'theme_location' => 'primary',
+                    'container'      => false,
+                    'menu_class'     => 'ws-topbar-nav',
+                    'fallback_cb'    => false,
+                    'depth'          => 1,
+                ) );
+            } else {
+                ?>
+                <a href="<?php echo esc_url( home_url( '/marketplace/' ) ); ?>"><?php esc_html_e( 'Tiendas', 'workshop' ); ?></a>
+                <a href="<?php echo esc_url( home_url( '/ayuda/' ) ); ?>"><?php esc_html_e( 'Ayuda', 'workshop' ); ?></a>
+                <a href="<?php echo esc_url( home_url( '/contacto/' ) ); ?>"><?php esc_html_e( 'Contacto', 'workshop' ); ?></a>
+                <a href="<?php echo esc_url( home_url( '/acerca/' ) ); ?>"><?php esc_html_e( 'Acerca de nosotros', 'workshop' ); ?></a>
+                <?php
+            }
+            ?>
         </nav>
         <?php if ( 'stores' === (string) get_query_var( 'ws_public' ) ) : ?>
             <div class="ws-topbar-search">

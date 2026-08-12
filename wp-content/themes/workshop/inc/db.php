@@ -378,6 +378,24 @@ function ws_db_tables() {
             UNIQUE KEY slug (slug)
         ) {charset};",
 
+        // Anuncios del negocio (global, aislados por business_id): mensajes y
+        // notificaciones ancladas que el dueño envía a TODOS los usuarios de
+        // su negocio (dueños, almaceneros y vendedores).
+        'announcements' => "CREATE TABLE {prefix}ws_announcements (
+            id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            business_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
+            title VARCHAR(255) NOT NULL DEFAULT '',
+            message TEXT NULL,
+            type VARCHAR(20) NOT NULL DEFAULT 'info',
+            pinned TINYINT(1) NOT NULL DEFAULT 0,
+            active TINYINT(1) NOT NULL DEFAULT 1,
+            created_by BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY business_id (business_id),
+            KEY active_pinned (active, pinned)
+        ) {charset};",
+
         // Suscripción de cada negocio (global, una fila por negocio).
         'subscriptions' => "CREATE TABLE {prefix}ws_subscriptions (
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -405,7 +423,7 @@ function ws_db_tables() {
  * renombran al cambiar el slug ni se eliminan al borrar el negocio.
  */
 function ws_global_tables() {
-    return array( 'plans', 'subscriptions' );
+    return array( 'plans', 'subscriptions', 'announcements' );
 }
 
 function ws_db_install() {
@@ -477,9 +495,9 @@ function ws_db_migrate() {
         dbDelta( $sql );
     }
 
-    // Tablas globales de planes y suscripciones: se crean solas si faltan en
-    // instalaciones viejas (y se siembran los planes por defecto).
-    foreach ( array( 'plans', 'subscriptions' ) as $gt ) {
+    // Tablas globales de planes, suscripciones y anuncios: se crean solas si
+    // faltan en instalaciones viejas (y se siembran los planes por defecto).
+    foreach ( array( 'plans', 'subscriptions', 'announcements' ) as $gt ) {
         $gt_table = $wpdb->prefix . WS_TABLE_PREFIX . $gt;
         if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $gt_table ) ) !== $gt_table ) {
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';

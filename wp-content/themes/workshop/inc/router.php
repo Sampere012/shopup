@@ -31,7 +31,7 @@ defined( 'ABSPATH' ) || exit;
 
 add_action( 'init', 'ws_rewrite_rules' );
 function ws_rewrite_rules() {
-    $pages = 'dashboard|products|locations|suppliers|stock|movements|orders|shifts|workers|permissions|reports|settings|account|appearance|customers|reviews|loyalty|pos|pos-sales|plan';
+    $pages = 'dashboard|products|locations|suppliers|stock|movements|orders|shifts|workers|permissions|reports|settings|account|appearance|customers|reviews|loyalty|pos|pos-sales|plan|anuncios';
 
     add_rewrite_tag( '%ws_page%', '(' . $pages . ')' );
     add_rewrite_tag( '%ws_loc%', '([^/]+)' );
@@ -90,7 +90,7 @@ function ws_rewrite_rules() {
  */
 add_action( 'init', 'ws_maybe_flush_rewrite_rules', 20 );
 function ws_maybe_flush_rewrite_rules() {
-    $version = '2026-08-11-manifest-fix';
+    $version = '2026-08-12-wp-content-anuncios';
     if ( get_option( 'ws_rewrite_rules_version' ) !== $version ) {
         update_option( 'ws_rewrite_rules_version', $version );
         ws_flush_rewrite_rules();
@@ -115,6 +115,14 @@ function ws_router() {
     // las páginas públicas de cualquier negocio (landing y tienda) sin ser
     // redirigidos. El acceso a los paneles de OTROS negocios y a login/registro
     // se protege en ws_handle_panel() y ws_handle_public() respectivamente.
+
+    // Contenido nativo de WordPress: Páginas, Entradas, archivos y búsqueda
+    // creados desde wp-admin se renderizan con el maquetado del tema (cabecera,
+    // menú y pie propios). El admin edita textos y fotos sin tocar código.
+    if ( is_singular() || ( is_home() && ! is_front_page() ) || is_archive() || is_search() ) {
+        ws_render_wp_content();
+        exit;
+    }
 
     $public = get_query_var( 'ws_public' );
     if ( $public ) {
@@ -146,6 +154,12 @@ function ws_router() {
     if ( get_query_var( 'ws_biz_home' ) ) {
         $biz = ws_current_business();
         if ( ! $biz || empty( $biz->slug ) || ! (int) $biz->active ) {
+            // El catch-all del tema captura las URLs de un solo segmento; si
+            // existe una Página o Entrada de WordPress con ese slug (creada
+            // desde wp-admin), se renderiza con la plantilla del tema.
+            if ( ws_render_wp_content_by_url() ) {
+                exit;
+            }
             status_header( 404 );
             include WS_PATH . 'templates/404.php';
             exit;
@@ -166,6 +180,82 @@ function ws_router() {
         include WS_PATH . 'templates/marketplace.php';
         exit;
     }
+}
+
+/**
+ * Renderiza contenido nativo de WordPress (páginas, entradas, archivos y
+ * búsqueda) con la plantilla del tema. Devuelve true si se mostró algo.
+ */
+function ws_render_wp_content() {
+    if ( is_singular() ) {
+        if ( is_page() || 'page' === get_post_type() ) {
+            include WS_PATH . 'templates/page.php';
+        } else {
+            include WS_PATH . 'templates/single.php';
+        }
+        return true;
+    }
+    if ( is_search() ) {
+        include WS_PATH . 'templates/search.php';
+        return true;
+    }
+    if ( is_archive() ) {
+        include WS_PATH . 'templates/archive.php';
+        return true;
+    }
+    if ( is_home() && ! is_front_page() ) {
+        include WS_PATH . 'templates/index.php';
+        return true;
+    }
+    return false;
+}
+
+/**
+ * Resuelve una URL de un solo segmento capturada por el catch-all del tema:
+ * si WordPress tiene una Página o Entrada publicada con ese slug, la renderiza
+ * con la plantilla del tema y devuelve true.
+ */
+function ws_render_wp_content_by_url() {
+    $slug = (string) get_query_var( 'ws_biz' );
+    if ( '' === $slug ) {
+        return false;
+    }
+
+    $post_id = url_to_postid( home_url( add_query_arg( array() ) ) );
+    if ( ! $post_id ) {
+        $page = get_page_by_path( $slug, OBJECT, array( 'page', 'post' ) );
+        $post_id = $page ? (int) $page->ID : 0;
+    }
+    if ( ! $post_id ) {
+        $by_name = get_posts( array(
+            'name'           => $slug,
+            'post_type'      => array( 'post', 'page' ),
+            'post_status'    => 'publish',
+            'posts_per_page' => 1,
+            'fields'         => 'ids',
+        ) );
+        $post_id = ! empty( $by_name ) ? (int) $by_name[0] : 0;
+    }
+    if ( ! $post_id ) {
+        return false;
+    }
+
+    $post = get_post( $post_id );
+    if ( ! $post || 'publish' !== $post->post_status ) {
+        return false;
+    }
+    $GLOBALS['post'] = $post;
+    $GLOBALS['wp_query']->is_singular = true;
+    $GLOBALS['wp_query']->is_page     = ( 'page' === $post->post_type );
+    $GLOBALS['wp_query']->is_single   = ( 'post' === $post->post_type );
+    setup_postdata( $post );
+
+    if ( 'page' === $post->post_type ) {
+        include WS_PATH . 'templates/page.php';
+    } else {
+        include WS_PATH . 'templates/single.php';
+    }
+    return true;
 }
 
 function ws_handle_public( $public ) {
@@ -281,7 +371,7 @@ function ws_handle_panel( $role ) {
     }
 
     $page = ws_current_page();
-    if ( ! in_array( $page, array( 'dashboard', 'products', 'locations', 'suppliers', 'stock', 'movements', 'orders', 'shifts', 'workers', 'permissions', 'reports', 'settings', 'account', 'appearance', 'customers', 'reviews', 'loyalty', 'pos', 'pos-sales', 'plan' ), true ) ) {
+    if ( ! in_array( $page, array( 'dashboard', 'products', 'locations', 'suppliers', 'stock', 'movements', 'orders', 'shifts', 'workers', 'permissions', 'reports', 'settings', 'account', 'appearance', 'customers', 'reviews', 'loyalty', 'pos', 'pos-sales', 'plan', 'anuncios' ), true ) ) {
         $page = 'dashboard';
     }
     // Guardas de permisos por página.
@@ -304,6 +394,8 @@ function ws_handle_panel( $role ) {
         'pos'         => 'pos_sell',
         'pos-sales'   => 'pos_view',
         'plan'        => array(),
+        // Anuncios del negocio: solo el dueño (o el admin del sistema).
+        'anuncios'    => array( 'settings_manage', 'workers_manage' ),
     );
     if ( isset( $cap_guard[ $page ] ) ) {
         $need = (array) $cap_guard[ $page ];
