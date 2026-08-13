@@ -1446,7 +1446,7 @@ function ws_chatbot_knowledge_config() {
     // del USUARIO actual (quién es, rol, negocio, permisos y módulos): va
     // PRIMERO para que sus patrones ganen los empates frente a respuestas
     // guardadas y el bot responda siempre con los valores vigentes.
-    foreach ( array_merge( ws_chatbot_live_knowledge(), ws_chatbot_user_live_knowledge() ) as $item ) {
+    foreach ( array_merge( ws_chatbot_live_knowledge(), ws_chatbot_user_live_knowledge(), function_exists( 'ws_chatbot_business_live_knowledge' ) ? ws_chatbot_business_live_knowledge() : array() ) as $item ) {
         $out[] = array(
             'id'       => sanitize_key( $item['id'] ),
             'patterns' => array_values( array_filter( array_map( 'trim', (array) $item['patterns'] ) ) ),
@@ -1554,6 +1554,21 @@ function ws_chatbot_site_context() {
         }
     }
 
+    // Tiendas/negocios NUEVOS del mercado (por orden de creación, últimos 4):
+    // el bot los recomienda y enlaza cuando le preguntan "cuántos negocios hay".
+    $new = array();
+    $newb = class_exists( 'WS_Business' ) ? WS_Business::all( array( 'marketplace' => true, 'active' => 1 ) ) : array();
+    $newb = array_reverse( array_slice( (array) $newb, -4 ) );
+    foreach ( $newb as $b ) {
+        if ( empty( $b->slug ) || count( $new ) >= 4 ) {
+            continue;
+        }
+        $new[] = array(
+            'name' => (string) ( $b->name ?? '' ),
+            'url'  => ws_business_home( $b ),
+        );
+    }
+
     // Nombre del SITIO (independiente de la página): el nombre del mercado que
     // configura el admin o, si no, el nombre de WordPress.
     $name = '' !== (string) ( $mp['name'] ?? '' ) ? (string) $mp['name'] : get_option( 'blogname' );
@@ -1570,6 +1585,7 @@ function ws_chatbot_site_context() {
         'stores'      => $stores,
         'products'    => $products,
         'top_stores'  => $top,
+        'new_stores'  => $new,
     );
 }
 
@@ -1667,7 +1683,17 @@ function ws_chatbot_live_knowledge() {
             $name,
             $counts
         ),
-        'chip' => $stores_chip,
+        // Recomienda y enlaza las tiendas/negocios NUEVOS con chips directos.
+        'chips' => array_merge(
+            array_map( static function ( $s ) {
+                return array(
+                    'label' => (string) ( $s['name'] ?? '' ),
+                    'url'   => (string) ( $s['url'] ?? '' ),
+                    'icon'  => 'fa-store',
+                );
+            }, (array) ( $site['new_stores'] ?? array() ) ),
+            array( $stores_chip )
+        ),
     );
     $items[] = array(
         'id' => 'live-hero',
@@ -1971,7 +1997,7 @@ function ws_chatbot_app_context() {
             'permissions' => array_column( (array) ( $uc['permissions'] ?? array() ), 'label' ),
         ),
         'nav'     => ws_chatbot_context(),
-        'actions' => array( 'crear/editar/eliminar productos (bulk)', 'reponer stock', 'aceptar/rechazar pedidos', 'crear clientes', 'registrar venta POS', 'buscar productos', 'reportes (ventas/stock/pedidos/equipo/seguridad/resumen)', 'programar reportes', 'guias paso a paso', 'responder preguntas frecuentes' ),
+        'actions' => array( 'crear/editar/eliminar productos (bulk)', 'reponer stock', 'aceptar/rechazar pedidos', 'crear clientes', 'registrar venta POS', 'buscar productos', 'reportes (ventas/stock/pedidos/equipo/seguridad/resumen)', 'programar reportes', 'guias paso a paso', 'responder preguntas frecuentes', 'consultar categorías y subcategorías', 'crear/editar/eliminar categorías', 'listar y crear/editar/eliminar gastos', 'calcular utilidad (ingresos − gastos)', 'consultar cualquier tabla del negocio (productos, stock, pedidos, clientes…)' ),
         'reports' => array( 'sales', 'stock', 'orders', 'workers', 'security', 'logs', 'summary' ),
     );
 
@@ -2949,11 +2975,43 @@ function ws_ajax_chatbot_llm() {
         (string) ( $site['hero_title'] ?? '' ),
         (string) ( $site['hero_sub'] ?? '' )
     ) .
-        'Los NEGOCIOS gestionan en su panel: productos, stock (entradas/salidas/transferencias), pedidos (aceptar/rechazar), ventas POS con caja, clientes (CRM), trabajadores con roles, reportes y planes. ' .
-        'El bot puede crear/editar/eliminar productos, reponer stock, aceptar pedidos, crear clientes y registrar ventas si el usuario lo pide. ' .
+        'Los NEGOCIOS gestionan en su panel: productos, stock (entradas/salidas/transferencias), pedidos (aceptar/rechazar), ventas POS con caja, clientes (CRM), trabajadores con roles, categorías en árbol, gastos y utilidad, reportes y planes. ' .
+        'El bot puede crear/editar/eliminar productos, categorías y gastos, reponer stock, aceptar pedidos, crear clientes y registrar ventas si el usuario lo pide. ' .
         'Responde en español, breve y con tono amable (algún emoji). Si te piden algo fuera de estas capacidades, sugiere contactar soporte por la página de Contacto o WhatsApp. ' .
-        'DATOS EN VIVO DEL USUARIO (úsalos para responder con datos reales del negocio, nunca inventes cifras): ' . ws_chatbot_context_text();
+        'TIENES HERRAMIENTAS que consultan la BASE DE DATOS real del negocio y ejecutan acciones con los permisos del usuario. ' .
+        'REGLAS DEL AGENTE: 1) Antes de dar CUALQUIER número del negocio (productos, stock, ventas, gastos, utilidad, categorías, clientes, pedidos, trabajadores, precios) usa la herramienta adecuada y responde con esos datos REALES; jamás inventes cifras. ' .
+        '2) El flujo correcto es: PRIMERO consulta (herramienta), LUEGO refina el resultado con los datos obtenidos, y AL FINAL devuelve la respuesta con formato claro. ' .
+        '3) Cuando el usuario pida crear, editar o eliminar (producto, categoría, gasto), usa la herramienta correspondiente y confirma el resultado. ' .
+        '4) Si preguntan por tiendas/negocios del mercado o "cuántos negocios hay", menciona los contadores reales y recomienda las tiendas nuevas con su enlace: ' . ws_chatbot_stores_context_text() .
+        ' DATOS EN VIVO DEL USUARIO (úsalos para responder con datos reales del negocio, nunca inventes cifras): ' . ws_chatbot_context_text();
 
+    $log  = get_option( 'ws_chatbot_stats', array() );
+    $log  = is_array( $log ) ? $log : array();
+    $log['llm:used'] = (int) ( $log['llm:used'] ?? 0 ) + 1;
+
+    // Miembros de negocio: el LLM trabaja como AGENTE con herramientas que
+    // consultan la BD real del negocio (function calling, compatible con Groq).
+    if ( function_exists( 'ws_chatbot_tools_available' ) && ws_chatbot_tools_available() ) {
+        $agent = ws_chatbot_llm_agent(
+            array_merge( $history, array( array( 'role' => 'user', 'content' => mb_substr( $text, 0, 1000 ) ) ) ),
+            $system
+        );
+        if ( ! empty( $agent['error'] ) ) {
+            $err = (string) ( $agent['detail'] ?? __( 'La IA no respondió.', 'workshop' ) );
+            if ( 'no-config' === $agent['error'] ) {
+                wp_send_json_error( array( 'msg' => __( 'La IA no está configurada.', 'workshop' ) ) );
+            }
+            if ( 'unavailable' === $agent['error'] ) {
+                wp_send_json_error( array( 'msg' => __( 'La IA no está disponible ahora.', 'workshop' ) ) );
+            }
+            wp_send_json_error( array( 'msg' => mb_substr( $err, 0, 200 ) ) );
+        }
+        $log['llm:calls'] = (int) ( $log['llm:calls'] ?? 0 ) + (int) ( $agent['calls'] ?? 0 );
+        update_option( 'ws_chatbot_stats', $log );
+        wp_send_json_success( array( 'text' => (string) ( $agent['text'] ?? '' ) ) );
+    }
+
+    // Visitantes y el admin del sistema: consulta simple sin herramientas.
     $body = array(
         'model'       => (string) $admin['llm_model'],
         'messages'    => array_merge( array( array( 'role' => 'system', 'content' => $system ) ), $history, array( array( 'role' => 'user', 'content' => mb_substr( $text, 0, 1000 ) ) ) ),
@@ -2992,12 +3050,97 @@ function ws_ajax_chatbot_llm() {
         wp_send_json_error( array( 'msg' => mb_substr( $err, 0, 200 ) ) );
     }
 
-    $log  = get_option( 'ws_chatbot_stats', array() );
-    $log  = is_array( $log ) ? $log : array();
-    $log['llm:used'] = (int) ( $log['llm:used'] ?? 0 ) + 1;
     update_option( 'ws_chatbot_stats', $log );
 
     wp_send_json_success( array( 'text' => $text ) );
+}
+
+/**
+ * Texto compacto con las tiendas/negocios NUEVOS del mercado para el prompt
+ * de la IA: los contadores reales más las tiendas recomendadas con enlace.
+ */
+function ws_chatbot_stores_context_text() {
+    $site = ws_chatbot_site_context();
+    $out  = '';
+    $new  = $site['new_stores'] ?? array();
+    if ( ! empty( $new ) ) {
+        $parts = array();
+        foreach ( $new as $s ) {
+            $parts[] = (string) ( $s['name'] ?? '' ) . ' (' . (string) ( $s['url'] ?? '' ) . ')';
+        }
+        $out .= 'Tiendas nuevas o recomendadas del mercado: ' . implode( ', ', $parts ) . '. ';
+    }
+    return $out;
+}
+
+/**
+ * Payload estructurado estilo MCP para el bot y para futuras integraciones con
+ * Groq/OpenAI: incluye contexto del negocio, estructura de categorías, gastos,
+ * utilidad y paleta actual de marca para que el modelo responda con datos que
+ * siempre reflejan la BD del negocio actual y no un snapshot viejo.
+ */
+function ws_chatbot_mcp_payload() {
+    $biz    = ws_current_business();
+    $site   = ws_chatbot_site_context();
+    $theme  = ws_site_theme();
+    $role   = ws_user_role();
+    $month  = (int) gmdate( 'n' );
+    $year   = (int) gmdate( 'Y' );
+    $cats   = ws_chatbot_tools_categories();
+    $exp    = ws_chatbot_tools_expenses( array( 'year' => $year, 'month' => $month ) );
+    $util   = ws_chatbot_tools_utility( array( 'year' => $year, 'month' => $month ) );
+    $snap   = ws_chatbot_tools_snapshot();
+
+    return array(
+        'updated_at' => current_time( 'mysql' ),
+        'scope'      => $role ? 'business' : 'marketplace',
+        'business'   => array(
+            'id'        => $biz ? (int) $biz->id : 0,
+            'name'      => $biz ? (string) ( $biz->name ?? '' ) : (string) ws_site_name(),
+            'slug'      => $biz ? (string) ( $biz->slug ?? '' ) : '',
+            'url'       => $biz ? ws_business_home( $biz ) : home_url( '/' ),
+            'currency'  => ws_currency_symbol(),
+            'theme'     => array(
+                'name'      => (string) ( $theme['name'] ?? '' ),
+                'logo'      => (string) ( $theme['logo'] ?? '' ),
+                'primary'   => (string) ( $theme['primary'] ?? '#4f46e5' ),
+                'accent'    => (string) ( $theme['accent'] ?? '#f59e0b' ),
+                'hero_title'=> (string) ( $theme['hero_title'] ?? '' ),
+                'hero_sub'  => (string) ( $theme['hero_sub'] ?? '' ),
+            ),
+        ),
+        'site' => $site,
+        'counts' => array(
+            'products' => (int) ( $snap['products'] ?? 0 ),
+            'categories' => (int) ( $snap['categories'] ?? 0 ),
+            'pending_orders' => (int) ( $snap['pending_orders'] ?? 0 ),
+            'customers' => (int) ( $snap['customers'] ?? 0 ),
+            'workers' => (int) ( $snap['workers'] ?? 0 ),
+        ),
+        'categories' => array_values( (array) ( $cats['categories'] ?? array() ) ),
+        'expenses' => array(
+            'month' => (int) ( $exp['month'] ?? $month ),
+            'year'  => (int) ( $exp['year'] ?? $year ),
+            'total' => (float) ( $exp['total'] ?? 0 ),
+            'rows'  => array_values( (array) ( $exp['expenses'] ?? array() ) ),
+        ),
+        'utility' => array(
+            'income'   => (float) ( $util['income'] ?? 0 ),
+            'expenses' => (float) ( $util['expenses'] ?? 0 ),
+            'utility'  => (float) ( $util['utility'] ?? 0 ),
+            'currency' => (string) ( $util['currency'] ?? ws_currency_symbol() ),
+        ),
+        'new_stores' => array_values( (array) ( $site['new_stores'] ?? array() ) ),
+    );
+}
+
+add_action( 'wp_ajax_ws_chatbot_mcp', 'ws_ajax_chatbot_mcp' );
+add_action( 'wp_ajax_nopriv_ws_chatbot_mcp', 'ws_ajax_chatbot_mcp' );
+function ws_ajax_chatbot_mcp() {
+    if ( ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Sesión expirada.', 'workshop' ) ) );
+    }
+    wp_send_json_success( array( 'mcp' => ws_chatbot_mcp_payload() ) );
 }
 
 /* -------------------------------------------------------------------------

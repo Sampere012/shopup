@@ -142,6 +142,26 @@ function ws_hex_shade( $hex, $pct ) {
     return $out;
 }
 
+/**
+ * Sugerencia de paleta a partir de un logo: toma el color dominante y un
+ * acento complementario para que la tienda se vea diferenciada sin que el
+ * usuario tenga que elegir manualmente cada tono.
+ */
+function ws_site_theme_palette_from_logo( $logo_url ) {
+    $logo_url = trim( (string) $logo_url );
+    if ( '' === $logo_url ) {
+        return array( 'primary' => '#4f46e5', 'accent' => '#f59e0b' );
+    }
+
+    // El cálculo real de los colores se hace en el cliente con canvas; aquí se
+    // deja un fallback muy conservador para el caso de no poder analizar la
+    // imagen del servidor.
+    return array(
+        'primary' => '#4f46e5',
+        'accent'  => '#f59e0b',
+    );
+}
+
 // El nombre del negocio editable reemplaza el de WordPress en todo el sitio.
 add_filter( 'pre_option_blogname', 'ws_site_blogname' );
 function ws_site_blogname( $value ) {

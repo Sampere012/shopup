@@ -1621,6 +1621,61 @@
             applySaved() {
                 this.applyTheme(this.saved || {});
             },
+            rgbToHex(r,g,b){ const toHex = v => ('0' + Number(v).toString(16)).slice(-2); return '#' + toHex(r) + toHex(g) + toHex(b); },
+            hslToHex(h,s,l){
+                s /= 100; l /= 100;
+                const c = (1 - Math.abs(2 * l - 1)) * s;
+                const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+                const m = l - c / 2;
+                let r=0,g=0,b=0;
+                if (h >= 0 && h < 60) [r,g,b] = [c,x,0];
+                else if (h >= 60 && h < 120) [r,g,b] = [x,c,0];
+                else if (h >= 120 && h < 180) [r,g,b] = [0,c,x];
+                else if (h >= 180 && h < 240) [r,g,b] = [0,x,c];
+                else if (h >= 240 && h < 300) [r,g,b] = [x,0,c];
+                else [r,g,b] = [c,0,x];
+                return this.rgbToHex(Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255));
+            },
+            detectPalette() {
+                if (!this.logo) { toast('error', 'Añade un logo para detectar la paleta'); return; }
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const size = 80;
+                    canvas.width = size; canvas.height = size;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, size, size);
+                    const data = ctx.getImageData(0, 0, size, size).data;
+                    let r = 0, g = 0, b = 0, count = 0;
+                    for (let i = 0; i < data.length; i += 4) {
+                        const a = data[i + 3];
+                        if (a < 128) continue;
+                        r += data[i]; g += data[i + 1]; b += data[i + 2]; count++;
+                    }
+                    if (!count) { toast('error', 'No se pudo analizar el logo'); return; }
+                    r = Math.round(r / count); g = Math.round(g / count); b = Math.round(b / count);
+                    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+                    const delta = max - min;
+                    let h = 0;
+                    if (delta) {
+                        if (max === r) h = 60 * (((g - b) / delta) % 6);
+                        else if (max === g) h = 60 * (((b - r) / delta) + 2);
+                        else h = 60 * (((r - g) / delta) + 4);
+                    }
+                    if (h < 0) h += 360;
+                    const l = (max + min) / 2 / 255 * 100;
+                    const s = delta === 0 ? 0 : delta / (1 - Math.abs(2 * l / 100 - 1)) * 100;
+                    const primary = this.hslToHex((h + 360) % 360, Math.min(90, Math.max(40, s)), Math.min(48, Math.max(22, l)));
+                    const accent = this.hslToHex((h + 35) % 360, Math.min(95, Math.max(55, s * 0.92)), Math.min(62, Math.max(42, l + 18)));
+                    this.primary = primary;
+                    this.accent = accent;
+                    this.applyLive();
+                    toast('success', 'Paleta sugerida aplicada');
+                };
+                img.onerror = () => toast('error', 'No se pudo cargar el logo para generar la paleta');
+                img.src = this.logo;
+            },
             save() {
                 if (this.busy) return;
                 this.busy = true;

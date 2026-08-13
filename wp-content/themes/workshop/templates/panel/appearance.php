@@ -94,7 +94,12 @@ $can_layout = ws_can( 'layout_manage' ) || $can_site;
                             <input type="text" x-model="accent" class="ws-color-hex">
                         </div>
                     </label>
-                    <p class="ws-muted ws-span-2" style="margin:0"><?php esc_html_e( 'El color principal se aplica a botones, enlaces, sidebar y acentos del sitio. El acento se usa en detalles y etiquetas.', 'workshop' ); ?></p>
+                    <div class="ws-span-2" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+                        <p class="ws-muted" style="margin:0"><?php esc_html_e( 'El color principal se aplica a botones, enlaces, sidebar y acentos del sitio. El acento se usa en detalles y etiquetas.', 'workshop' ); ?></p>
+                        <button type="button" class="ws-btn ws-btn-secondary ws-btn-sm" @click="detectPalette()" :disabled="!logo || busy">
+                            <i class="fa-solid fa-wand-sparkles"></i> <?php esc_html_e( 'Detectar paleta del logo', 'workshop' ); ?>
+                        </button>
+                    </div>
                 </div>
             </div>
             </template>
