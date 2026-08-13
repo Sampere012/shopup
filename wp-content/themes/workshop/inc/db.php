@@ -164,6 +164,25 @@ function ws_db_tables() {
             KEY location_id (location_id)
         ) {charset};",
 
+        'work_sessions' => "CREATE TABLE {prefix}ws_work_sessions (
+            id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            user_id BIGINT(20) UNSIGNED NOT NULL,
+            location_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
+            shift_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
+            session_date DATE NOT NULL,
+            clock_in DATETIME NOT NULL,
+            clock_out DATETIME NULL,
+            status VARCHAR(10) NOT NULL DEFAULT 'open',
+            closed_by BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
+            note VARCHAR(255) NOT NULL DEFAULT '',
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY user_id (user_id),
+            KEY shift_id (shift_id),
+            KEY session_date (session_date),
+            KEY status (status)
+        ) {charset};",
+
         'audit' => "CREATE TABLE {prefix}ws_audit (
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
             user_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
@@ -733,7 +752,7 @@ function ws_db_migrate() {
         // El prefijo para las plantillas es wp_ws_{sufijo}_ (sin el «ws_» de
         // la entidad, que ya lo pone ws_db_tables): igual que ws_create_business_tables.
         $ws_new_prefix = $wpdb->prefix . WS_TABLE_PREFIX . ( '' !== $ws_new_suffix ? $ws_new_suffix . '_' : '' );
-        foreach ( array( 'categories', 'expenses' ) as $ws_new_table ) {
+        foreach ( array( 'categories', 'expenses', 'work_sessions' ) as $ws_new_table ) {
             $new_t = ws_table_for( $ws_new_suffix, $ws_new_table );
             if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $new_t ) ) !== $new_t ) {
                 $sql = ws_db_tables()[ $ws_new_table ];

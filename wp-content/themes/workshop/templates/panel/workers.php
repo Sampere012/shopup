@@ -22,6 +22,14 @@ foreach ( $workers as $w ) {
     $last = get_user_meta( $w->ID, 'ws_last_login', true );
     $w->last_login = $last ? strtotime( $last ) : 0;
     $w->is_active  = $w->last_login && $w->last_login >= $ws_active_threshold;
+    $w->is_disabled = ws_worker_disabled( $w->ID );
+}
+// Sesiones de trabajo: activas (abiertas) y el registro del día.
+$sessions_active = array();
+$sessions_today  = array();
+if ( class_exists( 'WS_Sessions' ) ) {
+    $sessions_active = WS_Sessions::active();
+    $sessions_today  = WS_Sessions::today();
 }
 ?>
 <div x-data="wsWorkers(<?php echo esc_attr( wp_json_encode( array(
@@ -33,6 +41,80 @@ foreach ( $workers as $w ) {
         <div></div>
         <button class="ws-btn ws-btn-primary" @click="openNew()"><i class="fa-solid fa-user-plus"></i> <?php esc_html_e( 'Nuevo trabajador', 'workshop' ); ?></button>
     </div>
+
+    <!-- Sesiones de trabajo activas (check-in/out de la jornada) -->
+    <?php if ( ! empty( $sessions_active ) ) : ?>
+    <div class="ws-card">
+        <h3 class="ws-card-title"><i class="fa-solid fa-clock-rotate-left"></i> <?php esc_html_e( 'Sesiones de trabajo activas', 'workshop' ); ?></h3>
+        <table class="ws-table">
+            <thead>
+                <tr>
+                    <th><?php esc_html_e( 'Trabajador', 'workshop' ); ?></th>
+                    <th><?php esc_html_e( 'Ubicación', 'workshop' ); ?></th>
+                    <th><?php esc_html_e( 'Entró', 'workshop' ); ?></th>
+                    <th><?php esc_html_e( 'Tiempo', 'workshop' ); ?></th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ( $sessions_active as $s ) : ?>
+                <tr>
+                    <td>
+                        <div class="ws-cell-product">
+                            <div class="ws-avatar ws-avatar-sm"><span class="ws-dot ws-dot-active"></span><?php echo esc_html( strtoupper( mb_substr( $s->worker_name, 0, 1 ) ) ); ?></div>
+                            <strong><?php echo esc_html( $s->worker_name ); ?></strong>
+                        </div>
+                    </td>
+                    <td><?php echo esc_html( $s->location_name ?: '—' ); ?></td>
+                    <td><?php echo esc_html( mysql2date( 'H:i', $s->clock_in ) ); ?></td>
+                    <td><span class="ws-elapsed" data-in="<?php echo (int) mysql2date( 'U', $s->clock_in ); ?>"><?php echo esc_html( ws_session_duration( $s->clock_in ) ); ?></span></td>
+                    <td class="ws-actions">
+                        <button class="ws-icon-btn" title="<?php esc_attr_e( 'Cerrar sesión', 'workshop' ); ?>" @click="closeSession(<?php echo (int) $s->id; ?>)"><i class="fa-solid fa-flag-checkered"></i></button>
+                        <button class="ws-icon-btn ws-danger" title="<?php esc_attr_e( 'Cerrar y deshabilitar', 'workshop' ); ?>" @click="setDisabled(<?php echo (int) $s->user_id; ?>, <?php echo esc_attr( wp_json_encode( $s->worker_name ) ); ?>, true)"><i class="fa-solid fa-ban"></i></button>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?php endif; ?>
+
+    <!-- Registro de sesiones del día -->
+    <?php if ( ! empty( $sessions_today ) ) : ?>
+    <div class="ws-card">
+        <h3 class="ws-card-title"><i class="fa-solid fa-list-check"></i> <?php esc_html_e( 'Sesiones de hoy', 'workshop' ); ?></h3>
+        <table class="ws-table">
+            <thead>
+                <tr>
+                    <th><?php esc_html_e( 'Trabajador', 'workshop' ); ?></th>
+                    <th><?php esc_html_e( 'Ubicación', 'workshop' ); ?></th>
+                    <th><?php esc_html_e( 'Entró', 'workshop' ); ?></th>
+                    <th><?php esc_html_e( 'Salió', 'workshop' ); ?></th>
+                    <th><?php esc_html_e( 'Duración', 'workshop' ); ?></th>
+                    <th><?php esc_html_e( 'Estado', 'workshop' ); ?></th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ( $sessions_today as $s ) : ?>
+                <tr>
+                    <td><strong><?php echo esc_html( $s->worker_name ); ?></strong></td>
+                    <td><?php echo esc_html( $s->location_name ?: '—' ); ?></td>
+                    <td><?php echo esc_html( mysql2date( 'H:i', $s->clock_in ) ); ?></td>
+                    <td><?php echo $s->clock_out ? esc_html( mysql2date( 'H:i', $s->clock_out ) ) : '—'; ?></td>
+                    <td><?php echo esc_html( ws_session_duration( $s->clock_in, $s->clock_out ) ); ?></td>
+                    <td>
+                        <?php if ( 'open' === $s->status ) : ?>
+                            <span class="ws-badge ws-badge-pending"><span class="ws-dot ws-dot-active"></span><?php esc_html_e( 'En curso', 'workshop' ); ?></span>
+                        <?php else : ?>
+                            <span class="ws-badge ws-badge-completed"><?php esc_html_e( 'Cerrada', 'workshop' ); ?></span>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?php endif; ?>
 
     <div class="ws-card">
         <table class="ws-table" data-sortable data-ts="workers">
@@ -70,7 +152,9 @@ foreach ( $workers as $w ) {
                         </td>
                         <td x-text="'<?php echo esc_js( $w->user_email ); ?>'"></td>
                         <td>
-                            <?php if ( $w->is_active ) : ?>
+                            <?php if ( $w->is_disabled ) : ?>
+                                <span class="ws-badge ws-badge-danger"><span class="ws-dot ws-dot-inactive"></span><?php esc_html_e( 'Deshabilitado', 'workshop' ); ?></span>
+                            <?php elseif ( $w->is_active ) : ?>
                                 <span class="ws-badge ws-badge-accepted"><span class="ws-dot ws-dot-active"></span><?php esc_html_e( 'Activo', 'workshop' ); ?></span>
                             <?php else : ?>
                                 <span class="ws-badge"><span class="ws-dot ws-dot-inactive"></span><?php esc_html_e( 'Inactivo', 'workshop' ); ?></span>
@@ -94,6 +178,11 @@ foreach ( $workers as $w ) {
                         <td class="ws-actions">
                             <button class="ws-icon-btn" title="Editar" @click="editWorker(<?php echo (int) $w->ID; ?>, <?php echo esc_attr( wp_json_encode( $w->display_name ) ); ?>, <?php echo esc_attr( wp_json_encode( $w->user_email ) ); ?>, <?php echo esc_attr( wp_json_encode( $role ) ); ?>, <?php echo esc_attr( wp_json_encode( $wloc ) ); ?>)"><i class="fa-solid fa-pen"></i></button>
                             <button class="ws-icon-btn" title="Asignar ubicaciones" @click="showWorker(<?php echo (int) $w->ID; ?>, <?php echo esc_attr( wp_json_encode( $wloc ) ); ?>)"><i class="fa-solid fa-location-dot"></i></button>
+                            <?php if ( $w->is_disabled ) : ?>
+                                <button class="ws-icon-btn" title="Habilitar" @click="setDisabled(<?php echo (int) $w->ID; ?>, <?php echo esc_attr( wp_json_encode( $w->display_name ) ); ?>, false)"><i class="fa-solid fa-user-check"></i></button>
+                            <?php else : ?>
+                                <button class="ws-icon-btn ws-danger" title="Deshabilitar (bloquea su acceso)" @click="setDisabled(<?php echo (int) $w->ID; ?>, <?php echo esc_attr( wp_json_encode( $w->display_name ) ); ?>, true)"><i class="fa-solid fa-ban"></i></button>
+                            <?php endif; ?>
                             <button class="ws-icon-btn ws-danger" title="Eliminar" @click="deleteWorker(<?php echo (int) $w->ID; ?>, <?php echo esc_attr( wp_json_encode( $w->display_name ) ); ?>)"><i class="fa-solid fa-trash-can"></i></button>
                         </td>
                     </tr>

@@ -1075,6 +1075,69 @@ function ws_ajax_delete_worker() {
     wp_send_json_success();
 }
 
+/* ---------------- Sesiones de trabajo ---------------- */
+
+// Cerrar la sesión de trabajo de un trabajador (el dueño desde el panel).
+add_action( 'wp_ajax_ws_session_close', 'ws_ajax_session_close' );
+function ws_ajax_session_close() {
+    ws_guard( 'workers_manage' );
+    $id = (int) ( $_POST['session_id'] ?? 0 );
+    if ( ! $id ) {
+        wp_send_json_error( array( 'msg' => __( 'Sesión inválida.', 'workshop' ) ) );
+    }
+    $session = WS_Sessions::get( $id );
+    if ( ! $session ) {
+        wp_send_json_error( array( 'msg' => __( 'Sesión no encontrada.', 'workshop' ) ) );
+    }
+    // Solo cerrar sesiones de trabajadores del propio negocio.
+    if ( ! current_user_can( 'manage_options' ) && ! ws_user_belongs_to_business( $session->user_id ) ) {
+        wp_send_json_error( array( 'msg' => __( 'El trabajador no pertenece a este negocio.', 'workshop' ) ) );
+    }
+    $res = WS_Sessions::end( $id, get_current_user_id(), __( 'Cerrada por el encargado', 'workshop' ) );
+    if ( is_wp_error( $res ) ) {
+        wp_send_json_error( array( 'msg' => $res->get_error_message() ) );
+    }
+    ws_log_audit( 'session_close', 'work_session', $id, array( 'user_id' => (int) $session->user_id ) );
+    wp_send_json_success();
+}
+
+// Deshabilitar/habilitar un trabajador: al deshabilitarlo se cierran sus
+// sesiones abiertas y se expulsan sus sesiones de WordPress activas.
+add_action( 'wp_ajax_ws_worker_set_disabled', 'ws_ajax_worker_set_disabled' );
+function ws_ajax_worker_set_disabled() {
+    ws_guard( 'workers_manage' );
+    $user_id  = (int) ( $_POST['user_id'] ?? 0 );
+    $disabled = ! empty( $_POST['disabled'] );
+    if ( ! $user_id || $user_id === get_current_user_id() ) {
+        wp_send_json_error( array( 'msg' => __( 'No puedes deshabilitar tu propia cuenta.', 'workshop' ) ) );
+    }
+    $user = get_user_by( 'id', $user_id );
+    if ( ! $user ) {
+        wp_send_json_error( array( 'msg' => __( 'Trabajador no encontrado.', 'workshop' ) ) );
+    }
+    // Un trabajador solo puede operar sobre miembros de su negocio (o admin).
+    if ( ! current_user_can( 'manage_options' ) && ! ws_user_belongs_to_business( $user_id ) ) {
+        wp_send_json_error( array( 'msg' => __( 'El trabajador no pertenece a este negocio.', 'workshop' ) ) );
+    }
+    // No se deshabilitan dueños: solo trabajadores (almacenero/vendedor).
+    if ( in_array( 'ws_owner', (array) $user->roles, true ) ) {
+        wp_send_json_error( array( 'msg' => __( 'No puedes deshabilitar al dueño del negocio.', 'workshop' ) ) );
+    }
+    if ( $disabled ) {
+        update_user_meta( $user_id, 'ws_disabled', 1 );
+        WS_Sessions::close_all_open( $user_id, get_current_user_id(), __( 'Cuenta deshabilitada', 'workshop' ) );
+        // Expulsa las sesiones de WordPress activas: no puede seguir en el panel.
+        if ( class_exists( 'WP_Session_Tokens' ) ) {
+            WP_Session_Tokens::get_instance( $user_id )->destroy_all();
+        }
+        ws_log_audit( 'worker_disable', 'user', $user_id );
+    } else {
+        delete_user_meta( $user_id, 'ws_disabled' );
+        ws_log_audit( 'worker_enable', 'user', $user_id );
+    }
+    wp_send_json_success();
+}
+
 /* ---------------- Permisos y configuración ---------------- */
 
 add_action( 'wp_ajax_ws_save_permissions', 'ws_ajax_save_permissions' );

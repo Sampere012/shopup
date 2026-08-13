@@ -15,6 +15,36 @@ function ws_track_last_login( $user_login, $user ) {
     }
 }
 
+// Check-in automático de jornada: si el trabajador tiene turno planificado hoy
+// según el calendario (WS_Shifts), al entrar se le abre su sesión de trabajo.
+// El dueño la ve (entrada/salida) en el panel de Trabajadores.
+add_action( 'wp_login', 'ws_auto_clockin_shift', 20, 2 );
+function ws_auto_clockin_shift( $user_login, $user ) {
+    if ( ! $user instanceof WP_User ) {
+        return;
+    }
+    $role = ws_user_role( $user->ID );
+    if ( ! in_array( $role, array( 'storekeeper', 'seller' ), true ) ) {
+        return;
+    }
+    if ( ! class_exists( 'WS_Sessions' ) || ws_worker_disabled( $user->ID ) ) {
+        return;
+    }
+    WS_Sessions::auto_clockin( $user->ID );
+}
+
+// Bloquear el acceso de trabajadores deshabilitados por el dueño.
+add_filter( 'authenticate', 'ws_block_disabled_login', 30, 3 );
+function ws_block_disabled_login( $user, $username, $password ) {
+    if ( $user instanceof WP_User && ws_worker_disabled( $user->ID ) ) {
+        return new WP_Error(
+            'ws_disabled',
+            __( 'Tu cuenta está deshabilitada. Contacta al dueño del negocio.', 'workshop' )
+        );
+    }
+    return $user;
+}
+
 // Tras cualquier login (también vía wp-login.php) redirigir según rol.
 add_filter( 'login_redirect', 'ws_login_redirect', 10, 3 );
 function ws_login_redirect( $redirect_to, $requested_redirect_to, $user ) {

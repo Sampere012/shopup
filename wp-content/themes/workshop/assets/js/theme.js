@@ -1285,6 +1285,29 @@
                 $('ws_delete_worker', { user_id: id }).then(res => {
                     if (res.success) { toast('success', 'Trabajador eliminado'); setTimeout(() => location.reload(), 600); } else { toast('error', 'Error', res.data && res.data.msg); }
                 });
+            },
+            closeSession(id) {
+                const confirm = () => this.closeSessionReq(id);
+                if (typeof Swal !== 'undefined') {
+                    Swal.fire({ title: '¿Cerrar sesión de trabajo?', text: 'Se registrará la hora de salida del trabajador.', icon: 'question', showCancelButton: true, confirmButtonText: 'Cerrar', cancelButtonText: 'Cancelar' })
+                        .then(r => { if (r.isConfirmed) confirm(); });
+                } else { confirm(); }
+            },
+            closeSessionReq(id) {
+                $('ws_session_close', { session_id: id }).then(res => {
+                    if (res.success) { toast('success', 'Sesión cerrada'); setTimeout(() => location.reload(), 600); } else { toast('error', 'Error', res.data && res.data.msg); }
+                });
+            },
+            setDisabled(id, name, disabled) {
+                const confirm = () => {
+                    $('ws_worker_set_disabled', { user_id: id, disabled: disabled ? 1 : 0 }).then(res => {
+                        if (res.success) { toast('success', disabled ? 'Trabajador deshabilitado' : 'Trabajador habilitado'); setTimeout(() => location.reload(), 600); } else { toast('error', 'Error', res.data && res.data.msg); }
+                    });
+                };
+                if (typeof Swal !== 'undefined') {
+                    Swal.fire({ title: (disabled ? '¿Deshabilitar' : '¿Habilitar') + ' a ' + (name || '') + '?', text: disabled ? 'Se cerrará su sesión, no podrá entrar y no se le registrarán más jornadas.' : 'Volverá a poder entrar con su cuenta.', icon: 'warning', showCancelButton: true, confirmButtonText: disabled ? 'Deshabilitar' : 'Habilitar', cancelButtonText: 'Cancelar' })
+                        .then(r => { if (r.isConfirmed) confirm(); });
+                } else { confirm(); }
             }
         }));
 
@@ -2718,6 +2741,37 @@
     }
     // Segunda pasada: si algún FAB se renderiza después (async), se agrupa igualmente.
     window.setTimeout(initFabGroup, 1200);
+})();
+
+/* ------------------------------------------------------------------ */
+/* Sesiones de trabajo: reloj del tiempo transcurrido (en curso).      */
+/* Actualiza los .ws-elapsed[data-in] (epoch de la entrada) cada minuto. */
+/* ------------------------------------------------------------------ */
+(function () {
+    'use strict';
+    function fmt(sec) {
+        sec = Math.max(0, Math.floor(sec));
+        var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+        return h > 0 ? h + ' h ' + ('0' + m).slice(-2) + ' min' : m + ' min';
+    }
+    function wsSessionsTick() {
+        var els = document.querySelectorAll('.ws-elapsed[data-in]');
+        if (!els.length) { return; }
+        var now = Date.now() / 1000;
+        els.forEach(function (el) {
+            var t = parseInt(el.getAttribute('data-in'), 10);
+            if (!isNaN(t)) { el.textContent = fmt(now - t); }
+        });
+    }
+    function wsSessionsInit() {
+        wsSessionsTick();
+        window.setInterval(wsSessionsTick, 60000);
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', wsSessionsInit);
+    } else {
+        wsSessionsInit();
+    }
 })();
 
 /* ------------------------------------------------------------------ */
