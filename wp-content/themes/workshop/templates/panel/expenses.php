@@ -25,16 +25,19 @@ $ws_exp_currency = ws_currency_symbol();
 // Gastos del mes actual (servidor) + resumen del mes.
 $ws_exp_list = array_map( static function ( $e ) {
     return array(
-        'id'         => (int) $e->id,
-        'concept'    => (string) $e->concept,
-        'amount'     => (float) $e->amount,
-        'category'   => (string) $e->category,
-        'note'       => (string) ( $e->note ?? '' ),
-        'date_label' => mysql2date( 'd/m/Y', $e->expense_date ),
-        'date_raw'   => gmdate( 'Y-m-d', strtotime( $e->expense_date ) ),
+        'id'            => (int) $e->id,
+        'concept'       => (string) $e->concept,
+        'amount'        => (float) $e->amount,
+        'category'      => (string) $e->category,
+        'note'          => (string) ( $e->note ?? '' ),
+        'location_id'   => (int) ( $e->location_id ?? 0 ),
+        'location_name' => (string) WS_Expenses::location_name( $e ),
+        'date_label'    => mysql2date( 'd/m/Y', $e->expense_date ),
+        'date_raw'      => gmdate( 'Y-m-d', strtotime( $e->expense_date ) ),
     );
 }, WS_Expenses::all( $ws_exp_year, $ws_exp_month ) );
 $ws_exp_summary = WS_Expenses::month_summary( $ws_exp_year, $ws_exp_month );
+$ws_exp_locations = ws_user_locations();
 
 // Meses en español para el selector.
 $ws_months = array(
@@ -50,12 +53,15 @@ $ws_months = array(
     'month'    => $ws_exp_month,
     'list'     => $ws_exp_list,
     'summary'  => $ws_exp_summary,
+    'locations'=> array_map( static function ( $l ) {
+        return array( 'id' => (int) $l->id, 'name' => (string) $l->name );
+    }, $ws_exp_locations ),
 ) ) ); ?>)">
 
     <div class="ws-alert ws-alert-info">
         <i class="fa-solid fa-money-bill-wave"></i>
         <span>
-            <?php esc_html_e( 'Registra aquí los gastos de tu negocio con su fecha (el gasto es por mes). Las utilidades se calculan en Reportes: ingresos del mes (pedidos + ventas POS) menos los gastos del mes.', 'workshop' ); ?>
+            <?php esc_html_e( 'Registra aquí los gastos de tu negocio con su fecha (el gasto es por mes). Elige si el gasto es GENERAL (se reparte a todas las ubicaciones) o de UNA ubicación concreta. Las utilidades se calculan en Reportes por fecha y por ubicación.', 'workshop' ); ?>
         </span>
     </div>
 
@@ -98,6 +104,16 @@ $ws_months = array(
                 <input type="number" step="0.01" min="0.01" x-model.number="form.amount" required>
             </label>
             <label class="ws-field">
+                <span><?php esc_html_e( 'Ubicación', 'workshop' ); ?></span>
+                <select x-model.number="form.location_id">
+                    <option value="0"><?php esc_html_e( 'General (todas las ubicaciones)', 'workshop' ); ?></option>
+                    <template x-for="l in locations" :key="l.id">
+                        <option :value="l.id" x-text="l.name"></option>
+                    </template>
+                </select>
+                <p class="ws-muted" style="font-size:.8em;margin:4px 0 0"><?php esc_html_e( 'General = se reparte a todas las ubicaciones en los reportes. Si es de un punto de venta, solo cuenta para esa ubicación.', 'workshop' ); ?></p>
+            </label>
+            <label class="ws-field">
                 <span><?php esc_html_e( 'Categoría', 'workshop' ); ?></span>
                 <input type="text" x-model="form.category" maxlength="120" list="ws-exp-cats" placeholder="<?php esc_attr_e( 'Ej.: Alquiler, Servicios, Salarios…', 'workshop' ); ?>">
                 <datalist id="ws-exp-cats">
@@ -129,12 +145,16 @@ $ws_months = array(
             <p class="ws-empty"><?php esc_html_e( 'Aún no hay gastos registrados en este mes.', 'workshop' ); ?></p>
         </template>
         <table class="ws-table" x-show="list.length > 0">
-            <thead><tr><th><?php esc_html_e( 'Concepto', 'workshop' ); ?></th><th><?php esc_html_e( 'Categoría', 'workshop' ); ?></th><th><?php esc_html_e( 'Fecha', 'workshop' ); ?></th><th><?php esc_html_e( 'Monto', 'workshop' ); ?></th><th></th></tr></thead>
+            <thead><tr><th><?php esc_html_e( 'Concepto', 'workshop' ); ?></th><th><?php esc_html_e( 'Categoría', 'workshop' ); ?></th><th><?php esc_html_e( 'Ubicación', 'workshop' ); ?></th><th><?php esc_html_e( 'Fecha', 'workshop' ); ?></th><th><?php esc_html_e( 'Monto', 'workshop' ); ?></th><th></th></tr></thead>
             <tbody>
                 <template x-for="e in list" :key="e.id">
                     <tr>
                         <td><strong x-text="e.concept"></strong><small class="ws-muted" x-show="e.note" x-text="e.note"></small></td>
                         <td x-text="e.category || '—'"></td>
+                        <td>
+                            <span class="ws-badge ws-badge-general" x-show="!e.location_id"><?php esc_html_e( 'General', 'workshop' ); ?></span>
+                            <span x-show="e.location_id" x-text="e.location_name || ('#' + e.location_id)"></span>
+                        </td>
                         <td class="ws-muted" x-text="e.date_label"></td>
                         <td class="ws-strong" x-text="money(e.amount)"></td>
                         <td class="ws-actions" x-show="can">

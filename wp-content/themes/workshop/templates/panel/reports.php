@@ -97,37 +97,50 @@ if ( $ws_biz && ! empty( $ws_biz->slug ) ) {
                 </tr>
             </tbody>
         </table>
-        <p class="ws-muted" style="margin:10px 0 0;font-size:.82em"><?php esc_html_e( 'Utilidad = ingresos (pedidos + ventas POS) − gastos del negocio. Los gastos son globales y por mes; los ingresos respetan el filtro de ubicación.', 'workshop' ); ?></p>
+        <p class="ws-muted" style="margin:10px 0 0;font-size:.82em"><?php esc_html_e( 'Utilidad = ingresos (pedidos + ventas POS) − gastos del negocio. Los gastos generales se reparten a todas las ubicaciones; los de una ubicación concreta solo cuentan para esa ubicación.', 'workshop' ); ?></p>
         <?php endif; ?>
     </div>
 
     <div class="ws-card">
-        <h3 class="ws-card-title"><i class="fa-solid fa-store"></i> <?php esc_html_e( 'Ingresos por punto de venta', 'workshop' ); ?></h3>
-        <?php if ( empty( $utils['by_loc'] ) ) : ?>
-            <p class="ws-empty"><?php esc_html_e( 'Sin ingresos en el período.', 'workshop' ); ?></p>
+        <h3 class="ws-card-title"><i class="fa-solid fa-store"></i> <?php esc_html_e( 'Utilidad por punto de venta', 'workshop' ); ?></h3>
+        <?php
+            // Puntos de venta con ingresos o gastos en el período.
+            $ws_util_locs = array_unique( array_merge(
+                array_keys( (array) $utils['by_loc'] ),
+                array_keys( (array) $utils['exp_by_loc'] )
+            ) );
+            sort( $ws_util_locs );
+        ?>
+        <?php if ( empty( $ws_util_locs ) ) : ?>
+            <p class="ws-empty"><?php esc_html_e( 'Sin ingresos ni gastos en el período.', 'workshop' ); ?></p>
         <?php else : ?>
         <table class="ws-table" data-sortable data-ts="reports-by-loc">
             <thead><tr>
                 <th><?php esc_html_e( 'Punto de venta', 'workshop' ); ?></th>
                 <th><?php esc_html_e( 'Ingresos', 'workshop' ); ?></th>
-                <th><?php esc_html_e( 'Participación', 'workshop' ); ?></th>
+                <th><?php esc_html_e( 'Gastos', 'workshop' ); ?></th>
+                <th><?php esc_html_e( 'Utilidad', 'workshop' ); ?></th>
             </tr></thead>
             <tbody>
-                <?php foreach ( $utils['by_loc'] as $lid => $total ) :
+                <?php foreach ( $ws_util_locs as $lid ) :
+                    $inc = (float) ( $utils['by_loc'][ $lid ] ?? 0 );
+                    $exp = (float) ( $utils['exp_by_loc'][ $lid ] ?? 0 );
+                    $utl = $inc - $exp;
                     $lname = '#' . $lid;
                     foreach ( $utils['locations'] as $l ) {
                         if ( (int) $l->id === (int) $lid ) { $lname = $l->name; break; }
                     }
-                    $pct = $utils['totals']['income'] > 0 ? round( $total / $utils['totals']['income'] * 100, 1 ) : 0;
                 ?>
                 <tr>
                     <td><strong><?php echo esc_html( $lname ); ?></strong></td>
-                    <td><?php echo ws_money( $total, $currency ); ?></td>
-                    <td><?php echo esc_html( number_format_i18n( $pct, 1 ) ); ?>%</td>
+                    <td><?php echo ws_money( $inc, $currency ); ?></td>
+                    <td><?php echo ws_money( $exp, $currency ); ?></td>
+                    <td class="ws-strong" style="color:<?php echo $utl >= 0 ? 'var(--ws-success)' : 'var(--ws-danger)'; ?>"><?php echo ws_money( $utl, $currency ); ?></td>
                 </tr>
                 <?php endforeach; ?>
             </tbody>
         </table>
+        <p class="ws-muted" style="margin:10px 0 0;font-size:.82em"><?php esc_html_e( 'Los gastos generales se suman a cada punto de venta; los de una ubicación solo a la suya.', 'workshop' ); ?></p>
         <?php endif; ?>
     </div>
 </div>

@@ -416,10 +416,12 @@ function ws_db_tables() {
             KEY slug (slug)
         ) {charset};",
 
-        // Gastos del negocio (control de gastos): concepto, monto, categoría y
-        // fecha del gasto (por mes). La utilidad mensual = ingresos - gastos.
+        // Gastos del negocio (control de gastos): concepto, monto, categoría,
+        // fecha del gasto (por mes) y UBICACIÓN: 0 = general (se reparte a todas
+        // las ubicaciones) o un location_id concreto (solo cuenta para esa).
         'expenses' => "CREATE TABLE {prefix}ws_expenses (
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            location_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
             concept VARCHAR(255) NOT NULL,
             amount DECIMAL(12,2) NOT NULL DEFAULT 0,
             category VARCHAR(120) NOT NULL DEFAULT '',
@@ -428,6 +430,7 @@ function ws_db_tables() {
             created_by BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
+            KEY location_id (location_id),
             KEY expense_date (expense_date)
         ) {charset};",
 
@@ -603,6 +606,18 @@ function ws_db_migrate() {
         $c_cols = $wpdb->get_col( "SHOW COLUMNS FROM {$ct}", 0 );
         if ( ! in_array( 'active', $c_cols, true ) ) {
             $wpdb->query( "ALTER TABLE {$ct} ADD COLUMN active TINYINT(1) NOT NULL DEFAULT 1 AFTER notes" );
+        }
+    }
+
+    // Columna `location_id` en gastos: 0 = general (se reparte a TODAS las
+    // ubicaciones del negocio) o un location_id concreto (solo cuenta para
+    // esa ubicación en los reportes). Los gastos existentes quedan generales.
+    $ws_exp_tables = $wpdb->get_col( "SHOW TABLES LIKE '" . $wpdb->esc_like( $wpdb->prefix . 'ws' ) . "%_expenses'" );
+    foreach ( (array) $ws_exp_tables as $ws_exp_t ) {
+        $ws_exp_cols = $wpdb->get_col( "SHOW COLUMNS FROM {$ws_exp_t}", 0 );
+        if ( ! in_array( 'location_id', $ws_exp_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$ws_exp_t} ADD COLUMN location_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0 AFTER id" );
+            $wpdb->query( "ALTER TABLE {$ws_exp_t} ADD KEY location_id (location_id)" );
         }
     }
 

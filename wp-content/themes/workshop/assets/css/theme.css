@@ -2575,6 +2575,7 @@ ul.ws-topbar-nav { list-style: none; margin: 0 auto; padding: 0; }
 .ws-exp-total { text-align: right; }
 .ws-exp-total span { display: block; font-size: .78em; color: var(--ws-muted, #64748b); margin-bottom: 2px; }
 .ws-exp-total strong { font-size: 1.35rem; color: var(--ws-primary, #4f46e5); }
+.ws-badge-general { background: #eef2ff; color: #4f46e5; }
 
 /* ---------------------------------------------------------------------
  * Categorías: acordeón (árbol plegable).

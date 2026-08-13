@@ -18,22 +18,45 @@ class WS_Expenses {
         return ws_table_name( 'expenses' );
     }
 
-    /** Gastos del negocio actual, opcionalmente filtrados por mes. */
-    public static function all( $year = 0, $month = 0 ) {
+    /**
+     * Gastos del negocio actual, opcionalmente filtrados por mes.
+     * $location_id: 0 = todas; -1 = solo los generales; >0 = esa ubicación.
+     */
+    public static function all( $year = 0, $month = 0, $location_id = 0 ) {
         global $wpdb;
         $t = self::table();
         if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $t ) ) !== $t ) {
             return array();
         }
+        $where = array( '1=1' );
+        $args  = array();
         if ( $year && $month ) {
             $from = gmdate( 'Y-m-d 00:00:00', mktime( 0, 0, 0, (int) $month, 1, (int) $year ) );
             $to   = gmdate( 'Y-m-d 00:00:00', mktime( 0, 0, 0, (int) $month + 1, 1, (int) $year ) );
-            return $wpdb->get_results( $wpdb->prepare(
-                "SELECT * FROM {$t} WHERE expense_date >= %s AND expense_date < %s ORDER BY expense_date DESC, id DESC",
-                $from, $to
-            ) );
+            $where[] = 'expense_date >= %s';
+            $where[] = 'expense_date < %s';
+            $args[]  = $from;
+            $args[]  = $to;
         }
-        return $wpdb->get_results( "SELECT * FROM {$t} ORDER BY expense_date DESC, id DESC LIMIT 200" );
+        $lid = (int) $location_id;
+        if ( $lid > 0 ) {
+            $where[] = 'location_id = %d';
+            $args[]  = $lid;
+        } elseif ( $lid < 0 ) {
+            $where[] = 'location_id = 0';
+        }
+        $sql = 'SELECT * FROM ' . $t . ' WHERE ' . implode( ' AND ', $where ) . ' ORDER BY expense_date DESC, id DESC LIMIT 200';
+        return $args ? $wpdb->get_results( $wpdb->prepare( $sql, ...$args ) ) : $wpdb->get_results( $sql );
+    }
+
+    /** Nombre de la ubicación de un gasto ('' si no existe la columna/tabla). */
+    public static function location_name( $expense ) {
+        $lid = (int) ( $expense->location_id ?? 0 );
+        if ( ! $lid ) {
+            return '';
+        }
+        $loc = WS_CRUD::get_location( $lid );
+        return $loc ? (string) $loc->name : '';
     }
 
     /** Guarda (crea o edita) un gasto. */
@@ -45,17 +68,28 @@ class WS_Expenses {
         $category = sanitize_text_field( $data['category'] ?? '' );
         $note     = sanitize_textarea_field( $data['note'] ?? '' );
         $date     = sanitize_text_field( $data['expense_date'] ?? '' );
+        $location_id = (int) ( $data['location_id'] ?? 0 );
+        if ( $location_id < 0 ) {
+            $location_id = 0;
+        }
         if ( '' === $concept ) {
             return new WP_Error( 'concept', __( 'El concepto del gasto es obligatorio.', 'workshop' ) );
         }
         if ( $amount <= 0 ) {
             return new WP_Error( 'amount', __( 'El monto del gasto debe ser mayor que 0.', 'workshop' ) );
         }
+        if ( $location_id > 0 ) {
+            $loc_ids = ws_user_location_ids();
+            if ( ! in_array( $location_id, $loc_ids, true ) ) {
+                return new WP_Error( 'location', __( 'La ubicación elegida no es válida.', 'workshop' ) );
+            }
+        }
         $ts = '' !== $date ? strtotime( $date ) : current_time( 'timestamp' );
         if ( ! $ts ) {
             return new WP_Error( 'date', __( 'La fecha del gasto no es válida.', 'workshop' ) );
         }
         $fields = array(
+            'location_id'  => $location_id,
             'concept'      => mb_substr( $concept, 0, 255 ),
             'amount'       => $amount,
             'category'     => mb_substr( $category, 0, 120 ),
@@ -137,14 +171,16 @@ function ws_ajax_expenses_list() {
     $out   = array();
     foreach ( WS_Expenses::all( $year, $month ) as $e ) {
         $out[] = array(
-            'id'           => (int) $e->id,
-            'concept'      => (string) $e->concept,
-            'amount'       => (float) $e->amount,
-            'category'     => (string) $e->category,
-            'note'         => (string) ( $e->note ?? '' ),
-            'date_label'   => mysql2date( 'd/m/Y', $e->expense_date ),
-            'date_raw'     => gmdate( 'Y-m-d', strtotime( $e->expense_date ) ),
-            'by'           => (int) $e->created_by,
+            'id'            => (int) $e->id,
+            'concept'       => (string) $e->concept,
+            'amount'        => (float) $e->amount,
+            'category'      => (string) $e->category,
+            'note'          => (string) ( $e->note ?? '' ),
+            'location_id'   => (int) ( $e->location_id ?? 0 ),
+            'location_name' => (string) WS_Expenses::location_name( $e ),
+            'date_label'    => mysql2date( 'd/m/Y', $e->expense_date ),
+            'date_raw'      => gmdate( 'Y-m-d', strtotime( $e->expense_date ) ),
+            'by'            => (int) $e->created_by,
         );
     }
     $summary = WS_Expenses::month_summary(

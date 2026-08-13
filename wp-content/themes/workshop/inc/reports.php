@@ -238,10 +238,12 @@ function ws_month_label( $ym ) {
  * Utilidades mensuales del reporte.
  *
  * La utilidad es INGRESOS (pedidos aceptados/completados + ventas POS
- * completadas) MENOS GASTOS. Los gastos son GLOBALES del negocio y POR MES
- * (sin ubicación): se restan completos en el mes que les corresponde. Los
- * ingresos respetan el filtro de ubicación del reporte. Se devuelve el
- * desglose mes a mes y el ingreso por punto de venta del período.
+ * completadas) MENOS GASTOS. Los gastos pueden ser GENERALES (location_id = 0,
+ * se reparten a TODAS las ubicaciones del negocio) o de UNA ubicación concreta
+ * (solo cuentan para esa ubicación). Los ingresos y los gastos respetan el
+ * filtro de ubicación del reporte; los gastos se restan completos en el mes
+ * que les corresponde. Se devuelve el desglose mes a mes, la utilidad por
+ * punto de venta (ingresos − gastos) y el ingreso por punto de venta.
  *
  * @param array $filters Salida de ws_reports_filters().
  * @return array
@@ -253,6 +255,7 @@ function ws_reports_utilities( $filters ) {
 	$since   = $filters['period_start'];
 	$ph      = $loc_ids ? implode( ',', array_fill( 0, count( $loc_ids ), '%d' ) ) : '0';
 	$args    = $loc_ids ? $loc_ids : array( 0 );
+	$loc_set = $loc_ids ? array_flip( array_map( 'intval', $loc_ids ) ) : array();
 
 	$orders_t = ws_table_name( 'orders' );
 	$pos_t    = ws_table_name( 'pos_sales' );
@@ -260,7 +263,7 @@ function ws_reports_utilities( $filters ) {
 
 	$income_by_month = array(); // ym => total.
 	$by_loc_by_month = array(); // ym => [ loc_id => total ].
-	$by_loc_total    = array(); // loc_id => total del período.
+	$by_loc_total    = array(); // loc_id => total de ingresos del período.
 
 	if ( $loc_ids ) {
 		$order_inc = $wpdb->get_results( $wpdb->prepare(
@@ -286,17 +289,42 @@ function ws_reports_utilities( $filters ) {
 		}
 	}
 
-	// Gastos globales del negocio, agrupados por mes.
-	$exp_by_month = array();
+	// Gastos por mes y por ubicación. location_id = 0 es GENERAL: cuenta una
+	// vez en el total del negocio y se reparte a CADA ubicación del filtro
+	// (su utilidad por punto de venta lo asume). Un gasto de una ubicación
+	// concreta solo cuenta si esa ubicación está dentro del filtro.
+	$exp_by_month   = array(); // ym => total (general + específicos del filtro).
+	$exp_loc_by_month = array(); // ym => [ loc_id => total ].
+	$exp_by_loc_total = array(); // loc_id => total de gastos del período.
 	if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $exp_t ) ) ) === $exp_t ) {
 		$exp_rows = $wpdb->get_results( $wpdb->prepare(
-			"SELECT DATE_FORMAT(expense_date, '%Y-%m') AS ym, SUM(amount) AS total
-			 FROM {$exp_t} WHERE expense_date >= %s GROUP BY ym",
+			"SELECT DATE_FORMAT(expense_date, '%Y-%m') AS ym, location_id, SUM(amount) AS total
+			 FROM {$exp_t} WHERE expense_date >= %s GROUP BY ym, location_id",
 			$since
 		) );
 		foreach ( $exp_rows as $row ) {
-			$exp_by_month[ (string) $row->ym ] = (float) $row->total;
+			$ym    = (string) $row->ym;
+			$total = (float) $row->total;
+			$lid   = (int) $row->location_id;
+			if ( 0 === $lid ) {
+				$exp_by_month[ $ym ] = ( $exp_by_month[ $ym ] ?? 0 ) + $total;
+				foreach ( $loc_ids as $loc ) {
+					$exp_loc_by_month[ $ym ][ $loc ] = ( $exp_loc_by_month[ $ym ][ $loc ] ?? 0 ) + $total;
+					$exp_by_loc_total[ $loc ]        = ( $exp_by_loc_total[ $loc ] ?? 0 ) + $total;
+				}
+			} elseif ( ! isset( $loc_set[ $lid ] ) ) {
+				continue;
+			} else {
+				$exp_by_month[ $ym ] = ( $exp_by_month[ $ym ] ?? 0 ) + $total;
+				$exp_loc_by_month[ $ym ][ $lid ] = ( $exp_loc_by_month[ $ym ][ $lid ] ?? 0 ) + $total;
+				$exp_by_loc_total[ $lid ]        = ( $exp_by_loc_total[ $lid ] ?? 0 ) + $total;
+			}
 		}
+	}
+
+	$util_by_loc_total = array();
+	foreach ( $by_loc_total as $loc => $inc ) {
+		$util_by_loc_total[ $loc ] = $inc - (float) ( $exp_by_loc_total[ $loc ] ?? 0 );
 	}
 
 	$yms = array_unique( array_merge( array_keys( $income_by_month ), array_keys( $exp_by_month ) ) );
@@ -324,6 +352,8 @@ function ws_reports_utilities( $filters ) {
 		'months'    => $months,
 		'totals'    => $totals,
 		'by_loc'    => $by_loc_total,
+		'exp_by_loc'=> $exp_by_loc_total,
+		'util_by_loc' => $util_by_loc_total,
 		'locations' => $filters['locations'],
 	);
 }
@@ -681,11 +711,16 @@ function ws_reports_build_sheets( $filters, $data ) {
 		$util_rows[] = array( __( 'Total del período', 'workshop' ), $money( $utilities['totals']['income'] ), $money( $utilities['totals']['expenses'] ), $money( $utilities['totals']['utility'] ) );
 		$sheets[ __( 'Utilidades', 'workshop' ) ] = $util_rows;
 	}
-	if ( ! empty( $utilities['by_loc'] ) ) {
+	$util_locs = array_unique( array_merge(
+		array_keys( (array) $utilities['by_loc'] ),
+		array_keys( (array) $utilities['exp_by_loc'] )
+	) );
+	sort( $util_locs );
+	if ( $util_locs ) {
 		$utilloc_rows = array(
-			array( __( 'Punto de venta', 'workshop' ), __( 'Ingresos', 'workshop' ), __( 'Participación', 'workshop' ) ),
+			array( __( 'Punto de venta', 'workshop' ), __( 'Ingresos', 'workshop' ), __( 'Gastos', 'workshop' ), __( 'Utilidad', 'workshop' ) ),
 		);
-		foreach ( $utilities['by_loc'] as $lid => $total ) {
+		foreach ( $util_locs as $lid ) {
 			$lname = '#' . $lid;
 			foreach ( $utilities['locations'] as $l ) {
 				if ( (int) $l->id === (int) $lid ) {
@@ -693,10 +728,11 @@ function ws_reports_build_sheets( $filters, $data ) {
 					break;
 				}
 			}
-			$pct = $utilities['totals']['income'] > 0 ? round( $total / $utilities['totals']['income'] * 100, 1 ) : 0;
-			$utilloc_rows[] = array( $lname, $money( $total ), $pct . '%' );
+			$inc = (float) ( $utilities['by_loc'][ $lid ] ?? 0 );
+			$exp = (float) ( $utilities['exp_by_loc'][ $lid ] ?? 0 );
+			$utilloc_rows[] = array( $lname, $money( $inc ), $money( $exp ), $money( $inc - $exp ) );
 		}
-		$sheets[ __( 'Ingresos por punto de venta', 'workshop' ) ] = $utilloc_rows;
+		$sheets[ __( 'Utilidad por punto de venta', 'workshop' ) ] = $utilloc_rows;
 	}
 
 	// Hojas de POS (solo si la tabla existe y hay datos).

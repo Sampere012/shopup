@@ -1836,9 +1836,10 @@
                 month: Number(data.month) || (new Date().getMonth() + 1),
                 list: data.list || [],
                 summary: data.summary || { income: 0, expenses: 0, utility: 0 },
+                locations: data.locations || [],
                 editingId: 0,
                 saving: false,
-                form: { concept: '', amount: 0, category: '', note: '', expense_date: '' },
+                form: { concept: '', amount: 0, category: '', note: '', expense_date: '', location_id: 0 },
 
                 years() {
                     const out = [];
@@ -1855,13 +1856,21 @@
                 total() {
                     return (this.list || []).reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
                 },
+                locName(e) {
+                    if (!e.location_id) return '';
+                    const loc = this.locations.find((l) => l.id === e.location_id);
+                    return loc ? loc.name : '';
+                },
                 resetForm() {
                     this.editingId = 0;
-                    this.form = { concept: '', amount: 0, category: '', note: '', expense_date: '' };
+                    this.form = { concept: '', amount: 0, category: '', note: '', expense_date: '', location_id: 0 };
                 },
                 edit(e) {
                     this.editingId = e.id;
-                    this.form = { concept: e.concept, amount: e.amount, category: e.category, note: e.note, expense_date: e.date_raw };
+                    this.form = {
+                        concept: e.concept, amount: e.amount, category: e.category, note: e.note,
+                        expense_date: e.date_raw, location_id: e.location_id || 0
+                    };
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                 },
                 api(action, extra, cb) {
@@ -1895,7 +1904,8 @@
                         amount: String(this.form.amount),
                         category: this.form.category,
                         note: this.form.note,
-                        expense_date: this.form.expense_date
+                        expense_date: this.form.expense_date,
+                        location_id: this.form.location_id || 0
                     }, (json) => {
                         this.saving = false;
                         if (json && json.success) {
