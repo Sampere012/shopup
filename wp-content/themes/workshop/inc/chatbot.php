@@ -121,6 +121,10 @@ function ws_chatbot_config( $in_admin = false ) {
         // el nombre, el hero, publica negocios o productos, el bot los refleja
         // en la misma carga (nunca respuestas guardadas con datos antiguos).
         'site'    => ws_chatbot_site_context(),
+        // Identidad del usuario actual (rol, negocio, permisos y módulos a los
+        // que puede acceder). Se calcula en cada petición: cualquier cambio de
+        // rol, permisos, plan o configuración se refleja al instante.
+        'user'    => ws_chatbot_user_context(),
         'bizSlug' => $slug,
         'locSlug' => $loc_slug,
         'chatbot' => $chatbot,
@@ -553,6 +557,11 @@ function ws_chatbot_panel_shortcuts() {
         $caps  = (array) $caps;
         $allow = empty( $caps );
         foreach ( $caps as $cap ) {
+            // Cap vacío = módulo sin restricción (p. ej. Inicio o Mi plan).
+            if ( '' === $cap ) {
+                $allow = true;
+                continue;
+            }
             if ( WS_Capabilities::can( $cap ) ) {
                 $allow = true;
                 break;
@@ -1423,15 +1432,17 @@ function ws_chatbot_faq_knowledge() {
  */
 function ws_chatbot_knowledge_config() {
     $out = array();
-    // Conocimiento EN VIVO del sitio (nombre, portada, contadores y tiendas):
-    // va PRIMERO para que sus patrones ganen los empates frente a respuestas
-    // guardadas y el bot responda siempre con los valores vigentes del admin.
-    foreach ( ws_chatbot_live_knowledge() as $item ) {
+    // Conocimiento EN VIVO del sitio (nombre, portada, contadores y tiendas) y
+    // del USUARIO actual (quién es, rol, negocio, permisos y módulos): va
+    // PRIMERO para que sus patrones ganen los empates frente a respuestas
+    // guardadas y el bot responda siempre con los valores vigentes.
+    foreach ( array_merge( ws_chatbot_live_knowledge(), ws_chatbot_user_live_knowledge() ) as $item ) {
         $out[] = array(
             'id'       => sanitize_key( $item['id'] ),
             'patterns' => array_values( array_filter( array_map( 'trim', (array) $item['patterns'] ) ) ),
             'answer'   => (string) ( $item['answer'] ?? '' ),
             'chip'     => ! empty( $item['chip'] ) ? $item['chip'] : null,
+            'chips'    => ! empty( $item['chips'] ) ? $item['chips'] : null,
         );
     }
     // Miembros de negocio y el admin del sitio (burbuja en wp-admin) ven todo.
@@ -1671,6 +1682,242 @@ function ws_chatbot_live_knowledge() {
 }
 
 /**
+ * Contexto EN VIVO del USUARIO actual para el asistente: identidad, rol,
+ * negocio al que pertenece, plan y los módulos/permisos a los que realmente
+ * puede acceder (según la matriz de permisos del negocio).
+ *
+ * Se recalcula en cada petición (con caché estática por request): si el admin
+ * cambia el rol de un usuario, los permisos de un rol, el plan del negocio o
+ * cualquier configuración, el bot lo refleja al momento.
+ */
+function ws_chatbot_user_context() {
+    static $cached = null;
+    if ( null !== $cached ) {
+        return $cached;
+    }
+
+    $logged       = is_user_logged_in();
+    $role         = ws_user_role();
+    $is_admin     = current_user_can( 'manage_options' );
+    $is_sys_admin = $is_admin && '' === (string) $role;
+
+    $eff_role = $role ? $role : ( $is_admin ? 'admin' : '' );
+    $out = array(
+        'logged'       => (bool) $logged,
+        'user_id'      => get_current_user_id(),
+        'name'         => '',
+        'username'     => '',
+        'role'         => $eff_role,
+        'role_label'   => ws_role_label( $eff_role ),
+        'is_sys_admin' => $is_sys_admin,
+        'business'     => null,
+        'modules'      => array(),
+        'permissions'  => array(),
+    );
+
+    if ( $logged ) {
+        $u = wp_get_current_user();
+        if ( $u && $u->exists() ) {
+            $out['name']     = (string) $u->display_name;
+            $out['username'] = (string) $u->user_login;
+        }
+    }
+
+    if ( $is_sys_admin ) {
+        // El administrador del SISTEMA no vende ni gestiona un negocio:
+        // controla la plataforma desde wp-admin (logs, negocios, usuarios…).
+        foreach ( ws_chatbot_admin_shortcuts() as $id => $sc ) {
+            $out['modules'][] = array(
+                'id'    => $id,
+                'label' => (string) $sc['label'],
+                'url'   => (string) $sc['url'],
+            );
+        }
+        $cached = $out;
+        return $out;
+    }
+
+    if ( ! $role ) {
+        $cached = $out; // Visitante: solo contexto del sitio.
+        return $out;
+    }
+
+    $biz = ws_current_business();
+    $sub = function_exists( 'ws_subscription_data' ) ? ws_subscription_data( $biz ) : array();
+    $out['business'] = array(
+        'id'           => ws_current_business_id(),
+        'name'         => (string) ( $biz->name ?? '' ),
+        'slug'         => (string) ( $biz->slug ?? '' ),
+        'plan'         => ! empty( $sub['plan'] ) ? (string) $sub['plan']->name : '',
+        'status_label' => (string) ( $sub['status_label'] ?? '' ),
+    );
+
+    // Módulos del panel a los que el rol puede acceder (matriz de permisos
+    // real: ws_chatbot_panel_shortcuts filtra con WS_Capabilities::can).
+    foreach ( ws_chatbot_panel_shortcuts() as $id => $sc ) {
+        $out['modules'][] = array(
+            'id'    => $id,
+            'label' => (string) $sc['label'],
+            'url'   => (string) $sc['url'],
+        );
+    }
+
+    // Permisos concretos (capabilities) activos para este rol en este negocio.
+    foreach ( WS_Capabilities::all_caps() as $cap => $label ) {
+        if ( WS_Capabilities::can( $cap ) ) {
+            $out['permissions'][] = array( 'cap' => $cap, 'label' => (string) $label );
+        }
+    }
+
+    $cached = $out;
+    return $out;
+}
+
+/**
+ * Conocimiento EN VIVO sobre el USUARIO actual: quién es, su rol, el negocio
+ * al que pertenece y los permisos/módulos a los que puede acceder.
+ *
+ * Se construye en cada petición según la sesión real (visitante, admin del
+ * sistema o miembro de negocio), así refleja al momento cualquier cambio de
+ * rol, permisos o configuración.
+ */
+function ws_chatbot_user_live_knowledge() {
+    $u = ws_chatbot_user_context();
+
+    // Visitante sin sesión: el bot le explica su situación y cómo crear cuenta.
+    if ( ! $u['logged'] ) {
+        return array(
+            array(
+                'id' => 'live-quien-soy-visitante',
+                'patterns' => array(
+                    'quien soy', 'quien soy yo', 'que rol tengo', 'cual es mi rol',
+                    'mi rol', 'que cuenta soy', 'tengo cuenta', 'soy cliente',
+                    'soy usuario registrado', 'que tipo de usuario soy',
+                ),
+                'answer' => sprintf(
+                    /* translators: %s: nombre del sitio. */
+                    __( 'Ahora mismo navegas como visitante: puedes ver las tiendas del mercado, buscar productos y hacer pedidos sin cuenta. Si tienes un negocio o quieres montar uno, crea tu cuenta gratis en %1$s y el asistente te guiará según tu rol.', 'workshop' ),
+                    ws_site_name()
+                ),
+                'chips' => array(
+                    array( 'label' => __( 'Crear mi negocio', 'workshop' ), 'url' => home_url( '/registro/' ), 'icon' => 'fa-rocket' ),
+                    array( 'label' => __( 'Entrar', 'workshop' ), 'url' => home_url( '/login/' ), 'icon' => 'fa-right-to-bracket' ),
+                ),
+            ),
+        );
+    }
+
+    // Administrador del SISTEMA: controla la plataforma desde wp-admin.
+    if ( $u['is_sys_admin'] ) {
+        $chips = array();
+        foreach ( array_slice( $u['modules'], 0, 5 ) as $m ) {
+            $chips[] = array( 'label' => $m['label'], 'url' => $m['url'], 'icon' => 'fa-bolt' );
+        }
+        return array(
+            array(
+                'id' => 'live-quien-soy-sysadmin',
+                'patterns' => array(
+                    'quien soy', 'quien soy yo', 'que rol tengo', 'cual es mi rol',
+                    'mi rol', 'que soy', 'que permiso tengo', 'que permisos tengo',
+                    'mis permisos', 'que puedo hacer', 'que modulos puedo usar',
+                    'a que modulos tengo acceso', 'que modulos tengo', 'que soy yo',
+                ),
+                'answer' => sprintf(
+                    /* translators: 1: nombre del usuario, 2: módulos del sistema. */
+                    __( 'Eres %1$s, el administrador del sistema. Controlas la plataforma completa desde el panel de WordPress: logs, negocios, usuarios, planes, suscripciones, mercado, páginas, el asistente y el correo SMTP. No vendes ni gestionas un negocio: tu panel es wp-admin. Módulos a tu alcance: %2$s.', 'workshop' ),
+                    $u['name'],
+                    implode( ', ', array_column( $u['modules'], 'label' ) )
+                ),
+                'chips' => $chips,
+            ),
+        );
+    }
+
+    // Miembro de un negocio (dueño / almacenero / vendedor).
+    $module_labels = array_column( $u['modules'], 'label' );
+    $perm_labels   = array_column( $u['permissions'], 'label' );
+    $biz           = $u['business']
+        ? (string) $u['business']['name'] . ( '' !== (string) $u['business']['slug'] ? ' (slug ' . $u['business']['slug'] . ')' : '' )
+        : '';
+    $plan          = (string) ( $u['business']['plan'] ?? '' );
+    $plan_txt      = '' !== $plan ? ' (plan ' . $plan . ')' : '';
+
+    $chips = array();
+    foreach ( array_slice( $u['modules'], 0, 6 ) as $m ) {
+        $chips[] = array( 'label' => $m['label'], 'url' => $m['url'], 'icon' => 'fa-bolt' );
+    }
+
+    return array(
+        array(
+            'id' => 'live-quien-soy-rol',
+            'patterns' => array(
+                'quien soy', 'quien soy yo', 'que rol tengo', 'cual es mi rol',
+                'mi rol', 'que soy', 'que cuenta soy', 'soy quien', 'que rol soy',
+            ),
+            'answer' => sprintf(
+                /* translators: 1: nombre, 2: rol, 3: negocio, 4: plan, 5: módulos. */
+                __( 'Eres %1$s (%2$s) del negocio %3$s%4$s. Tu rol te permite usar estos módulos del panel: %5$s. ¿Quieres que te lleve a alguno?', 'workshop' ),
+                $u['name'],
+                $u['role_label'],
+                $biz,
+                $plan_txt,
+                implode( ', ', $module_labels )
+            ),
+            'chips' => $chips,
+        ),
+        array(
+            'id' => 'live-mis-modulos',
+            'patterns' => array(
+                'que modulos puedo usar', 'a que modulos tengo acceso', 'que modulos tengo',
+                'que puedo hacer', 'que puedo hacer yo', 'a que secciones puedo entrar',
+                'que secciones puedo ver', 'que modulos tengo disponibles', 'que puedo usar en el panel',
+                'que puedo hacer en el panel', 'que secciones tengo', 'a que modulos puedo entrar',
+            ),
+            'answer' => sprintf(
+                /* translators: 1: rol, 2: negocio, 3: módulos. */
+                __( 'Con tu rol de %1$s en %2$s puedes usar: %3$s. Dime cuál y te llevo.', 'workshop' ),
+                $u['role_label'],
+                $biz,
+                implode( ', ', $module_labels )
+            ),
+            'chips' => $chips,
+        ),
+        array(
+            'id' => 'live-mis-permisos',
+            'patterns' => array(
+                'que permisos tengo', 'cuales son mis permisos', 'mis permisos',
+                'que permiso tengo', 'que puedo y que no', 'que cosas puedo hacer',
+                'cuales son mis permisos exactamente', 'que tengo permitido',
+            ),
+            'answer' => sprintf(
+                /* translators: 1: negocio, 2: rol, 3: permisos. */
+                __( 'Tus permisos concretos en %1$s (rol %2$s): %3$s. Si el dueño o el administrador cambia la matriz de permisos, yo lo reflejo al instante.', 'workshop' ),
+                $biz,
+                $u['role_label'],
+                implode( ', ', $perm_labels )
+            ),
+            'chips' => $chips,
+        ),
+        array(
+            'id' => 'live-mi-negocio',
+            'patterns' => array(
+                'a que negocio pertenezco', 'cual es mi negocio', 'mi negocio',
+                'como se llama mi negocio', 'que negocio soy', 'a que empresa pertenezco',
+                'de que negocio soy', 'cual es el nombre de mi negocio', 'donde trabajo',
+            ),
+            'answer' => sprintf(
+                /* translators: 1: negocio, 2: plan, 3: estado de la suscripción. */
+                __( 'Perteneces al negocio %1$s%2$s.%3$s', 'workshop' ),
+                $biz,
+                $plan_txt,
+                ! empty( $u['business']['status_label'] ) ? ' Estado de la suscripción: ' . $u['business']['status_label'] . '.' : ''
+            ),
+            'chips' => $chips,
+        ),
+    );
+}
+
+/**
  * Contexto en vivo de la app para el asistente: sitio, usuario, negocio y
  * navegación. Se usa para enriquecer el prompt de la IA y los fallbacks.
  */
@@ -1684,6 +1931,7 @@ function ws_chatbot_app_context() {
     // Datos en vivo del sitio (nombre, portada y contadores del mercado) para
     // que la IA responda con los valores reales actuales, no inventados.
     $sc    = ws_chatbot_site_context();
+    $uc    = ws_chatbot_user_context();
     $out   = array(
         'site'    => array(
             'name'  => $sc['name'],
@@ -1701,9 +1949,16 @@ function ws_chatbot_app_context() {
             ),
         ),
         'user'    => array(
-            'id'   => get_current_user_id(),
-            'role' => $role,
-            'role_label' => ws_role_label( $role ),
+            'id'          => (int) ( $uc['user_id'] ?? 0 ),
+            'name'        => (string) ( $uc['name'] ?? '' ),
+            'role'        => (string) ( $uc['role'] ?? '' ),
+            'role_label'  => (string) ( $uc['role_label'] ?? '' ),
+            'is_sys_admin'=> ! empty( $uc['is_sys_admin'] ),
+            // Módulos del panel a los que el usuario puede acceder (matriz de
+            // permisos real) y sus permisos concretos: la IA los usa para
+            // responder "qué puedo hacer" con datos vigentes.
+            'modules'     => array_column( (array) ( $uc['modules'] ?? array() ), 'label' ),
+            'permissions' => array_column( (array) ( $uc['permissions'] ?? array() ), 'label' ),
         ),
         'nav'     => ws_chatbot_context(),
         'actions' => array( 'crear/editar/eliminar productos (bulk)', 'reponer stock', 'aceptar/rechazar pedidos', 'crear clientes', 'registrar venta POS', 'buscar productos', 'reportes (ventas/stock/pedidos/equipo/seguridad/resumen)', 'programar reportes', 'guias paso a paso', 'responder preguntas frecuentes' ),
@@ -1768,6 +2023,16 @@ function ws_chatbot_context_text() {
         $b = $c['business'];
         $lines[] = sprintf( 'Negocio: %s (plan %s) — %d productos, %d con stock bajo, %d agotados, %d pedidos pendientes, %d ventas hoy por %s %s, %d clientes, %d trabajadores, caja %s.' ,
             $b['name'], $b['plan'], $b['products'], $b['low_stock'], $b['agotados'], $b['pending_orders'], $b['sales_today'], number_format_i18n( $b['sales_today_total'], 2 ), $b['currency'], $b['customers'], $b['workers'], $b['cash_open'] ? 'abierta' : 'cerrada' );
+    }
+    // Identidad del usuario para la IA: quién es, qué puede y qué no (según
+    // el rol y la matriz de permisos real, no supuestos).
+    if ( ! empty( $c['user']['is_sys_admin'] ) ) {
+        $lines[] = 'El usuario es el administrador del sistema: controla la plataforma desde wp-admin (logs, negocios, usuarios, planes, suscripciones, mercado, páginas, asistente y SMTP). No vende ni gestiona un negocio.';
+    } elseif ( ! empty( $c['user']['modules'] ) ) {
+        $lines[] = 'Módulos del panel a los que el usuario puede acceder: ' . implode( ', ', $c['user']['modules'] ) . '.';
+        if ( ! empty( $c['user']['permissions'] ) ) {
+            $lines[] = 'Permisos concretos del usuario: ' . implode( ', ', $c['user']['permissions'] ) . '.';
+        }
     }
     $lines[] = 'El asistente puede ejecutar: ' . implode( '; ', $c['actions'] );
     return implode( ' | ', $lines );
