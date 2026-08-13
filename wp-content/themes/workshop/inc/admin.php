@@ -126,6 +126,78 @@ function ws_marketplace_admin_menu() {
     );
 }
 
+add_action( 'admin_menu', 'ws_security_admin_menu', 21 );
+function ws_security_admin_menu() {
+    add_submenu_page(
+        'ws-permissions',
+        __( 'Sesión y seguridad', 'workshop' ),
+        __( 'Sesión y seguridad', 'workshop' ),
+        'manage_options',
+        'ws-security',
+        'ws_admin_page_security'
+    );
+}
+
+/**
+ * Sesión y seguridad: cuánto dura la sesión de los usuarios.
+ *
+ * Los usuarios trabajan offline (PWA con cola de sincronización) y no deben
+ * perder la sesión a mitad de jornada ni al cerrar el navegador: la cookie de
+ * acceso se mantiene vigente estos días (aplica al panel y a la tienda).
+ * Aquí también se explica el validador de correos del acceso/registro.
+ */
+function ws_admin_page_security() {
+    if ( ! current_user_can( 'manage_options' ) ) {
+        wp_die( esc_html__( 'No tienes permiso para acceder a esta página.', 'workshop' ) );
+    }
+
+    $saved = false;
+    if ( isset( $_POST['ws_security_nonce'] ) && wp_verify_nonce( $_POST['ws_security_nonce'], 'ws_save_security' ) ) {
+        $days = max( 1, min( 365, (int) ( $_POST['session_days'] ?? 30 ) ) );
+        update_option( 'ws_session_expiration_days', $days );
+        if ( function_exists( 'ws_log_audit' ) ) {
+            ws_log_audit( 'security_settings_update', 'settings', $days );
+        }
+        $saved = true;
+    }
+
+    $days = max( 1, min( 365, (int) get_option( 'ws_session_expiration_days', 30 ) ) );
+    ?>
+    <div class="wrap">
+        <h1><span class="dashicons dashicons-lock" style="vertical-align:middle"></span> <?php esc_html_e( 'Sesión y seguridad', 'workshop' ); ?></h1>
+        <p class="description"><?php esc_html_e( 'Los usuarios de los negocios trabajan online y offline (la aplicación guarda la cola de sincronización). Para que nadie pierda la sesión a mitad de jornada, la cookie de acceso dura los días que configures aquí. Si el usuario marca «Recuérdame», dura el triple.', 'workshop' ); ?></p>
+
+        <?php if ( $saved ) : ?>
+            <div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Configuración de sesión guardada.', 'workshop' ); ?></p></div>
+        <?php endif; ?>
+
+        <form method="post" action="">
+            <?php wp_nonce_field( 'ws_save_security', 'ws_security_nonce' ); ?>
+            <div class="ws-mp-admin-group">
+                <h2><span class="dashicons dashicons-clock" style="margin-right:6px"></span><?php esc_html_e( 'Duración de la sesión', 'workshop' ); ?></h2>
+                <table class="form-table" role="presentation">
+                    <tr>
+                        <th scope="row"><label for="ws-session-days"><?php esc_html_e( 'Días de sesión', 'workshop' ); ?></label></th>
+                        <td>
+                            <input type="number" id="ws-session-days" name="session_days" min="1" max="365" value="<?php echo (int) $days; ?>" class="small-text"> <?php esc_html_e( 'días (1–365)', 'workshop' ); ?>
+                            <p class="description"><?php esc_html_e( 'Por defecto 30 días; con «Recuérdame» en el acceso, 90. Los cambios aplican a los próximos inicios de sesión.', 'workshop' ); ?></p>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+            <?php submit_button( __( 'Guardar sesión', 'workshop' ) ); ?>
+        </form>
+
+        <div class="ws-mp-admin-group">
+            <h2><span class="dashicons dashicons-email-alt" style="margin-right:6px"></span><?php esc_html_e( 'Validador de correos en el acceso', 'workshop' ); ?></h2>
+            <p class="description">
+                <?php esc_html_e( 'El acceso y el registro exigen un correo con formato válido y bloquean los dominios desechables (mailinator, 10minutemail, tempmail…), para más seguridad. La lista es ampliable desde el código (filtro ws_disposable_email_domains).', 'workshop' ); ?>
+            </p>
+        </div>
+    </div>
+    <?php
+}
+
 function ws_admin_page_marketplace() {
     if ( ! current_user_can( 'manage_options' ) ) {
         wp_die( esc_html__( 'No tienes permiso para acceder a esta página.', 'workshop' ) );

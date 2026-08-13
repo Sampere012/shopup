@@ -10,10 +10,10 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'WS_VERSION', '0.4.2' );
+define( 'WS_VERSION', '0.4.3' );
 // Versión del esquema de BD: subir al añadir columnas/tablas para forzar la
 // instalación/migración diferida (ws_lazy_install / ws_db_migrate).
-define( 'WS_DB_VERSION', '0.9.0' );
+define( 'WS_DB_VERSION', '0.10.0' );
 define( 'WS_PATH', get_template_directory() . '/' );
 define( 'WS_URL', get_template_directory_uri() . '/' );
 define( 'WS_TABLE_PREFIX', 'ws_' );
@@ -28,12 +28,15 @@ require_once WS_PATH . 'inc/db.php';
 require_once WS_PATH . 'inc/roles.php';
 require_once WS_PATH . 'inc/capabilities.php';
 require_once WS_PATH . 'inc/crud.php';
+require_once WS_PATH . 'inc/categories.php';
+require_once WS_PATH . 'inc/expenses.php';
 require_once WS_PATH . 'inc/stock.php';
 require_once WS_PATH . 'inc/orders.php';
 require_once WS_PATH . 'inc/shifts.php';
 require_once WS_PATH . 'inc/router.php';
 require_once WS_PATH . 'inc/login.php';
 require_once WS_PATH . 'inc/ajax.php';
+require_once WS_PATH . 'inc/reports.php';
 require_once WS_PATH . 'inc/notifications.php';
 require_once WS_PATH . 'inc/announcements.php';
 require_once WS_PATH . 'inc/crm.php';

@@ -76,15 +76,40 @@ function ws_redirect_wp_login() {
     }
 }
 
+// Sesión de larga duración: los usuarios trabajan offline (PWA con cola de
+// sincronización) y no deben perder la sesión a mitad de jornada ni al cerrar
+// el navegador. Los días se configuran en wp-admin > ShopUp > Sesión y
+// seguridad (ws_session_expiration_days, 30 por defecto; el triple si el
+// usuario marcó «Recuérdame»).
+add_filter( 'auth_cookie_expiration', function ( $expiration, $user_id, $remember ) {
+    $days = max( 1, min( 365, (int) get_option( 'ws_session_expiration_days', 30 ) ) );
+    return ( (int) $remember ? 3 : 1 ) * $days * DAY_IN_SECONDS;
+}, 10, 3 );
+
 add_action( 'init', 'ws_handle_login_post' );
 function ws_handle_login_post() {
     if ( empty( $_POST['ws_login'] ) || ! wp_verify_nonce( $_POST['ws_nonce'], 'ws_login' ) ) {
         return;
     }
+    $login_value = sanitize_text_field( $_POST['ws_user'] ?? '' );
+    // Validador de correo en el acceso: si el usuario escribe un email, debe
+    // ser un correo real y permanente (no desechable) como en el registro.
+    if ( false !== strpos( $login_value, '@' ) ) {
+        $email_check = function_exists( 'ws_email_allowed' ) ? ws_email_allowed( $login_value ) : true;
+        if ( true !== $email_check ) {
+            $url = add_query_arg( 'ws_login_error', '1', ws_login_scheme_url( home_url( '/login/' ) ) );
+            wp_safe_redirect( $url );
+            exit;
+        }
+    }
     $creds = array(
-        'user_login'    => sanitize_text_field( $_POST['ws_user'] ?? '' ),
+        'user_login'    => $login_value,
         'user_password' => (string) ( $_POST['ws_pass'] ?? '' ),
-        'remember'      => ! empty( $_POST['ws_remember'] ),
+        // Sesión de larga duración SIEMPRE: WordPress solo envía la cookie con
+        // Expires cuando remember=true (si no, es cookie de sesión y se cae al
+        // cerrar el navegador, rompiendo el trabajo offline). La duración real
+        // la fija el filtro auth_cookie_expiration (90 días).
+        'remember'      => true,
     );
     // Cookie de sesión acorde al esquema (Secure en HTTPS): evita que
     // wp-admin pida re-autenticar al admin y entre en bucle.

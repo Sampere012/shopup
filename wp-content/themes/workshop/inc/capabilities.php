@@ -56,6 +56,9 @@ class WS_Capabilities {
             'loyalty_manage' => true,
             'products_fraction' => true,
             'pos_sell' => true, 'pos_view' => true,
+            // Módulos nuevos: categorías en árbol y control de gastos.
+            'categories_manage' => true,
+            'expenses_manage' => true,
         ),
         'storekeeper' => array(
             'products_view' => true, 'products_create' => false, 'products_edit' => false,
@@ -79,6 +82,8 @@ class WS_Capabilities {
             'loyalty_manage' => false,
             'products_fraction' => false,
             'pos_sell' => false, 'pos_view' => false,
+            'categories_manage' => false,
+            'expenses_manage' => false,
         ),
         'seller' => array(
             'products_view' => true, 'products_create' => false, 'products_edit' => false,
@@ -102,6 +107,8 @@ class WS_Capabilities {
             'loyalty_manage' => false,
             'products_fraction' => false,
             'pos_sell' => true, 'pos_view' => true,
+            'categories_manage' => false,
+            'expenses_manage' => false,
         ),
     );
 
@@ -144,6 +151,8 @@ class WS_Capabilities {
             'products_fraction' => __( 'Fraccionamiento de productos (padre/hijo)', 'workshop' ),
             'pos_sell'         => __( 'Vender en POS', 'workshop' ),
             'pos_view'         => __( 'Ver ventas POS', 'workshop' ),
+            'categories_manage' => __( 'Gestionar categorías de productos (árbol)', 'workshop' ),
+            'expenses_manage'  => __( 'Gestionar gastos (control de gastos)', 'workshop' ),
         );
     }
 

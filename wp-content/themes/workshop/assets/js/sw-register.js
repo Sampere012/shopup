@@ -6,7 +6,7 @@
     // worker sigue registrándose para el modo offline y las actualizaciones.
 
     // Páginas del panel del negocio (coinciden con el router del tema).
-    var WS_PANEL_PAGES = ['dashboard','products','locations','suppliers','stock','movements','orders','shifts','workers','permissions','reports','settings','account','appearance','customers','reviews','loyalty','pos','pos-sales','plan','anuncios'];
+    var WS_PANEL_PAGES = ['dashboard','products','locations','suppliers','stock','movements','orders','shifts','workers','permissions','reports','settings','account','appearance','customers','reviews','loyalty','pos','pos-sales','plan','anuncios','categories','expenses'];
 
     // Base path de la instalación ('' en producción, '/workshop' en local). La
     // usa offline.html para construir enlaces absolutos hacia las secciones.

@@ -39,6 +39,31 @@ get_header();
     </section>
 
     <main class="ws-container">
+        <?php
+        // Anuncios globales del sitio (creados por el admin): anclados y
+        // activos aparecen como banner en la portada de todos los negocios.
+        if ( function_exists( 'ws_announcements_site' ) ) :
+            foreach ( ws_announcements_site() as $ws_ann ) :
+                if ( ! (int) $ws_ann->active || ! (int) $ws_ann->pinned ) {
+                    continue;
+                }
+                $ws_ann_kind = 'warning' === $ws_ann->type ? 'warn' : $ws_ann->type;
+                if ( ! in_array( $ws_ann_kind, array( 'danger', 'info', 'warn' ), true ) ) {
+                    $ws_ann_kind = 'info';
+                }
+                ?>
+                <div class="ws-banner ws-banner-<?php echo esc_attr( $ws_ann_kind ); ?> ws-ann-banner ws-ann-banner-site" data-ann="<?php echo (int) $ws_ann->id; ?>">
+                    <i class="fa-solid fa-bullhorn"></i>
+                    <div>
+                        <strong><?php echo esc_html( $ws_ann->title ); ?></strong>
+                        <span><?php echo esc_html( $ws_ann->message ); ?></span>
+                    </div>
+                    <button type="button" class="ws-banner-close" onclick="wsDismissAnnouncement(<?php echo (int) $ws_ann->id; ?>, this)" aria-label="<?php esc_attr_e( 'Ocultar anuncio', 'workshop' ); ?>"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <?php
+            endforeach;
+        endif;
+        ?>
         <div class="ws-store-section-head">
             <h2><i class="fa-solid fa-store"></i> <?php esc_html_e( 'Puntos de venta', 'workshop' ); ?></h2>
             <span class="ws-store-section-count"><b><?php echo esc_html( count( $locations ) ); ?></b> <?php esc_html_e( 'tiendas', 'workshop' ); ?></span>

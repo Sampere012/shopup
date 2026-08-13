@@ -123,6 +123,7 @@ class WS_CRUD {
             $unique = $base . '-' . $suffix;
             $suffix++;
         }
+        $category_id = (int) ( $data['category_id'] ?? 0 );
         $fields = array(
             'name'          => sanitize_text_field( $data['name'] ?? '' ),
             'barcode'       => $unique,
@@ -142,6 +143,20 @@ class WS_CRUD {
         );
         if ( empty( $fields['name'] ) ) {
             return new WP_Error( 'name', __( 'El nombre es obligatorio.', 'workshop' ) );
+        }
+        // Categoría en ÁRBOL: si llega category_id se valida contra la tabla
+        // de categorías y se sincroniza el texto `category` con la RUTA de la
+        // categoría («Padre / Hijo») para las búsquedas/filtros existentes y
+        // la tienda. Si solo llega texto (importación CSV/legacy) se conserva.
+        if ( $category_id ) {
+            $cat_map = class_exists( 'WS_Categories' ) ? WS_Categories::map() : array();
+            if ( ! isset( $cat_map[ $category_id ] ) ) {
+                return new WP_Error( 'category', __( 'La categoría seleccionada no existe.', 'workshop' ) );
+            }
+            $fields['category_id'] = $category_id;
+            $fields['category']    = WS_Categories::path_text( $category_id );
+        } else {
+            $fields['category_id'] = 0;
         }
         // Fraccionamiento: el padre debe existir y no puede ser hijo de nadie.
         if ( $fields['fraction_parent'] ) {

@@ -19,6 +19,11 @@ $ws_store_base  = ws_currency_symbol();
 $ws_store_currs = ws_currencies();
 $ws_store_was   = ws_whatsapp_numbers( $location->id );
 
+// Árbol de categorías para el filtro de la tienda (subcategorías en cascada).
+$ws_store_categories = function_exists( 'ws_categories_payload' )
+    ? ws_categories_payload()
+    : array( 'tree' => array(), 'flat' => array() );
+
 // Fondo del hero de la tienda: la foto del PV (comprimida) si está definida.
 $ws_store_has_bg = ! empty( $location->photo );
 $ws_store_hero_bg = $ws_store_has_bg
@@ -87,6 +92,21 @@ get_header();
                 <input type="search" placeholder="<?php esc_attr_e( 'Buscar producto…', 'workshop' ); ?>" x-model="search">
             </div>
 
+            <?php if ( ! empty( $ws_store_categories['flat'] ) ) : ?>
+            <div class="ws-store-category-filter">
+                <label class="ws-field">
+                    <span><i class="fa-solid fa-folder-tree"></i> <?php esc_html_e( 'Categoría', 'workshop' ); ?></span>
+                    <select x-model.number="categoryFilter" @change="categoryFilter = Number($event.target.value) || 0">
+                        <option value="0"><?php esc_html_e( 'Todas', 'workshop' ); ?></option>
+                        <template x-for="c in categoryOptions" :key="c.id">
+                            <option :value="c.id" x-text="c.name"></option>
+                        </template>
+                    </select>
+                </label>
+                <button class="ws-btn ws-btn-ghost ws-btn-sm" x-show="categoryFilter > 0" @click="categoryFilter = 0"><i class="fa-solid fa-rotate-left"></i> <?php esc_html_e( 'Quitar filtro', 'workshop' ); ?></button>
+            </div>
+            <?php endif; ?>
+
             <?php if ( empty( $products ) ) : ?>
                 <p class="ws-empty"><?php esc_html_e( 'Esta tienda aún no tiene productos disponibles.', 'workshop' ); ?></p>
             <?php endif; ?>
@@ -102,6 +122,7 @@ get_header();
                         </div>
                         <div class="ws-product-info">
                             <h3 x-text="p.name"></h3>
+                            <span class="ws-product-category" x-show="p.category" x-text="p.category"></span>
                             <div class="ws-product-row">
                                 <span class="ws-price" x-text="priceInfo(p).main"></span>
                                 <span class="ws-price-equiv" x-show="priceInfo(p).equiv" x-text="priceInfo(p).equiv"></span>
@@ -414,6 +435,7 @@ window.WS_STORE_DATA = <?php echo wp_json_encode( array(
     'baseCurrency' => $ws_store_base,
     'currencies'   => $ws_store_currs,
     'whatsappNumbers' => $ws_store_was,
+    'categories' => $ws_store_categories,
     'products' => array_map( function ( $r ) {
         return array(
             'id'           => (int) $r->product_id,
@@ -421,6 +443,8 @@ window.WS_STORE_DATA = <?php echo wp_json_encode( array(
             'barcode'      => $r->barcode,
             'image'        => $r->image ? ws_image_url( $r->image ) : '',
             'description'  => $r->description ?? '',
+            'category_id'  => (int) ( $r->category_id ?? 0 ),
+            'category'     => (string) ( $r->category ?? '' ),
             'price'        => (float) $r->sale_price,
             'transfer_pct' => (float) $r->transfer_pct,
             'currency'     => $r->currency,

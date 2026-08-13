@@ -7,72 +7,61 @@
 
 defined( 'ABSPATH' ) || exit;
 
-$locations = ws_user_locations();
-$loc_ids   = array_map( fn( $l ) => (int) $l->id, $locations );
-
-global $wpdb;
-$ph   = $loc_ids ? implode( ',', array_fill( 0, count( $loc_ids ), '%d' ) ) : '0';
-$args = $loc_ids ? $loc_ids : array( 0 );
-
-// IMPORTANTE: tablas por negocio (ws_table_name); el prefijo fijo (wp_ws_)
-// apuntaría al negocio por defecto y los reportes saldrían vacíos.
-$orders_table      = ws_table_name( 'orders' );
-$movements_table   = ws_table_name( 'movements' );
-$order_items_table = ws_table_name( 'order_items' );
-
-// Ventas por día (últimos 14 días).
-$sales = array();
-if ( $loc_ids ) {
-    $sales = $wpdb->get_results( $wpdb->prepare(
-        "SELECT DATE(created_at) AS d, SUM(total) AS total, COUNT(*) AS n
-         FROM {$orders_table}
-         WHERE location_id IN ({$ph}) AND status IN ('accepted','completed')
-           AND created_at >= DATE_SUB(CURDATE(), INTERVAL 13 DAY)
-         GROUP BY DATE(created_at) ORDER BY d ASC",
-        ...$args
-    ) );
+$role = ws_user_role();
+if ( ! $role ) {
+    $role = get_query_var( 'ws_role' ) ? (string) get_query_var( 'ws_role' ) : 'owner';
 }
 
-// Movimientos por tipo.
-$by_type = array();
-if ( $loc_ids ) {
-    $by_type = $wpdb->get_results( $wpdb->prepare(
-        "SELECT type, COUNT(*) AS n, COALESCE(SUM(qty),0) AS qty
-         FROM {$movements_table}
-         WHERE location_id IN ({$ph})
-         GROUP BY type",
-        ...$args
-    ) );
-}
+// Filtros desde la URL (ws_loc = ubicación, ws_period = días). Los datos se
+// comparten con la exportación a Excel (inc/reports.php).
+$filters = ws_reports_filters( false );
+$data    = ws_reports_data( $filters );
 
-// Top productos vendidos (por pedidos aceptados).
-$top = array();
-if ( $loc_ids ) {
-    $top = $wpdb->get_results( $wpdb->prepare(
-        "SELECT oi.product_name, SUM(oi.qty) AS qty, SUM(oi.price * oi.qty) AS total
-         FROM {$order_items_table} oi
-         INNER JOIN {$orders_table} o ON o.id = oi.order_id
-         WHERE o.location_id IN ({$ph}) AND o.status IN ('accepted','completed')
-         GROUP BY oi.product_id, oi.product_name
-         ORDER BY qty DESC LIMIT 10",
-        ...$args
-    ) );
-}
+$sales    = $data['sales'];
+$by_type  = $data['by_type'];
+$top      = $data['top'];
+$periods  = ws_reports_periods();
+$currency = ws_currency_symbol( $filters['location_id'] ? (int) $filters['location_id'] : 0 );
+$base_url = ws_panel_url( $role, 'reports' );
 
-$currency = ws_currency_symbol();
+// Contexto de negocio para la exportación vía AJAX (negocios con slug).
+$ws_biz_slug = '';
+$ws_biz      = ws_current_business();
+if ( $ws_biz && ! empty( $ws_biz->slug ) ) {
+    $ws_biz_slug = $ws_biz->slug;
+}
 ?>
+<div class="ws-stock-head ws-reports-head">
+    <div class="ws-stock-filters">
+        <select id="ws-reports-loc" aria-label="<?php esc_attr_e( 'Ubicación', 'workshop' ); ?>">
+            <option value="0"><?php esc_html_e( 'Todas las ubicaciones', 'workshop' ); ?></option>
+            <?php foreach ( $filters['locations'] as $l ) : ?>
+                <option value="<?php echo (int) $l->id; ?>" <?php selected( $filters['location_id'], (int) $l->id ); ?>><?php echo esc_html( $l->name ); ?></option>
+            <?php endforeach; ?>
+        </select>
+        <select id="ws-reports-period" aria-label="<?php esc_attr_e( 'Período', 'workshop' ); ?>">
+            <?php foreach ( $periods as $pd => $plabel ) : ?>
+                <option value="<?php echo (int) $pd; ?>" <?php selected( $filters['period'], (int) $pd ); ?>><?php echo esc_html( $plabel ); ?></option>
+            <?php endforeach; ?>
+        </select>
+    </div>
+    <button type="button" class="ws-btn ws-btn-primary" id="ws-reports-export">
+        <i class="fa-solid fa-file-excel"></i> <?php esc_html_e( 'Exportar Excel', 'workshop' ); ?>
+    </button>
+</div>
+
 <div class="ws-kpis">
     <div class="ws-kpi">
         <div class="ws-kpi-icon ws-kpi-green"><i class="fa-solid fa-arrow-trend-up"></i></div>
-        <div><span><?php esc_html_e( 'Ventas 14 días', 'workshop' ); ?></span><strong><?php echo ws_money( array_sum( array_map( fn( $s ) => (float) $s->total, $sales ) ), $currency ); ?></strong></div>
+        <div><span><?php echo esc_html( sprintf( __( 'Ventas · %s', 'workshop' ), $filters['period_label'] ) ); ?></span><strong><?php echo ws_money( $data['total_sales'], $currency ); ?></strong></div>
     </div>
     <div class="ws-kpi">
         <div class="ws-kpi-icon ws-kpi-blue"><i class="fa-solid fa-receipt"></i></div>
-        <div><span><?php esc_html_e( 'Pedidos 14 días', 'workshop' ); ?></span><strong><?php echo esc_html( array_sum( array_map( fn( $s ) => (int) $s->n, $sales ) ) ); ?></strong></div>
+        <div><span><?php esc_html_e( 'Pedidos', 'workshop' ); ?></span><strong><?php echo esc_html( number_format_i18n( $data['total_orders'] ) ); ?></strong></div>
     </div>
     <div class="ws-kpi">
         <div class="ws-kpi-icon ws-kpi-amber"><i class="fa-solid fa-right-left"></i></div>
-        <div><span><?php esc_html_e( 'Movimientos', 'workshop' ); ?></span><strong><?php echo esc_html( array_sum( array_map( fn( $t ) => (int) $t->n, $by_type ) ) ); ?></strong></div>
+        <div><span><?php esc_html_e( 'Movimientos', 'workshop' ); ?></span><strong><?php echo esc_html( number_format_i18n( $data['total_moves'] ) ); ?></strong></div>
     </div>
 </div>
 
@@ -80,7 +69,7 @@ $currency = ws_currency_symbol();
     <div class="ws-card">
         <h3 class="ws-card-title"><i class="fa-solid fa-chart-column"></i> <?php esc_html_e( 'Ventas por día', 'workshop' ); ?></h3>
         <?php if ( empty( $sales ) ) : ?>
-            <p class="ws-empty"><?php esc_html_e( 'Sin ventas aún.', 'workshop' ); ?></p>
+            <p class="ws-empty"><?php esc_html_e( 'Sin ventas en el período.', 'workshop' ); ?></p>
         <?php else : ?>
         <table class="ws-table" data-sortable data-ts="reports-sales">
             <thead><tr><th><?php esc_html_e( 'Día', 'workshop' ); ?></th><th><?php esc_html_e( 'Pedidos', 'workshop' ); ?></th><th><?php esc_html_e( 'Total', 'workshop' ); ?></th></tr></thead>
@@ -117,15 +106,79 @@ $currency = ws_currency_symbol();
 <div class="ws-card">
     <h3 class="ws-card-title"><i class="fa-solid fa-trophy"></i> <?php esc_html_e( 'Top productos vendidos', 'workshop' ); ?></h3>
     <?php if ( empty( $top ) ) : ?>
-        <p class="ws-empty"><?php esc_html_e( 'Sin ventas aún.', 'workshop' ); ?></p>
+        <p class="ws-empty"><?php esc_html_e( 'Sin ventas en el período.', 'workshop' ); ?></p>
     <?php else : ?>
     <table class="ws-table" data-sortable data-ts="reports-top">
-        <thead><tr><th>#</th><th><?php esc_html_e( 'Producto', 'workshop' ); ?></th><th><?php esc_html_e( 'Unidades', 'workshop' ); ?></th><th><?php esc_html_e( 'Total', 'workshop' ); ?></th></tr></thead>
+        <thead><tr><th>#</th><th><?php esc_html_e( 'Producto', 'workshop' ); ?></th><th><?php esc_html_e( 'Unidades', 'workshop' ); ?></th><th><?php esc_html_e( 'Transacciones', 'workshop' ); ?></th><th><?php esc_html_e( 'Total', 'workshop' ); ?></th></tr></thead>
         <tbody>
         <?php $i = 1; foreach ( $top as $p ) : ?>
-            <tr><td><?php echo esc_html( $i++ ); ?></td><td><?php echo esc_html( $p->product_name ); ?></td><td><?php echo esc_html( $p->qty ); ?></td><td><?php echo ws_money( $p->total, $currency ); ?></td></tr>
+            <tr><td><?php echo esc_html( $i++ ); ?></td><td><?php echo esc_html( $p->product_name ); ?></td><td><?php echo esc_html( $p->qty ); ?></td><td><?php echo esc_html( $p->orders ); ?></td><td><?php echo ws_money( $p->total, $currency ); ?></td></tr>
         <?php endforeach; ?>
         </tbody>
     </table>
     <?php endif; ?>
 </div>
+<script>
+(function () {
+    var base = <?php echo wp_json_encode( $base_url ); ?>;
+
+    function apply() {
+        var loc = document.getElementById('ws-reports-loc').value;
+        var period = document.getElementById('ws-reports-period').value;
+        var sep = base.indexOf('?') === -1 ? '?' : '&';
+        location.href = base + sep + 'ws_loc=' + encodeURIComponent(loc) + '&ws_period=' + encodeURIComponent(period);
+    }
+
+    document.getElementById('ws-reports-loc').addEventListener('change', apply);
+    document.getElementById('ws-reports-period').addEventListener('change', apply);
+
+    var btn = document.getElementById('ws-reports-export');
+    if (btn) btn.addEventListener('click', function () {
+        if (btn.dataset.busy) return;
+        btn.dataset.busy = '1';
+        btn.classList.add('is-loading');
+        var icon = btn.querySelector('i');
+        if (icon) icon.className = 'fa-solid fa-spinner fa-spin';
+
+        var body = new URLSearchParams({
+            action: 'ws_reports_export',
+            ws_nonce: WS.nonce,
+            ws_loc: document.getElementById('ws-reports-loc').value,
+            ws_period: document.getElementById('ws-reports-period').value,
+            ws_biz: <?php echo wp_json_encode( $ws_biz_slug ); ?>
+        });
+
+        fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body })
+            .then(function (res) {
+                var ct = res.headers.get('Content-Type') || '';
+                if (ct.indexOf('application/json') !== -1) {
+                    return res.json().then(function (j) { throw new Error((j.data && j.data.msg) || 'No se pudo exportar.'); });
+                }
+                return Promise.all([res.blob(), Promise.resolve(res.headers.get('X-WS-Filename') || ('reporte-' + Date.now() + '.' + (res.headers.get('X-WS-Export') || 'xlsx')))]);
+            })
+            .then(function (tuple) {
+                var blob = tuple[0], filename = tuple[1];
+                var url = URL.createObjectURL(blob);
+                var a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
+            })
+            .catch(function (err) {
+                if (typeof Swal !== 'undefined') {
+                    Swal.fire({ icon: 'error', title: '<?php esc_html_e( 'Exportar', 'workshop' ); ?>', text: (err && err.message) || '<?php esc_html_e( 'No se pudo exportar.', 'workshop' ); ?>' });
+                } else {
+                    alert((err && err.message) || '<?php esc_html_e( 'No se pudo exportar.', 'workshop' ); ?>');
+                }
+            })
+            .finally(function () {
+                delete btn.dataset.busy;
+                btn.classList.remove('is-loading');
+                if (icon) icon.className = 'fa-solid fa-file-excel';
+            });
+    });
+})();
+</script>

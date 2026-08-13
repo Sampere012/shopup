@@ -112,6 +112,10 @@
         alert((title || '') + ' ' + (text || ''));
     };
 
+    // Exponer toast globalmente para scripts inline de los paneles
+    // (p. ej. la exportación de reportes).
+    window.toast = toast;
+
     const money = (amount, currency) => {
         const c = currency || WS.currency || '€';
         const n = new Intl.NumberFormat('es', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(amount) || 0);
@@ -241,6 +245,11 @@
             whatsappNumbers: opts.whatsappNumbers || [],
             products: [],
             search: '',
+            // Categorías en árbol: filtro de la tienda. Al elegir una categoría
+            // se muestran también los productos de TODA su rama de subcategorías.
+            categoryTree: [],
+            categoryOptions: [],
+            categoryFilter: 0,
             cartOpen: false,
             step: 'cart',
             cartItems: [],
@@ -276,6 +285,10 @@
             init() {
                 const seed = window.WS_STORE_DATA || null;
                 if (seed && seed.products) { this.products = seed.products; }
+                if (seed && seed.categories) {
+                    this.categoryTree = seed.categories.tree || [];
+                    this.categoryOptions = (seed.categories.flat || []).map(c => ({ id: c.id, name: c.name }));
+                }
                 // Monedas/tasas/WhatsApp llegan por WS_STORE_DATA (JSON en un
                 // <script>, no por el atributo x-data, para no romper el HTML).
                 if (seed && seed.baseCurrency) { this.baseCurrency = seed.baseCurrency; }
@@ -336,8 +349,26 @@
             get cartCount() { return this.cartItems.reduce((a, i) => a + i.qty, 0); },
             get filtered() {
                 const s = this.search.toLowerCase().trim();
-                if (!s) return this.products;
-                return this.products.filter(p => p.name.toLowerCase().includes(s) || p.barcode.toLowerCase().includes(s));
+                const ids = this.categoryFilter ? this.categoryBranchIds(this.categoryFilter) : null;
+                return this.products.filter(p => {
+                    if (ids && !ids.has(Number(p.category_id) || 0)) return false;
+                    if (!s) return true;
+                    return (p.name || '').toLowerCase().includes(s) || (p.barcode || '').toLowerCase().includes(s);
+                });
+            },
+            // IDs de una categoría y de todas sus subcategorías (ramas del árbol).
+            categoryBranchIds(id) {
+                const set = new Set([Number(id)]);
+                const walk = (nodes) => {
+                    (nodes || []).forEach(n => {
+                        if (Number(n.id) === Number(id) || set.has(Number(n.parent_id))) {
+                            set.add(Number(n.id));
+                        }
+                        if (n.children && n.children.length) walk(n.children);
+                    });
+                };
+                walk(this.categoryTree);
+                return set;
             },
             get subtotal() { return this.cartItems.reduce((a, i) => a + this.convert(i.price, i.currency || this.currency, this.currency) * i.qty, 0); },
             // Subtotal en transferencia: aplica el % de transferencia de cada producto.
@@ -726,8 +757,8 @@
             },
             money(v, c) { return money(v, c || this.currency); },
             openForm(p) {
-                this.form = p ? Object.assign({}, p) : { name: '', barcode: '', category: '', description: '', image: '', cost_price: 0, sale_price: 0, transfer_pct: 0, currency: this.currency, show_equiv: 1, supplier_id: 0, min_stock: 0, fraction_parent: 0, fraction_qty: 0 };
-                if (this.form.category === undefined) this.form.category = '';
+                this.form = p ? Object.assign({}, p) : { name: '', barcode: '', category_id: 0, description: '', image: '', cost_price: 0, sale_price: 0, transfer_pct: 0, currency: this.currency, show_equiv: 1, supplier_id: 0, min_stock: 0, fraction_parent: 0, fraction_qty: 0 };
+                if (this.form.category_id === undefined) this.form.category_id = 0;
                 if (!this.form.currency) this.form.currency = this.currency;
                 if (this.form.show_equiv === undefined) this.form.show_equiv = 1;
                 if (this.form.fraction_parent === undefined) this.form.fraction_parent = 0;
@@ -1631,6 +1662,207 @@
             }
         }));
 
+        /* Categorías de productos en ÁRBOL (subcategorías podables). */
+        Alpine.data('wsCategories', (data) => {
+            return {
+                can: !!data.can,
+                list: data.list || [],
+                flat: data.flat || [],
+                editingId: 0,
+                saving: false,
+                form: { name: '', parent_id: 0, sort_order: 0, active: true },
+
+                resetForm() {
+                    this.editingId = 0;
+                    this.form = { name: '', parent_id: 0, sort_order: 0, active: true };
+                },
+                edit(c) {
+                    this.editingId = c.id;
+                    this.form = { name: c.name, parent_id: c.parent_id, sort_order: c.sort_order, active: !!c.active };
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                },
+                // Padres posibles: todos menos la propia categoría y su rama
+                // (no puede estar dentro de sí misma) al editar. La rama se
+                // detecta por la ruta; el servidor también lo valida.
+                parentOptions() {
+                    const editing = this.list.find((x) => x.id === this.editingId) || null;
+                    const banned = {};
+                    if (editing) {
+                        banned[editing.id] = 1;
+                        this.list.forEach((c) => {
+                            if (c.path === editing.path || c.path.indexOf(editing.path + ' / ') === 0) {
+                                banned[c.id] = 1;
+                            }
+                        });
+                    }
+                    return this.flat.filter((c) => !banned[c.id]);
+                },
+                api(action, extra, cb) {
+                    const body = new URLSearchParams();
+                    body.append('action', action);
+                    body.append('ws_nonce', (window.WS && WS.nonce) || '');
+                    Object.keys(extra || {}).forEach((k) => body.append(k, extra[k]));
+                    fetch((window.WS && WS.ajaxUrl) || '/wp-admin/admin-ajax.php', { method: 'POST', credentials: 'same-origin', body })
+                        .then((r) => r.json()).then(cb)
+                        .catch(() => cb({ success: false, data: { msg: 'Sin conexión.' } }));
+                },
+                refresh(json) {
+                    if (json && json.success && json.data && json.data.payload) {
+                        const p = json.data.payload;
+                        const out = [];
+                        const flat = [];
+                        const walk = (node, parents) => {
+                            const path = parents.concat([node.name]).join(' / ');
+                            out.push({
+                                id: node.id, parent_id: node.parent_id, name: node.name,
+                                slug: node.slug || '', active: node.active, sort_order: node.sort_order,
+                                path: path, children: (node.children || []).length
+                            });
+                            flat.push({ id: node.id, name: path });
+                            (node.children || []).forEach((kid) => walk(kid, parents.concat([node.name])));
+                        };
+                        (p.tree || []).forEach((root) => walk(root, []));
+                        this.list = out;
+                        this.flat = flat;
+                        // El payload no trae conteos: se recalculan en cada carga.
+                        this.list.forEach((c) => { c.products = 0; });
+                    }
+                },
+                save() {
+                    if (!this.form.name.trim()) { return; }
+                    this.saving = true;
+                    this.api('ws_category_save', {
+                        id: this.editingId || 0,
+                        name: this.form.name,
+                        parent_id: this.form.parent_id || 0,
+                        sort_order: this.form.sort_order || 0,
+                        active: this.form.active ? '1' : '0'
+                    }, (json) => {
+                        this.saving = false;
+                        if (json && json.success) {
+                            this.refresh(json);
+                            this.resetForm();
+                            window.Swal ? Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Categoría guardada', showConfirmButton: false, timer: 2000 })
+                                        : alert('Categoría guardada');
+                        } else {
+                            window.Swal ? Swal.fire({ icon: 'error', title: 'Error', text: (json && json.data && json.data.msg) || 'No se pudo guardar.' })
+                                        : alert((json && json.data && json.data.msg) || 'No se pudo guardar.');
+                        }
+                    });
+                },
+                remove(c) {
+                    const doRemove = () => {
+                        this.api('ws_category_delete', { id: c.id }, (json) => {
+                            if (json && json.success) { this.refresh(json); }
+                        });
+                    };
+                    const msg = c.children > 0
+                        ? 'Se PODARÁ esta categoría y sus subcategorías. Los productos pasarán a la categoría padre. ¿Continuar?'
+                        : '¿Eliminar esta categoría? Sus productos pasarán a la categoría padre.';
+                    if (window.Swal) {
+                        Swal.fire({ title: 'Eliminar categoría', text: msg, icon: 'warning', showCancelButton: true,
+                            confirmButtonText: 'Sí, podar', cancelButtonText: 'Cancelar' })
+                            .then((r) => { if (r.isConfirmed) { doRemove(); } });
+                    } else if (confirm(msg)) { doRemove(); }
+                }
+            };
+        });
+
+        /* Control de gastos: registro mensual + utilidad (ingresos - gastos). */
+        Alpine.data('wsExpenses', (data) => {
+            return {
+                can: !!data.can,
+                currency: data.currency || '',
+                months: data.months || {},
+                year: Number(data.year) || new Date().getFullYear(),
+                month: Number(data.month) || (new Date().getMonth() + 1),
+                list: data.list || [],
+                summary: data.summary || { income: 0, expenses: 0, utility: 0 },
+                editingId: 0,
+                saving: false,
+                form: { concept: '', amount: 0, category: '', note: '', expense_date: '' },
+
+                years() {
+                    const out = [];
+                    for (let i = this.year; i >= this.year - 4; i--) { out.push(i); }
+                    return out;
+                },
+                categories() {
+                    const out = [];
+                    (this.list || []).forEach((e) => {
+                        if (e.category && out.indexOf(e.category) === -1) { out.push(e.category); }
+                    });
+                    return out;
+                },
+                resetForm() {
+                    this.editingId = 0;
+                    this.form = { concept: '', amount: 0, category: '', note: '', expense_date: '' };
+                },
+                edit(e) {
+                    this.editingId = e.id;
+                    this.form = { concept: e.concept, amount: e.amount, category: e.category, note: e.note, expense_date: e.date_raw };
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                },
+                api(action, extra, cb) {
+                    const body = new URLSearchParams();
+                    body.append('action', action);
+                    body.append('ws_nonce', (window.WS && WS.nonce) || '');
+                    Object.keys(extra || {}).forEach((k) => body.append(k, extra[k]));
+                    fetch((window.WS && WS.ajaxUrl) || '/wp-admin/admin-ajax.php', { method: 'POST', credentials: 'same-origin', body })
+                        .then((r) => r.json()).then(cb)
+                        .catch(() => cb({ success: false, data: { msg: 'Sin conexión.' } }));
+                },
+                money(v) {
+                    v = Number(v) || 0;
+                    const s = v.toLocaleString('es-CU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                    return (this.currency ? this.currency + ' ' : '') + s;
+                },
+                load() {
+                    this.api('ws_expenses_list', { year: this.year, month: this.month }, (json) => {
+                        if (json && json.success) {
+                            this.list = (json.data && json.data.expenses) || [];
+                            this.summary = (json.data && json.data.summary) || this.summary;
+                        }
+                    });
+                },
+                save() {
+                    if (!this.form.concept.trim() || !(Number(this.form.amount) > 0) || !this.form.expense_date) { return; }
+                    this.saving = true;
+                    this.api('ws_expense_save', {
+                        id: this.editingId || 0,
+                        concept: this.form.concept,
+                        amount: String(this.form.amount),
+                        category: this.form.category,
+                        note: this.form.note,
+                        expense_date: this.form.expense_date
+                    }, (json) => {
+                        this.saving = false;
+                        if (json && json.success) {
+                            this.resetForm();
+                            this.load();
+                            window.Swal ? Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Gasto guardado', showConfirmButton: false, timer: 2000 })
+                                        : alert('Gasto guardado');
+                        } else {
+                            window.Swal ? Swal.fire({ icon: 'error', title: 'Error', text: (json && json.data && json.data.msg) || 'No se pudo guardar.' })
+                                        : alert((json && json.data && json.data.msg) || 'No se pudo guardar.');
+                        }
+                    });
+                },
+                remove(e) {
+                    const doRemove = () => {
+                        this.api('ws_expense_delete', { id: e.id }, (json) => {
+                            if (json && json.success) { this.load(); }
+                        });
+                    };
+                    if (window.Swal) {
+                        Swal.fire({ title: 'Eliminar gasto', text: '¿Eliminar este gasto?', icon: 'warning', showCancelButton: true,
+                            confirmButtonText: 'Sí, eliminar', cancelButtonText: 'Cancelar' })
+                            .then((r) => { if (r.isConfirmed) { doRemove(); } });
+                    } else if (confirm('¿Eliminar este gasto?')) { doRemove(); }
+                }
+            };
+        });
+
         /* Registro público de negocios (2 pasos: datos + código de 6 dígitos). */
         Alpine.data('wsTutorial', (opts) => ({
             open: false,
@@ -2486,4 +2718,28 @@
     }
     // Segunda pasada: si algún FAB se renderiza después (async), se agrupa igualmente.
     window.setTimeout(initFabGroup, 1200);
+})();
+
+/* ------------------------------------------------------------------ */
+/* Anuncios anclados (banners): se pueden ocultar y no vuelven a       */
+/* aparecer. Funciona en el panel y en la portada (landing).           */
+/* ------------------------------------------------------------------ */
+(function () {
+    'use strict';
+    var KEY = 'ws_dismissed_announcements';
+    function getDismissed() {
+        try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (e) { return []; }
+    }
+    window.wsDismissAnnouncement = function (id, btn) {
+        var list = getDismissed();
+        if (list.indexOf(id) === -1) { list.push(id); }
+        try { localStorage.setItem(KEY, JSON.stringify(list)); } catch (e) {}
+        var banner = btn && btn.closest ? btn.closest('.ws-ann-banner') : null;
+        if (banner) { banner.remove(); }
+    };
+    var dismissed = getDismissed();
+    document.querySelectorAll('.ws-ann-banner').forEach(function (b) {
+        var id = parseInt(b.getAttribute('data-ann') || '0', 10);
+        if (dismissed.indexOf(id) !== -1) { b.remove(); }
+    });
 })();

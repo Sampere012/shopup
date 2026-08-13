@@ -16,12 +16,9 @@ $can_bulk   = ws_can( 'products_bulk' );
 $currency   = ws_currency_symbol();
 $currencies = ws_currencies();
 $can_fraction = ws_can( 'products_fraction' );
-// Categorías ya usadas: autocompletado en el formulario (texto libre).
-$categories = array_values( array_unique( array_filter( array_map(
-    fn( $p ) => (string) ( $p->category ?? '' ),
-    $products
-) ) ) );
-sort( $categories, SORT_STRING );
+// Categorías en ÁRBOL: selector con indentación por nivel (Padre / Hijo / Nieto).
+$cat_payload = function_exists( 'ws_categories_payload' ) ? ws_categories_payload() : array( 'flat' => array() );
+$categories  = $cat_payload['flat'];
 
 // Estado del plan: límite de productos palpable en la pantalla de creación.
 $plan_status = ws_plan_limit_status( 'products' );
@@ -122,6 +119,7 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
                                             <i class="fa-solid fa-scale-balanced"></i>
                                             <?php esc_html_e( 'Fracción de', 'workshop' ); ?> #<span x-text="p.fraction_parent"></span>
                                         </span>
+                                        <small class="ws-muted ws-product-category" x-show="p.category_path" x-text="p.category_path"></small>
                                         <small class="ws-muted" x-show="p.description" x-text="p.description"></small>
                                     </div>
                                 </div>
@@ -246,10 +244,13 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
                     </label>
                     <label class="ws-field">
                         <span><?php esc_html_e( 'Categoría', 'workshop' ); ?></span>
-                        <input type="text" x-model="form.category" list="ws-categories" placeholder="<?php esc_attr_e( 'Ej.: Bebidas, Ropa, Hogar…', 'workshop' ); ?>">
-                        <datalist id="ws-categories">
-                            <template x-for="c in categories" :key="c"><option :value="c"></option></template>
-                        </datalist>
+                        <select x-model.number="form.category_id">
+                            <option value="0">— <?php esc_html_e( 'Sin categoría', 'workshop' ); ?> —</option>
+                            <template x-for="c in categories" :key="c.id">
+                                <option :value="c.id" x-text="c.name"></option>
+                            </template>
+                        </select>
+                        <p class="ws-muted" style="font-size:.8em;margin:4px 0 0"><?php esc_html_e( 'Elige una categoría (puede ser subcategoría). Los productos de una categoría también se ven en sus subcategorías en la tienda.', 'workshop' ); ?></p>
                     </label>
                     <label class="ws-field">
                         <span><?php esc_html_e( 'Imagen URL', 'workshop' ); ?></span>

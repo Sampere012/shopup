@@ -380,12 +380,45 @@ function ws_db_tables() {
             UNIQUE KEY slug (slug)
         ) {charset};",
 
-        // Anuncios del negocio (global, aislados por business_id): mensajes y
-        // notificaciones ancladas que el dueño envía a TODOS los usuarios de
-        // su negocio (dueños, almaceneros y vendedores).
+        // Categorías de productos en ÁRBOL (subcategorías): cada negocio
+        // organiza su catálogo con jerarquía padre/hijo (podables, editables
+        // y eliminables). Los productos apuntan a category_id.
+        'categories' => "CREATE TABLE {prefix}ws_categories (
+            id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            parent_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
+            name VARCHAR(150) NOT NULL,
+            slug VARCHAR(150) NOT NULL DEFAULT '',
+            sort_order INT NOT NULL DEFAULT 0,
+            active TINYINT(1) NOT NULL DEFAULT 1,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY parent_id (parent_id),
+            KEY slug (slug)
+        ) {charset};",
+
+        // Gastos del negocio (control de gastos): concepto, monto, categoría y
+        // fecha del gasto (por mes). La utilidad mensual = ingresos - gastos.
+        'expenses' => "CREATE TABLE {prefix}ws_expenses (
+            id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            concept VARCHAR(255) NOT NULL,
+            amount DECIMAL(12,2) NOT NULL DEFAULT 0,
+            category VARCHAR(120) NOT NULL DEFAULT '',
+            note TEXT NULL,
+            expense_date DATETIME NOT NULL,
+            created_by BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY expense_date (expense_date)
+        ) {charset};",
+
+        // Anuncios (global, aislados por business_id): mensajes y notificaciones
+        // ancladas que el dueño envía a los usuarios de SU negocio (scope
+        // 'business') o el admin del sistema a TODO el sitio (scope 'site').
         'announcements' => "CREATE TABLE {prefix}ws_announcements (
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
             business_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
+            scope VARCHAR(20) NOT NULL DEFAULT 'business',
             title VARCHAR(255) NOT NULL DEFAULT '',
             message TEXT NULL,
             type VARCHAR(20) NOT NULL DEFAULT 'info',
@@ -395,6 +428,7 @@ function ws_db_tables() {
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             KEY business_id (business_id),
+            KEY scope (scope),
             KEY active_pinned (active, pinned)
         ) {charset};",
 
@@ -511,6 +545,18 @@ function ws_db_migrate() {
     }
     if ( function_exists( 'ws_plans_seed_defaults' ) ) {
         ws_plans_seed_defaults();
+    }
+
+    // Columna `scope` en anuncios: alcance del anuncio ('business' del dueño
+    // para su negocio, 'site' del admin para todo el sitio). Se aplica a la
+    // tabla global; los anuncios existentes quedan como 'business'.
+    $at = $wpdb->prefix . WS_TABLE_PREFIX . 'announcements';
+    if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $at ) ) === $at ) {
+        $a_cols = $wpdb->get_col( "SHOW COLUMNS FROM {$at}", 0 );
+        if ( ! in_array( 'scope', $a_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$at} ADD COLUMN scope VARCHAR(20) NOT NULL DEFAULT 'business' AFTER business_id" );
+            $wpdb->query( "ALTER TABLE {$at} ADD KEY scope (scope)" );
+        }
     }
 
     // Columna `has_chatbot` en planes: qué planes incluyen el asistente del
@@ -658,5 +704,41 @@ function ws_db_migrate() {
         $sql = str_replace( '{prefix}', $wpdb->prefix, $sql );
         $sql = str_replace( '{charset}', $wpdb->get_charset_collate(), $sql );
         dbDelta( $sql );
+    }
+
+    // Módulos nuevos: Categorías (árbol con subcategorías) y Gastos (control
+    // mensual). Se crean/actualizan en la tabla por defecto Y en la de cada
+    // negocio con slug propio (dbDelta no altera tablas ya creadas), y se
+    // añade la columna category_id a productos (enlace a la categoría árbol).
+    require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+    $ws_new_suffixes = array( '' );
+    if ( class_exists( 'WS_Business' ) && $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', WS_Business::table() ) ) === WS_Business::table() ) {
+        foreach ( WS_Business::all() as $ws_nb ) {
+            $n_slug = (string) ( $ws_nb->slug ?? '' );
+            if ( '' !== $n_slug ) {
+                $ws_new_suffixes[] = ws_biz_table_suffix( $n_slug );
+            }
+        }
+    }
+    foreach ( $ws_new_suffixes as $ws_new_suffix ) {
+        $ws_new_prefix = $wpdb->prefix . WS_TABLE_PREFIX . ( '' !== $ws_new_suffix ? $ws_new_suffix . '_ws_' : '' );
+        foreach ( array( 'categories', 'expenses' ) as $ws_new_table ) {
+            $new_t = $ws_new_prefix . $ws_new_table;
+            if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $new_t ) ) !== $new_t ) {
+                $sql = ws_db_tables()[ $ws_new_table ];
+                $sql = str_replace( '{prefix}', $ws_new_prefix, $sql );
+                $sql = str_replace( '{charset}', $wpdb->get_charset_collate(), $sql );
+                dbDelta( $sql );
+            }
+        }
+        // Enlace de productos a su categoría en árbol (default y por negocio).
+        $pt2 = ws_table_for( $ws_new_suffix, 'products' );
+        if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $pt2 ) ) === $pt2 ) {
+            $p2_cols = $wpdb->get_col( "SHOW COLUMNS FROM {$pt2}", 0 );
+            if ( ! in_array( 'category_id', $p2_cols, true ) ) {
+                $wpdb->query( "ALTER TABLE {$pt2} ADD COLUMN category_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0 AFTER category" );
+                $wpdb->query( "ALTER TABLE {$pt2} ADD KEY category_id (category_id)" );
+            }
+        }
     }
 }

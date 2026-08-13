@@ -11,7 +11,7 @@
     // Administrador del SISTEMA (WordPress sin negocio): no vende ni gestiona
     // un negocio; controla la plataforma (logs, negocios, usuarios, planes…).
     var isSysAdmin = C.isSysAdmin === true;
-    var locked = C.inPanel && hasBizRole && !C.chatbot; // plan sin chatbot: solo upsell
+    var locked = hasBizRole && !C.chatbot; // plan sin chatbot: solo upsell (panel y tienda)
     var mode = isPanel ? 'panel' : 'public';
 
     var open = false;
@@ -2318,6 +2318,8 @@
     function sendUser(text) {
         var value = (text || '').trim();
         if (!value || busy) { return; }
+        // Plan sin asistente: no se procesa ni consulta nada (ni el LLM).
+        if (locked) { actions.locked.run(); return; }
         input.value = '';
         appendMsg(value, true);
         busy = true;
@@ -2404,6 +2406,10 @@
     function boot() {
         var first = getF('wsb_intro_v1');
         if (locked) {
+            input.disabled = true;
+            input.placeholder = 'Activa el asistente en tu plan';
+            var sendLocked = win.querySelector('.wsb-send');
+            if (sendLocked) { sendLocked.disabled = true; }
             appendMsg(S.welcomeLocked, false);
             appendMsg(S.lockedBody, false);
             appendChips([{ label: S.goPlan, url: C.urls.plan, icon: 'fa-crown', track: 'upsell:plan' }]);

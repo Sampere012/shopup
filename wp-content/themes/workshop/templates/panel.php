@@ -30,6 +30,8 @@ $items = array(
     'pos-sales' => array( 'icon' => 'fa-chart-line',   'label' => __( 'Ventas POS', 'workshop' ), 'caps' => array( 'pos_view' ) ),
     'reviews'   => array( 'icon' => 'fa-star',         'label' => __( 'Valoraciones', 'workshop' ), 'caps' => array( 'reviews_view' ) ),
     'loyalty'   => array( 'icon' => 'fa-gift',         'label' => __( 'Fidelización', 'workshop' ), 'caps' => array( 'loyalty_manage' ) ),
+    'categories' => array( 'icon' => 'fa-sitemap',     'label' => __( 'Categorías', 'workshop' ), 'caps' => array( 'categories_manage' ) ),
+    'expenses'  => array( 'icon' => 'fa-money-bill-wave', 'label' => __( 'Gastos', 'workshop' ), 'caps' => array( 'expenses_manage' ) ),
     'anuncios'  => array( 'icon' => 'fa-bullhorn',     'label' => __( 'Anuncios', 'workshop' ), 'caps' => array( 'settings_manage', 'workers_manage' ) ),
     'plan'      => array( 'icon' => 'fa-crown',        'label' => __( 'Plan', 'workshop' ), 'caps' => array() ),
     'permissions' => array( 'icon' => 'fa-shield-halved','label' => __( 'Permisos', 'workshop' ), 'caps' => array( 'permissions_manage' ) ),
@@ -337,25 +339,4 @@ get_header();
         </div>
     </div>
 </div>
-<script>
-// Anuncios anclados del panel: se pueden ocultar y no vuelven a aparecer.
-(function () {
-    var KEY = 'ws_dismissed_announcements';
-    function getDismissed() {
-        try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (e) { return []; }
-    }
-    window.wsDismissAnnouncement = function (id, btn) {
-        var list = getDismissed();
-        if (list.indexOf(id) === -1) { list.push(id); }
-        try { localStorage.setItem(KEY, JSON.stringify(list)); } catch (e) {}
-        var banner = btn && btn.closest ? btn.closest('.ws-ann-banner') : null;
-        if (banner) { banner.remove(); }
-    };
-    var dismissed = getDismissed();
-    document.querySelectorAll('.ws-ann-banner').forEach(function (b) {
-        var id = parseInt(b.getAttribute('data-ann') || '0', 10);
-        if (dismissed.indexOf(id) !== -1) { b.remove(); }
-    });
-})();
-</script>
 <?php get_footer(); ?>

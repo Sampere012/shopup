@@ -334,10 +334,13 @@ function ws_tutorial_data() {
             'icon'  => 'fa-chart-pie',
             'desc'  => __( 'Reportes y datos para decidir con información.', 'workshop' ),
             'steps' => array(
-                array( __( 'Revisa el resumen', 'workshop' ), __( 'Los KPI muestran ventas, pedidos y movimientos de los últimos 14 días.', 'workshop' ) ),
+                array( __( 'Filtra por ubicación', 'workshop' ), __( 'Elige «Todas las ubicaciones» o una en concreto para ver sus datos.', 'workshop' ) ),
+                array( __( 'Elige el período', 'workshop' ), __( 'Últimos 7, 14, 30 o 90 días, o todo el historial.', 'workshop' ) ),
+                array( __( 'Revisa el resumen', 'workshop' ), __( 'Los KPI muestran ventas, pedidos y movimientos del período y la ubicación elegida.', 'workshop' ) ),
                 array( __( 'Ventas por día', 'workshop' ), __( 'La tabla muestra el total vendido y el número de pedidos de cada día.', 'workshop' ) ),
                 array( __( 'Movimientos por tipo', 'workshop' ), __( 'Ve cuántos movimientos entradas, salidas u otros hay y su cantidad.', 'workshop' ) ),
-                array( __( 'Top productos', 'workshop' ), __( 'Los 10 productos más vendidos por unidades y total.', 'workshop' ) ),
+                array( __( 'Top productos', 'workshop' ), __( 'Los 10 productos más vendidos por unidades, transacciones y total.', 'workshop' ) ),
+                array( __( 'Exporta a Excel', 'workshop' ), __( 'El botón «Exportar Excel» descarga un libro con resumen, ventas por día, más/menos vendidos, todos los productos y movimientos.', 'workshop' ) ),
                 array( __( 'Ordena las tablas', 'workshop' ), __( 'Las columnas son ordenables para analizar mejor.', 'workshop' ) ),
             ),
             'tour' => array(

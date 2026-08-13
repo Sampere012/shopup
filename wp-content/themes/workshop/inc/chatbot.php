@@ -393,6 +393,8 @@ function ws_chatbot_page_context() {
             'loyalty'      => __( 'Fidelización', 'workshop' ),
             'permissions'  => __( 'Permisos', 'workshop' ),
             'anuncios'     => __( 'Anuncios', 'workshop' ),
+            'categories'   => __( 'Categorías de productos', 'workshop' ),
+            'expenses'     => __( 'Control de gastos', 'workshop' ),
             'reports'      => __( 'Reportes', 'workshop' ),
             'appearance'   => __( 'Apariencia de tu tienda', 'workshop' ),
             'settings'     => __( 'Configuración', 'workshop' ),
@@ -418,6 +420,8 @@ function ws_chatbot_page_context() {
             'loyalty'     => __( 'Gestionas la fidelización y recompensas de clientes.', 'workshop' ),
             'permissions' => __( 'Ajustas los permisos de cada rol en tu negocio.', 'workshop' ),
             'anuncios'    => __( 'Envías mensajes y notificaciones ancladas a todo tu equipo (dueños, almaceneros y vendedores).', 'workshop' ),
+            'categories'  => __( 'Organizas tu catálogo en un árbol de categorías y subcategorías; los productos se agrupan y en la tienda se puede filtrar por ellas.', 'workshop' ),
+            'expenses'    => __( 'Registras tus gastos mensuales y ves la utilidad real por fecha: los gastos del mes se descuentan de los ingresos.', 'workshop' ),
             'reports'     => __( 'Aquí están tus reportes y estadísticas de ventas.', 'workshop' ),
             'appearance'  => __( 'Personalizas la apariencia de tu tienda pública.', 'workshop' ),
             'settings'    => __( 'Configuras los datos de tu negocio.', 'workshop' ),
@@ -440,7 +444,9 @@ function ws_chatbot_page_context() {
             'reviews'    => array( 'reviews', 'dashboard' ),
             'loyalty'    => array( 'loyalty', 'customers' ),
             'permissions'=> array( 'workers', 'dashboard' ),
-            'reports'    => array( 'reports', 'posSales' ),
+            'categories' => array( 'categories', 'products', 'productNew' ),
+            'expenses'   => array( 'expenses', 'reports', 'posSales' ),
+            'reports'    => array( 'reports', 'posSales', 'expenses' ),
             'appearance' => array( 'dashboard', 'products' ),
             'settings'   => array( 'dashboard', 'plan' ),
             'account'    => array( 'dashboard', 'plan' ),
@@ -547,6 +553,8 @@ function ws_chatbot_panel_shortcuts() {
         'workers'     => array( __( 'Trabajadores', 'workshop' ), 'fa-user-gear', 'workers', 'workers_manage' ),
         'loyalty'     => array( __( 'Fidelización', 'workshop' ), 'fa-gift', 'loyalty', 'loyalty_manage' ),
         'reviews'     => array( __( 'Valoraciones', 'workshop' ), 'fa-star', 'reviews', 'reviews_view' ),
+        'categories'  => array( __( 'Categorías (árbol)', 'workshop' ), 'fa-sitemap', 'categories', 'categories_manage' ),
+        'expenses'    => array( __( 'Control de gastos', 'workshop' ), 'fa-money-bill-wave', 'expenses', 'expenses_manage' ),
         'appearance'  => array( __( 'Tu sitio (logo, colores)', 'workshop' ), 'fa-palette', 'appearance', array( 'site_manage', 'layout_manage' ) ),
         'plan'        => array( __( 'Mi plan / upgrade', 'workshop' ), 'fa-crown', 'plan', '' ),
     );
@@ -1199,7 +1207,9 @@ function ws_chatbot_knowledge_extras() {
         $p( 'negocio-crear-tienda', array( 'crear mi tienda', 'montar mi negocio', 'abrir mi tienda', 'crear mi negocio online', 'tener mi tienda' ), 'Crea tu cuenta gratis, y desde tu panel > Tienda configuras nombre, logo, descripción, horario y ubicación. Sube tus productos y tu tienda queda visible en el marketplace al instante.', $P . 'settings', 'Mi tienda', 'fa-store' ),
         $p( 'negocio-apariencia', array( 'cambiar el logo', 'foto de mi tienda', 'cambiar la imagen de portada', 'apariencia de mi tienda', 'personalizar mi tienda' ), 'Desde el panel > Tienda editas el logo, la imagen de portada, la descripción y los colores de tu tienda. Los cambios se ven al momento en tu página pública.', $P . 'settings', 'Personalizar', 'fa-palette' ),
         $p( 'negocio-horario', array( 'poner horario', 'horario de mi tienda', 'cambiar horario', 'horas de apertura' ), 'Configura tu horario en el panel > Tienda: los clientes lo ven en tu página y saben cuándo pueden recoger o recibir sus pedidos.', $P . 'settings', 'Horario', 'fa-clock' ),
-        $p( 'negocio-categorias', array( 'crear categoria', 'categorias de productos', 'organizar productos por categoria', 'agregar categoria' ), 'Agrupa tus productos por categorías desde el panel > Productos. Así tu catálogo queda ordenado y es más fácil de encontrar para tus clientes.', $P . 'products', 'Categorías', 'fa-tags' ),
+        $p( 'negocio-categorias', array( 'crear categoria', 'categorias de productos', 'organizar productos por categoria', 'agregar categoria', 'subcategorias' ), 'Organiza tu catálogo en un árbol de categorías y subcategorías desde el panel > Categorías: crea, edita o poda ramas completas. Luego asigna cada producto a su categoría; en la tienda, elegir una categoría muestra también los productos de sus subcategorías.', $P . 'categories', 'Categorías', 'fa-sitemap' ),
+        $p( 'negocio-gastos', array( 'control de gastos', 'registrar un gasto', 'agregar gasto', 'gastos del mes', 'gastos del negocio', 'cuanto gaste este mes', 'gastos mensuales' ), 'En el panel > Gastos registras cada gasto con su fecha, categoría y monto. La utilidad se calcula por fecha: a los ingresos del mes se les restan los gastos de ese mismo mes, así sabes cuánto ganaste de verdad.', $P . 'expenses', 'Control de gastos', 'fa-money-bill-wave' ),
+        $p( 'negocio-utilidad', array( 'cuanto gane', 'utilidad', 'ganancia del mes', 'calcular ganancia', 'cuanto me quedo', 'rentabilidad', 'ingresos menos gastos' ), 'La utilidad es lo que realmente gana tu negocio: ingresos del periodo menos los gastos de ese mismo periodo. En el panel > Reportes ves las ventas y en Gastos el desglose mensual; juntos te dan tu ganancia real por fecha.', $P . 'expenses', 'Utilidad', 'fa-chart-pie' ),
         $p( 'negocio-sku', array( 'codigo de barras', 'sku', 'codigo interno de producto', 'identificar producto por codigo' ), 'Cada producto puede tener un código (SKU) para identificarlo rápido en el POS y en las búsquedas. Se asigna al crear o editar el producto.', $P . 'products', 'Productos', 'fa-barcode' ),
         $p( 'negocio-fraccion', array( 'producto madre', 'fraccionamiento', 'vender por fracciones', 'producto padre e hijo', 'medios y cuartos' ), 'Puedes crear productos madre que se venden por fracciones (por ejemplo 1 unidad = 2 medios). Al vender fracciones, el stock del padre se descuenta automáticamente para que siempre cuadre.', $P . 'products', 'Productos', 'fa-scissors' ),
         $p( 'negocio-importar', array( 'importar productos', 'subir muchos productos', 'cargar productos en lote', 'importar catalogo', 'exportar productos' ), 'Para subir muchos productos a la vez usa la importación del panel > Productos (archivo con tus datos). También puedes exportar tu catálogo para respaldo.', $P . 'products', 'Importar', 'fa-file-import' ),
@@ -2877,6 +2887,13 @@ add_action( 'wp_ajax_nopriv_ws_chatbot_llm', 'ws_ajax_chatbot_llm' );
 function ws_ajax_chatbot_llm() {
     if ( ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
         wp_send_json_error( array( 'msg' => __( 'Sesión expirada.', 'workshop' ) ) );
+    }
+    // El asistente (y por tanto el LLM) solo está disponible si el plan del
+    // negocio lo incluye (has_chatbot). Un negocio sin ese beneficio no puede
+    // gastar tokens de IA: se bloquea aquí aunque se llamara el endpoint directo.
+    $role = ws_user_role();
+    if ( $role && ! ws_biz_has_chatbot() ) {
+        wp_send_json_error( array( 'msg' => __( 'El asistente no está incluido en tu plan actual 😕', 'workshop' ) ) );
     }
     $admin = ws_chatbot_admin_settings();
     $key   = trim( (string) $admin['llm_key'] );

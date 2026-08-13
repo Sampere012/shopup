@@ -31,7 +31,7 @@ defined( 'ABSPATH' ) || exit;
 
 add_action( 'init', 'ws_rewrite_rules' );
 function ws_rewrite_rules() {
-    $pages = 'dashboard|products|locations|suppliers|stock|movements|orders|shifts|workers|permissions|reports|settings|account|appearance|customers|reviews|loyalty|pos|pos-sales|plan|anuncios';
+    $pages = 'dashboard|products|locations|suppliers|stock|movements|orders|shifts|workers|permissions|reports|settings|account|appearance|customers|reviews|loyalty|pos|pos-sales|plan|anuncios|categories|expenses';
 
     add_rewrite_tag( '%ws_page%', '(' . $pages . ')' );
     add_rewrite_tag( '%ws_loc%', '([^/]+)' );
@@ -371,7 +371,7 @@ function ws_handle_panel( $role ) {
     }
 
     $page = ws_current_page();
-    if ( ! in_array( $page, array( 'dashboard', 'products', 'locations', 'suppliers', 'stock', 'movements', 'orders', 'shifts', 'workers', 'permissions', 'reports', 'settings', 'account', 'appearance', 'customers', 'reviews', 'loyalty', 'pos', 'pos-sales', 'plan', 'anuncios' ), true ) ) {
+    if ( ! in_array( $page, array( 'dashboard', 'products', 'locations', 'suppliers', 'stock', 'movements', 'orders', 'shifts', 'workers', 'permissions', 'reports', 'settings', 'account', 'appearance', 'customers', 'reviews', 'loyalty', 'pos', 'pos-sales', 'plan', 'anuncios', 'categories', 'expenses' ), true ) ) {
         $page = 'dashboard';
     }
     // Guardas de permisos por página.
@@ -396,6 +396,9 @@ function ws_handle_panel( $role ) {
         'plan'        => array(),
         // Anuncios del negocio: solo el dueño (o el admin del sistema).
         'anuncios'    => array( 'settings_manage', 'workers_manage' ),
+        // Módulos nuevos: categorías en árbol y control de gastos.
+        'categories'  => 'categories_manage',
+        'expenses'    => 'expenses_manage',
     );
     if ( isset( $cap_guard[ $page ] ) ) {
         $need = (array) $cap_guard[ $page ];

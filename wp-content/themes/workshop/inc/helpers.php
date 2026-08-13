@@ -50,6 +50,46 @@ function ws_can( $cap ) {
 }
 
 /**
+ * Dominios de correo desechable (temporales) bloqueados en el acceso y el
+ * registro. Lista modesta y filtrable: cada negocio puede ampliarla.
+ */
+function ws_disposable_email_domains() {
+    $domains = array(
+        'mailinator.com', 'mailinator.net', 'guerrillamail.com', 'guerrillamail.biz',
+        'grr.la', '10minutemail.com', '10minutemail.net', 'tempmail.com',
+        'temp-mail.org', 'temp-mail.io', 'throwawaymail.com', 'yopmail.com',
+        'yopmail.net', 'sharklasers.com', 'maildrop.cc', 'mailnesia.com',
+        'dispostable.com', 'getnada.com', 'emailondeck.com', 'spam4.me',
+        'trashmail.com', 'mytemp.email', '1secmail.com', 'inboxkitten.com',
+        'mohmal.com', 'burnermail.io', 'fakeinbox.com', 'mailcatch.com',
+        'mintemail.com', 'spambox.us', 'tmail.ws', 'tmpmail.org', 'tmpmail.net',
+        'spamgourmet.com', 'mailmetrash.com', 'dontmail.net', 'e4ward.com',
+    );
+    return apply_filters( 'ws_disposable_email_domains', $domains );
+}
+
+/**
+ * Validador de correo para el acceso y el registro.
+ *
+ * Devuelve true si el correo es válido, o un mensaje de error traducible si
+ * tiene un formato inválido o usa un dominio desechable (más seguridad).
+ */
+function ws_email_allowed( $email ) {
+    $email = strtolower( trim( (string) $email ) );
+    if ( ! is_email( $email ) ) {
+        return __( 'El correo no tiene un formato válido.', 'workshop' );
+    }
+    $domain = strtolower( (string) substr( (string) strrchr( $email, '@' ), 1 ) );
+    if ( in_array( $domain, array_map( 'strtolower', ws_disposable_email_domains() ), true ) ) {
+        return sprintf( /* translators: %s: dominio bloqueado. */
+            __( 'El correo de «%1$s» no está permitido: usa un correo real y permanente.', 'workshop' ),
+            $domain
+        );
+    }
+    return true;
+}
+
+/**
  * URL del panel principal según rol.
  */
 function ws_dashboard_url() {
@@ -75,7 +115,7 @@ function ws_register_url() {
 
 function ws_is_panel() {
     $page = ws_current_page();
-    return in_array( $page, array( 'dashboard', 'products', 'locations', 'suppliers', 'stock', 'movements', 'orders', 'shifts', 'workers', 'permissions', 'reports', 'settings', 'account', 'appearance', 'anuncios' ), true );
+    return in_array( $page, array( 'dashboard', 'products', 'locations', 'suppliers', 'stock', 'movements', 'orders', 'shifts', 'workers', 'permissions', 'reports', 'settings', 'account', 'appearance', 'anuncios', 'categories', 'expenses' ), true );
 }
 
 /**

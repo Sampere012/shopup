@@ -83,6 +83,7 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-btn:hover { transform: translateY(-1px); box-shadow: var(--ws-shadow); }
 .ws-btn:active { transform: translateY(0); }
 .ws-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; box-shadow: none; }
+.ws-btn.is-loading { opacity: .65; pointer-events: none; }
 .ws-btn-sm { padding: 7px 13px; font-size: 13px; border-radius: 8px; }
 .ws-btn-block { width: 100%; }
 .ws-btn-primary { background: linear-gradient(135deg, var(--ws-primary), var(--ws-primary-dark)); color: #fff; box-shadow: 0 4px 14px rgba(79, 70, 229, .28); }

@@ -51,8 +51,10 @@ function ws_ajax_register_step1() {
     if ( '' === $data['owner_name'] ) {
         wp_send_json_error( array( 'msg' => __( 'Tu nombre es obligatorio.', 'workshop' ) ) );
     }
-    if ( ! is_email( $data['email'] ) ) {
-        wp_send_json_error( array( 'msg' => __( 'Email inválido.', 'workshop' ) ) );
+    // Validador de correo: formato + bloqueo de dominios desechables.
+    $email_check = ws_email_allowed( $data['email'] );
+    if ( true !== $email_check ) {
+        wp_send_json_error( array( 'msg' => (string) $email_check ) );
     }
     if ( email_exists( $data['email'] ) ) {
         wp_send_json_error( array( 'msg' => __( 'Ese email ya está registrado. Inicia sesión.', 'workshop' ) ) );
@@ -89,8 +91,9 @@ function ws_ajax_register_resend() {
         wp_send_json_error( array( 'msg' => __( 'Sesión expirada. Recarga la página.', 'workshop' ) ) );
     }
     $email = sanitize_email( $_POST['email'] ?? '' );
-    if ( ! is_email( $email ) ) {
-        wp_send_json_error( array( 'msg' => __( 'Email inválido.', 'workshop' ) ) );
+    $email_check = ws_email_allowed( $email );
+    if ( true !== $email_check ) {
+        wp_send_json_error( array( 'msg' => (string) $email_check ) );
     }
     $result = ws_resend_verification_code( $email );
     if ( is_wp_error( $result ) ) {
@@ -114,8 +117,9 @@ function ws_ajax_register_verify() {
     }
     $email = sanitize_email( $_POST['email'] ?? '' );
     $code  = preg_replace( '/[^0-9]/', '', (string) ( $_POST['code'] ?? '' ) );
-    if ( ! is_email( $email ) || '' === $code ) {
-        wp_send_json_error( array( 'msg' => __( 'Datos incompletos.', 'workshop' ) ) );
+    $email_check = ws_email_allowed( $email );
+    if ( true !== $email_check || '' === $code ) {
+        wp_send_json_error( array( 'msg' => true !== $email_check ? (string) $email_check : __( 'Datos incompletos.', 'workshop' ) ) );
     }
 
     $data = ws_verify_email_code( $email, $code );

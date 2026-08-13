@@ -115,6 +115,11 @@ function ws_ajax_products_list() {
                 'name'         => $p->name,
                 'barcode'      => $p->barcode,
                 'category'     => (string) ( $p->category ?? '' ),
+                'category_id'  => (int) ( $p->category_id ?? 0 ),
+                // Ruta de la categoría en árbol (Padre / Hijo) para la lista.
+                'category_path'=> ( ! empty( $p->category_id ) && class_exists( 'WS_Categories' ) )
+                    ? WS_Categories::path_text( (int) $p->category_id )
+                    : (string) ( $p->category ?? '' ),
                 'description'  => $p->description,
                 'image'        => $p->image,
                 'cost_price'   => (float) $p->cost_price,
@@ -2283,7 +2288,7 @@ function ws_ajax_loyalty_adjust_points() {
  * ------------------------------------------------------------------ */
 
 function ws_announcements_json() {
-    if ( ! function_exists( 'ws_announcements_for_business' ) ) {
+    if ( ! function_exists( 'ws_announcements_panel' ) ) {
         return array();
     }
     return array_map( static function ( $a ) {
@@ -2292,11 +2297,12 @@ function ws_announcements_json() {
             'title'   => (string) $a->title,
             'message' => (string) $a->message,
             'type'    => (string) $a->type,
+            'scope'   => (string) $a->scope,
             'pinned'  => (int) $a->pinned,
             'active'  => (int) $a->active,
             'date'    => mysql2date( 'd/m/Y H:i', $a->created_at ),
         );
-    }, ws_announcements_for_business() );
+    }, ws_announcements_panel() );
 }
 
 add_action( 'wp_ajax_ws_announcement_save', 'ws_ajax_announcement_save' );
@@ -2307,13 +2313,25 @@ function ws_ajax_announcement_save() {
     if ( ! function_exists( 'ws_announcement_can' ) || ! ws_announcement_can() ) {
         wp_send_json_error( array( 'msg' => __( 'No tienes permiso.', 'workshop' ) ) );
     }
-    $id = ws_announcement_save( $_POST, (int) ( $_POST['id'] ?? 0 ) );
+    // Los anuncios globales del sitio solo los crea el admin.
+    if ( 'site' === (string) ( $_POST['scope'] ?? '' ) && ! ws_announcement_can_site() ) {
+        wp_send_json_error( array( 'msg' => __( 'No tienes permiso para anuncios globales.', 'workshop' ) ) );
+    }
+    // Al editar se respeta el alcance y negocio del anuncio original.
+    $editing = (int) ( $_POST['id'] ?? 0 );
+    if ( $editing && function_exists( 'ws_announcement_manage_can' ) ) {
+        $ws_cur_ann = ws_announcement_get( $editing );
+        if ( ! $ws_cur_ann || ! ws_announcement_manage_can( $ws_cur_ann ) ) {
+            wp_send_json_error( array( 'msg' => __( 'No tienes permiso.', 'workshop' ) ) );
+        }
+    }
+    $id = ws_announcement_save( $_POST, $editing );
     if ( ! $id ) {
         wp_send_json_error( array( 'msg' => __( 'El título es obligatorio.', 'workshop' ) ) );
     }
     ws_log_audit( 'announcement_save', 'announcement', $id );
     wp_send_json_success( array(
-        'msg'  => (int) ( $_POST['id'] ?? 0 ) ? __( 'Anuncio actualizado.', 'workshop' ) : __( 'Anuncio enviado a todo tu equipo.', 'workshop' ),
+        'msg'  => $editing ? __( 'Anuncio actualizado.', 'workshop' ) : __( 'Anuncio enviado.', 'workshop' ),
         'list' => ws_announcements_json(),
     ) );
 }
@@ -2327,8 +2345,11 @@ function ws_ajax_announcement_toggle() {
         wp_send_json_error( array( 'msg' => __( 'No tienes permiso.', 'workshop' ) ) );
     }
     $ann = ws_announcement_get( (int) ( $_POST['id'] ?? 0 ) );
-    if ( ! $ann || (int) $ann->business_id !== ws_current_business_id() ) {
+    if ( ! $ann || ( 'site' !== (string) $ann->scope && (int) $ann->business_id !== ws_current_business_id() ) ) {
         wp_send_json_error( array( 'msg' => __( 'Anuncio no encontrado.', 'workshop' ) ) );
+    }
+    if ( ! ws_announcement_manage_can( $ann ) ) {
+        wp_send_json_error( array( 'msg' => __( 'No tienes permiso.', 'workshop' ) ) );
     }
     $field = in_array( (string) ( $_POST['field'] ?? '' ), array( 'active', 'pinned' ), true ) ? sanitize_key( $_POST['field'] ) : 'active';
     ws_announcement_toggle( (int) $ann->id, $field );
@@ -2353,8 +2374,11 @@ function ws_ajax_announcement_delete() {
         wp_send_json_error( array( 'msg' => __( 'No tienes permiso.', 'workshop' ) ) );
     }
     $ann = ws_announcement_get( (int) ( $_POST['id'] ?? 0 ) );
-    if ( ! $ann || (int) $ann->business_id !== ws_current_business_id() ) {
+    if ( ! $ann || ( 'site' !== (string) $ann->scope && (int) $ann->business_id !== ws_current_business_id() ) ) {
         wp_send_json_error( array( 'msg' => __( 'Anuncio no encontrado.', 'workshop' ) ) );
+    }
+    if ( ! ws_announcement_manage_can( $ann ) ) {
+        wp_send_json_error( array( 'msg' => __( 'No tienes permiso.', 'workshop' ) ) );
     }
     ws_announcement_delete( (int) $ann->id );
     ws_log_audit( 'announcement_delete', 'announcement', (int) $ann->id );
