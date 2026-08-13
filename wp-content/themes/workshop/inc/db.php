@@ -721,9 +721,20 @@ function ws_db_migrate() {
         }
     }
     foreach ( $ws_new_suffixes as $ws_new_suffix ) {
-        $ws_new_prefix = $wpdb->prefix . WS_TABLE_PREFIX . ( '' !== $ws_new_suffix ? $ws_new_suffix . '_ws_' : '' );
+        // Limpieza: una versión previa creó para negocios existentes tablas
+        // con doble «ws_» en el nombre (wp_ws_{sufijo}_ws_ws_categorias) en
+        // vez de wp_ws_{sufijo}_ws_categorias. Se borran antes de recrear.
+        foreach ( array( 'categories', 'expenses' ) as $ws_bad_table ) {
+            $ws_bad = $wpdb->prefix . WS_TABLE_PREFIX . ( '' !== $ws_new_suffix ? $ws_new_suffix . '_ws_' : '' ) . 'ws_' . $ws_bad_table;
+            if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $ws_bad ) ) === $ws_bad ) {
+                $wpdb->query( "DROP TABLE IF EXISTS {$ws_bad}" );
+            }
+        }
+        // El prefijo para las plantillas es wp_ws_{sufijo}_ (sin el «ws_» de
+        // la entidad, que ya lo pone ws_db_tables): igual que ws_create_business_tables.
+        $ws_new_prefix = $wpdb->prefix . WS_TABLE_PREFIX . ( '' !== $ws_new_suffix ? $ws_new_suffix . '_' : '' );
         foreach ( array( 'categories', 'expenses' ) as $ws_new_table ) {
-            $new_t = $ws_new_prefix . $ws_new_table;
+            $new_t = ws_table_for( $ws_new_suffix, $ws_new_table );
             if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $new_t ) ) !== $new_t ) {
                 $sql = ws_db_tables()[ $ws_new_table ];
                 $sql = str_replace( '{prefix}', $ws_new_prefix, $sql );
