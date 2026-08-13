@@ -945,6 +945,10 @@ function ws_chatbot_admin_settings() {
         'llm_model'      => 'openrouter/auto',
         'llm_provider'   => 'openrouter', // openrouter | groq | custom
         'llm_base_url'   => '',
+        // Endpoint del servidor MCP/Groq usado en producción para cada negocio.
+        // Si se configura, el bot consulta el negocio actual con su slug y usa
+        // ese servicio como fuente primaria de datos del negocio.
+        'mcp_url'        => 'http://127.0.0.1:3001',
     );
     $opt = get_option( 'ws_chatbot_config', array() );
     $opt = is_array( $opt ) ? $opt : array();
@@ -956,6 +960,7 @@ function ws_chatbot_admin_settings() {
         'llm_model'      => ! empty( $opt['llm_model'] ) ? (string) $opt['llm_model'] : $defaults['llm_model'],
         'llm_provider'   => in_array( (string) ( $opt['llm_provider'] ?? '' ), array( 'openrouter', 'groq', 'custom' ), true ) ? (string) $opt['llm_provider'] : $defaults['llm_provider'],
         'llm_base_url'   => isset( $opt['llm_base_url'] ) ? (string) $opt['llm_base_url'] : '',
+        'mcp_url'        => isset( $opt['mcp_url'] ) ? (string) $opt['mcp_url'] : $defaults['mcp_url'],
     );
     return $out;
 }
@@ -982,6 +987,53 @@ function ws_chatbot_llm_url( $provider, $base_url = '' ) {
         return $base;
     }
     return 'https://openrouter.ai/api/v1/chat/completions';
+}
+
+function ws_chatbot_mcp_service_url() {
+    $admin = ws_chatbot_admin_settings();
+    $url   = trim( (string) ( $admin['mcp_url'] ?? '' ) );
+    if ( '' === $url ) {
+        return 'http://127.0.0.1:3001';
+    }
+    return rtrim( $url, '/' );
+}
+
+function ws_chatbot_mcp_remote_call( $tool, $args = array() ) {
+    $base = ws_chatbot_mcp_service_url();
+    if ( '' === trim( (string) $base ) ) {
+        return null;
+    }
+
+    $response = wp_remote_post( $base . '/mcp', array(
+        'timeout' => 20,
+        'headers' => array(
+            'Content-Type' => 'application/json',
+        ),
+        'body'    => wp_json_encode( array(
+            'tool' => $tool,
+            'args' => is_array( $args ) ? $args : array(),
+        ) ),
+    ) );
+
+    if ( is_wp_error( $response ) ) {
+        return null;
+    }
+
+    $code = (int) wp_remote_retrieve_response_code( $response );
+    if ( $code >= 400 ) {
+        return null;
+    }
+
+    $body = json_decode( wp_remote_retrieve_body( $response ), true );
+    if ( ! is_array( $body ) ) {
+        return null;
+    }
+
+    if ( ! empty( $body['ok'] ) ) {
+        return $body['data'] ?? null;
+    }
+
+    return null;
 }
 
 /* -------------------------------------------------------------------------
@@ -3140,7 +3192,22 @@ function ws_ajax_chatbot_mcp() {
     if ( ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
         wp_send_json_error( array( 'msg' => __( 'Sesión expirada.', 'workshop' ) ) );
     }
-    wp_send_json_success( array( 'mcp' => ws_chatbot_mcp_payload() ) );
+
+    $biz = ws_current_business();
+    $slug = $biz && ! empty( $biz->slug ) ? (string) $biz->slug : '';
+    $remote = ws_chatbot_mcp_remote_call( 'get_business_summary', array( 'businessSlug' => $slug ) );
+
+    if ( is_array( $remote ) && ! empty( $remote['business'] ) ) {
+        wp_send_json_success( array(
+            'source' => 'mcp-service',
+            'mcp'    => $remote,
+        ) );
+    }
+
+    wp_send_json_success( array(
+        'source' => 'local',
+        'mcp'    => ws_chatbot_mcp_payload(),
+    ) );
 }
 
 /* -------------------------------------------------------------------------

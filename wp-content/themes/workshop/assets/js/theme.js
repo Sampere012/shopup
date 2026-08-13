@@ -245,6 +245,7 @@
             whatsappNumbers: opts.whatsappNumbers || [],
             products: [],
             search: '',
+            searchTerm: '',
             // Categorías en árbol: filtro de la tienda. Al elegir una categoría
             // se muestran también los productos de TODA su rama de subcategorías.
             categoryTree: [],
@@ -347,6 +348,9 @@
             goCheckout() { if (this.cartItems.length) this.step = 'data'; },
             backToCart() { this.step = 'cart'; },
             get cartCount() { return this.cartItems.reduce((a, i) => a + i.qty, 0); },
+            applySearch() {
+                this.search = this.searchTerm.trim();
+            },
             get filtered() {
                 const s = this.search.toLowerCase().trim();
                 const ids = this.categoryFilter ? this.categoryBranchIds(this.categoryFilter) : null;

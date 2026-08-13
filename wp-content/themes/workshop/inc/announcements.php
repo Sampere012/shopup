@@ -20,6 +20,56 @@
 
 defined( 'ABSPATH' ) || exit;
 
+function ws_announcement_normalize_datetime( $value, $fallback = null ) {
+    $value = trim( (string) $value );
+    if ( '' === $value ) {
+        return $fallback;
+    }
+    if ( preg_match( '/^\d+$/', $value ) ) {
+        return gmdate( 'Y-m-d H:i:s', (int) $value );
+    }
+    $ts = strtotime( $value );
+    if ( false === $ts ) {
+        return $fallback;
+    }
+    return gmdate( 'Y-m-d H:i:s', $ts );
+}
+
+function ws_announcement_is_visible( $ann ) {
+    if ( ! $ann ) {
+        return false;
+    }
+    if ( ! (int) ( $ann->active ?? 0 ) ) {
+        return false;
+    }
+    $now = current_time( 'mysql' );
+    if ( ! empty( $ann->show_from ) && $now < $ann->show_from ) {
+        return false;
+    }
+    if ( ! empty( $ann->show_until ) && $now > $ann->show_until ) {
+        return false;
+    }
+    if ( ! empty( $ann->pinned_until ) && ! empty( $ann->pinned ) ) {
+        if ( $ann->pinned_until < $now ) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function ws_announcement_can_close( $ann ) {
+    if ( ! $ann ) {
+        return true;
+    }
+    if ( current_user_can( 'manage_options' ) ) {
+        return true;
+    }
+    if ( ! empty( $ann->pinned ) && (int) ( $ann->dismissible ?? 1 ) === 0 ) {
+        return false;
+    }
+    return true;
+}
+
 /**
  * Tabla de anuncios (global, aislada por business_id).
  */
@@ -163,47 +213,54 @@ function ws_announcement_save( $data, $id = 0 ) {
     global $wpdb;
     $table = ws_announcements_table();
 
-    // Alcance: 'business' por defecto; 'site' solo para el admin. Un dueño
-    // nunca puede crear/convertir un anuncio en global.
     $scope = in_array( (string) ( $data['scope'] ?? '' ), array( 'business', 'site' ), true ) ? sanitize_key( $data['scope'] ) : 'business';
     if ( 'site' === $scope && ! ws_announcement_can_site() ) {
         $scope = 'business';
     }
 
+    $pinned = ! empty( $data['pinned'] ) ? 1 : 0;
+    $dismissible = ! array_key_exists( 'dismissible', $data ) ? 1 : ( ! empty( $data['dismissible'] ) ? 1 : 0 );
+    $pinned_until = $pinned ? ws_announcement_normalize_datetime( (string) ( $data['pinned_until'] ?? '' ) ) : null;
+    if ( $pinned && ! $pinned_until && isset( $data['pinned_days'] ) ) {
+        $days = max( 1, (int) $data['pinned_days'] );
+        $pinned_until = gmdate( 'Y-m-d H:i:s', time() + ( $days * DAY_IN_SECONDS ) );
+    }
+    $show_from = ws_announcement_normalize_datetime( (string) ( $data['show_from'] ?? '' ) );
+    $show_until = ws_announcement_normalize_datetime( (string) ( $data['show_until'] ?? '' ) );
+
     $row = array(
-        'scope'       => $scope,
-        'business_id' => 'site' === $scope ? 0 : (int) ( $data['business_id'] ?? ws_current_business_id() ),
-        'title'       => sanitize_text_field( (string) ( $data['title'] ?? '' ) ),
-        'message'     => sanitize_textarea_field( (string) ( $data['message'] ?? '' ) ),
-        'type'        => in_array( (string) ( $data['type'] ?? '' ), array( 'info', 'success', 'warning', 'danger' ), true ) ? sanitize_key( $data['type'] ) : 'info',
-        'pinned'      => ! empty( $data['pinned'] ) ? 1 : 0,
-        'active'      => array_key_exists( 'active', $data ) ? (int) ( bool ) $data['active'] : 1,
+        'scope'        => $scope,
+        'business_id'  => 'site' === $scope ? 0 : (int) ( $data['business_id'] ?? ws_current_business_id() ),
+        'title'        => sanitize_text_field( (string) ( $data['title'] ?? '' ) ),
+        'message'      => sanitize_textarea_field( (string) ( $data['message'] ?? '' ) ),
+        'type'         => in_array( (string) ( $data['type'] ?? '' ), array( 'info', 'success', 'warning', 'danger' ), true ) ? sanitize_key( $data['type'] ) : 'info',
+        'pinned'       => $pinned,
+        'dismissible'  => $dismissible,
+        'pinned_until' => $pinned_until,
+        'show_from'    => $show_from,
+        'show_until'   => $show_until,
+        'active'       => array_key_exists( 'active', $data ) ? (int) ( bool ) $data['active'] : 1,
     );
     if ( '' === trim( $row['title'] ) ) {
         return 0;
     }
 
     if ( $id ) {
-        // Al editar el anuncio conserva su alcance y su negocio: un dueño no
-        // puede mover un anuncio a otro negocio ni convertirlo en global; el
-        // admin puede cambiar el alcance (el negocio se reajusta a él).
         $current = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE id=%d", (int) $id ) );
         if ( ! $current || ! ws_announcement_manage_can( $current ) ) {
             return 0;
         }
         $row['scope'] = ws_announcement_can_site() ? $row['scope'] : 'business';
         $row['business_id'] = 'site' === $row['scope'] ? 0 : (int) $current->business_id;
-        // El formulario no envía 'active' al editar: conserva el estado actual
-        // para no reactivar un anuncio que estaba desactivado.
         if ( ! array_key_exists( 'active', $data ) ) {
             $row['active'] = (int) $current->active;
         }
-        $wpdb->update( $table, $row, array( 'id' => (int) $id ), array( '%s', '%d', '%s', '%s', '%s', '%d', '%d' ), array( '%d' ) );
+        $wpdb->update( $table, $row, array( 'id' => (int) $id ), array( '%s', '%d', '%s', '%s', '%s', '%d', '%d', '%s', '%s', '%s', '%d' ), array( '%d' ) );
         return (int) $id;
     }
 
     $row['created_by'] = get_current_user_id();
-    $wpdb->insert( $table, $row, array( '%s', '%d', '%s', '%s', '%s', '%d', '%d', '%d' ) );
+    $wpdb->insert( $table, $row, array( '%s', '%d', '%s', '%s', '%s', '%d', '%d', '%s', '%s', '%s', '%d', '%d' ) );
     $new_id = (int) $wpdb->insert_id;
     if ( $new_id && ! empty( $row['active'] ) ) {
         ws_announcement_broadcast( $new_id );

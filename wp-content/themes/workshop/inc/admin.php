@@ -114,6 +114,60 @@ function ws_admin_page_permissions() {
     <?php
 }
 
+add_action( 'admin_menu', 'ws_announcements_admin_menu', 20 );
+function ws_announcements_admin_menu() {
+    add_submenu_page(
+        'ws-permissions',
+        __( 'Anuncios', 'workshop' ),
+        __( 'Anuncios', 'workshop' ),
+        'manage_options',
+        'ws-announcements',
+        'ws_admin_page_announcements'
+    );
+}
+
+function ws_admin_page_announcements() {
+    if ( ! current_user_can( 'manage_options' ) ) {
+        wp_die( esc_html__( 'No tienes permiso para acceder a esta página.', 'workshop' ) );
+    }
+
+    $rows = function_exists( 'ws_announcements_site' ) ? ws_announcements_site() : array();
+    ?>
+    <div class="wrap ws-ann-admin-page">
+        <h1><span class="dashicons dashicons-megaphone" style="vertical-align:middle"></span> <?php esc_html_e( 'Anuncios del sitio', 'workshop' ); ?></h1>
+        <p class="description"><?php esc_html_e( 'Gestiona los avisos globales para todos los negocios, con fijado y programación de fecha si hace falta.', 'workshop' ); ?></p>
+        <?php if ( empty( $rows ) ) : ?>
+            <p class="description"><?php esc_html_e( 'Todavía no hay anuncios del sitio.', 'workshop' ); ?></p>
+        <?php else : ?>
+            <table class="widefat striped">
+                <thead>
+                    <tr>
+                        <th><?php esc_html_e( 'Título', 'workshop' ); ?></th>
+                        <th><?php esc_html_e( 'Tipo', 'workshop' ); ?></th>
+                        <th><?php esc_html_e( 'Fijado', 'workshop' ); ?></th>
+                        <th><?php esc_html_e( 'Activo', 'workshop' ); ?></th>
+                        <th><?php esc_html_e( 'Desde', 'workshop' ); ?></th>
+                        <th><?php esc_html_e( 'Hasta', 'workshop' ); ?></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ( $rows as $a ) : ?>
+                        <tr>
+                            <td><strong><?php echo esc_html( $a->title ); ?></strong></td>
+                            <td><?php echo esc_html( $a->type ); ?></td>
+                            <td><?php echo ! empty( $a->pinned ) ? esc_html__( 'Sí', 'workshop' ) : esc_html__( 'No', 'workshop' ); ?></td>
+                            <td><?php echo ! empty( $a->active ) ? esc_html__( 'Sí', 'workshop' ) : esc_html__( 'No', 'workshop' ); ?></td>
+                            <td><?php echo esc_html( $a->show_from ?: '—' ); ?></td>
+                            <td><?php echo esc_html( $a->show_until ?: '—' ); ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        <?php endif; ?>
+    </div>
+    <?php
+}
+
 add_action( 'admin_menu', 'ws_marketplace_admin_menu', 20 );
 function ws_marketplace_admin_menu() {
     add_submenu_page(

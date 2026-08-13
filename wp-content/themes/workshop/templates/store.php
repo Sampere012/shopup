@@ -87,23 +87,24 @@ get_header();
                 <span class="ws-store-section-count"><b x-text="filtered.length"></b> <?php esc_html_e( 'disponibles', 'workshop' ); ?></span>
             </div>
 
-            <div class="ws-search">
+            <div class="ws-search ws-search-action">
                 <i class="fa-solid fa-magnifying-glass"></i>
-                <input type="search" placeholder="<?php esc_attr_e( 'Buscar producto…', 'workshop' ); ?>" x-model="search">
+                <input type="search" placeholder="<?php esc_attr_e( 'Buscar producto…', 'workshop' ); ?>" x-model="searchTerm">
+                <button class="ws-btn ws-btn-primary ws-btn-sm" type="button" @click="applySearch()">
+                    <i class="fa-solid fa-magnifying-glass"></i> <?php esc_html_e( 'Buscar', 'workshop' ); ?>
+                </button>
             </div>
 
             <?php if ( ! empty( $ws_store_categories['flat'] ) ) : ?>
             <div class="ws-store-category-filter">
-                <label class="ws-field">
-                    <span><i class="fa-solid fa-folder-tree"></i> <?php esc_html_e( 'Categoría', 'workshop' ); ?></span>
-                    <select x-model.number="categoryFilter" @change="categoryFilter = Number($event.target.value) || 0">
-                        <option value="0"><?php esc_html_e( 'Todas', 'workshop' ); ?></option>
-                        <template x-for="c in categoryOptions" :key="c.id">
-                            <option :value="c.id" x-text="c.name"></option>
-                        </template>
-                    </select>
-                </label>
-                <button class="ws-btn ws-btn-ghost ws-btn-sm" x-show="categoryFilter > 0" @click="categoryFilter = 0"><i class="fa-solid fa-rotate-left"></i> <?php esc_html_e( 'Quitar filtro', 'workshop' ); ?></button>
+                <div class="ws-store-category-row">
+                    <button type="button" class="ws-store-category-chip" :class="categoryFilter === 0 ? 'is-active' : ''" @click="categoryFilter = 0; applySearch();">
+                        <?php esc_html_e( 'Todas', 'workshop' ); ?>
+                    </button>
+                    <template x-for="c in categoryOptions" :key="c.id">
+                        <button type="button" class="ws-store-category-chip" :class="categoryFilter === c.id ? 'is-active' : ''" @click="categoryFilter = Number(c.id); applySearch();" x-text="c.name"></button>
+                    </template>
+                </div>
             </div>
             <?php endif; ?>
 

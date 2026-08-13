@@ -445,13 +445,19 @@ function ws_db_tables() {
             message TEXT NULL,
             type VARCHAR(20) NOT NULL DEFAULT 'info',
             pinned TINYINT(1) NOT NULL DEFAULT 0,
+            dismissible TINYINT(1) NOT NULL DEFAULT 1,
+            pinned_until DATETIME NULL,
+            show_from DATETIME NULL,
+            show_until DATETIME NULL,
             active TINYINT(1) NOT NULL DEFAULT 1,
             created_by BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             KEY business_id (business_id),
             KEY scope (scope),
-            KEY active_pinned (active, pinned)
+            KEY active_pinned (active, pinned),
+            KEY pinned_until (pinned_until),
+            KEY show_from_show_until (show_from, show_until)
         ) {charset};",
 
         // Suscripción de cada negocio (global, una fila por negocio).
@@ -578,6 +584,18 @@ function ws_db_migrate() {
         if ( ! in_array( 'scope', $a_cols, true ) ) {
             $wpdb->query( "ALTER TABLE {$at} ADD COLUMN scope VARCHAR(20) NOT NULL DEFAULT 'business' AFTER business_id" );
             $wpdb->query( "ALTER TABLE {$at} ADD KEY scope (scope)" );
+        }
+        if ( ! in_array( 'dismissible', $a_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$at} ADD COLUMN dismissible TINYINT(1) NOT NULL DEFAULT 1 AFTER pinned" );
+        }
+        if ( ! in_array( 'pinned_until', $a_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$at} ADD COLUMN pinned_until DATETIME NULL AFTER pinned" );
+        }
+        if ( ! in_array( 'show_from', $a_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$at} ADD COLUMN show_from DATETIME NULL AFTER pinned_until" );
+        }
+        if ( ! in_array( 'show_until', $a_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$at} ADD COLUMN show_until DATETIME NULL AFTER show_from" );
         }
     }
 

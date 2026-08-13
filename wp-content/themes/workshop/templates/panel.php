@@ -224,7 +224,9 @@ get_header();
                             <strong><?php echo esc_html( $ws_ann->title ); ?></strong>
                             <span><?php echo esc_html( $ws_ann->message ); ?></span>
                         </div>
-                        <button type="button" class="ws-banner-close" onclick="wsDismissAnnouncement(<?php echo (int) $ws_ann->id; ?>, this)" aria-label="<?php esc_attr_e( 'Ocultar anuncio', 'workshop' ); ?>"><i class="fa-solid fa-xmark"></i></button>
+                        <?php if ( function_exists( 'ws_announcement_can_close' ) && ws_announcement_can_close( $ws_ann ) ) : ?>
+                            <button type="button" class="ws-banner-close" onclick="wsDismissAnnouncement(<?php echo (int) $ws_ann->id; ?>, this)" aria-label="<?php esc_attr_e( 'Ocultar anuncio', 'workshop' ); ?>"><i class="fa-solid fa-xmark"></i></button>
+                        <?php endif; ?>
                     </div>
                     <?php
                 endforeach;

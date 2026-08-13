@@ -454,6 +454,10 @@ function ws_chatbot_save_behavior( $post ) {
     $opt['llm_model']      = sanitize_text_field( $post['ws_llm_model'] ?? 'openrouter/auto' );
     $opt['llm_provider']   = in_array( (string) ( $post['ws_llm_provider'] ?? '' ), array( 'openrouter', 'groq', 'custom' ), true ) ? (string) $post['ws_llm_provider'] : 'openrouter';
     $opt['llm_base_url']   = esc_url_raw( trim( (string) ( $post['ws_llm_base_url'] ?? '' ) ) );
+    $opt['mcp_url']        = esc_url_raw( trim( (string) ( $post['ws_mcp_url'] ?? '' ) ) );
+    if ( '' === $opt['mcp_url'] ) {
+        $opt['mcp_url'] = 'http://127.0.0.1:3001';
+    }
     update_option( 'ws_chatbot_config', $opt );
     echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__( 'Comportamiento guardado.', 'workshop' ) . '</p></div>';
 }
@@ -497,6 +501,11 @@ function ws_chatbot_admin_behavior_form() {
             <label for="ws-llm-base" style="font-weight:600"><?php esc_html_e( 'URL base del proveedor (OpenAI-compatible)', 'workshop' ); ?></label><br>
             <input type="url" id="ws-llm-base" name="ws_llm_base_url" value="<?php echo esc_attr( $admin['llm_base_url'] ); ?>" style="width:100%;max-width:420px;margin-top:4px" placeholder="https://api.tuproveedor.com/v1">
             <span class="ws-kb-help"><?php esc_html_e( 'Ej. https://api.tuproveedor.com/v1 (se agrega /chat/completions automáticamente).', 'workshop' ); ?></span>
+        </p>
+        <p>
+            <label for="ws-mcp-url" style="font-weight:600"><?php esc_html_e( 'Endpoint del servidor MCP/Groq del negocio', 'workshop' ); ?></label><br>
+            <input type="url" id="ws-mcp-url" name="ws_mcp_url" value="<?php echo esc_attr( $admin['mcp_url'] ); ?>" style="width:100%;max-width:420px;margin-top:4px" placeholder="http://127.0.0.1:3001">
+            <span class="ws-kb-help"><?php esc_html_e( 'Este servidor recibe el slug del negocio y devuelve el contexto real para que cada tienda use su propia información.', 'workshop' ); ?></span>
         </p>
         <p>
             <label for="ws-llm-model" style="font-weight:600"><?php esc_html_e( 'Modelo', 'workshop' ); ?></label><br>
