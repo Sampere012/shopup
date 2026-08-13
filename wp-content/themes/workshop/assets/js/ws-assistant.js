@@ -652,6 +652,19 @@
         return v.toLocaleString('es-CU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
+    // Nombre actual del sitio (dato EN VIVO del config WSBOT): si el admin
+    // cambia el nombre del sitio, el bot lo refleja en la siguiente carga.
+    function siteName() {
+        return (C.site && C.site.name) ? C.site.name : (C.bizName || 'este sitio');
+    }
+
+    // Saludo público con el nombre REAL del sitio al frente.
+    function guestWelcome() {
+        var base = String(S.welcomeGuest || '').replace(/^¡Hola!\s*👋\s*/, '');
+        if (!base) { base = '¿Exploras o quieres montar tu propio negocio? Te oriento en lo que necesites.'; }
+        return '¡Hola! 👋 Soy el asistente de ' + siteName() + '. ' + base;
+    }
+
     function marketChip() {
         return isPanel ? chipsFor(['products'])[0] : { label: 'Ver tiendas', url: C.urls.stores, icon: 'fa-store' };
     }
@@ -1668,7 +1681,7 @@
         chips.push(contactChip());
         reply(S.fallback + '\n\n' + (isPanel
             ? 'Puedo ayudarte con: productos, stock, pedidos, ventas, clientes, reportes, tu equipo, tu plan o programar reportes.'
-            : 'Puedo buscarte productos, mostrarte las tiendas del mercado, ayudarte a comprar, seguir tu pedido o montar tu propia tienda.'), chips.filter(Boolean), 'fallback');
+            : 'Puedo buscarte productos, mostrarte las tiendas de ' + siteName() + ', ayudarte a comprar, seguir tu pedido o montar tu propia tienda.'), chips.filter(Boolean), 'fallback');
         // Auto-aprendizaje: la frase que el bot no supo responder se guarda
         // para que el admin la revise en wp-admin > Asistente > Aprender.
         learnCandidate(text);
@@ -2424,7 +2437,7 @@
             // sin que el usuario tenga que preguntar por ellas.
             showPendingAlerts(false);
         } else if (!C.logged) {
-            reply(S.welcomeGuest + ' ' + S.registerHook, [
+            reply(guestWelcome() + ' ' + S.registerHook, [
                 { label: 'Buscar producto', icon: 'fa-magnifying-glass', send: 'buscar' },
                 { label: 'Cómo comprar', icon: 'fa-cart-shopping', send: 'como compro' },
                 { label: 'Seguir mi pedido', icon: 'fa-truck-fast', send: 'seguir mi pedido' },

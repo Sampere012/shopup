@@ -116,6 +116,11 @@ function ws_chatbot_config( $in_admin = false ) {
         'isSysAdmin' => $is_sys_admin,
         'logged'  => $logged,
         'bizName' => ws_site_name(),
+        // Datos EN VIVO del sitio (nombre, portada/hero, contadores del mercado
+        // y top tiendas). Se calculan en cada petición: cuando el admin cambia
+        // el nombre, el hero, publica negocios o productos, el bot los refleja
+        // en la misma carga (nunca respuestas guardadas con datos antiguos).
+        'site'    => ws_chatbot_site_context(),
         'bizSlug' => $slug,
         'locSlug' => $loc_slug,
         'chatbot' => $chatbot,
@@ -1417,7 +1422,18 @@ function ws_chatbot_faq_knowledge() {
  * resolviendo los enlaces según el rol/negocio del usuario actual.
  */
 function ws_chatbot_knowledge_config() {
-    $out       = array();
+    $out = array();
+    // Conocimiento EN VIVO del sitio (nombre, portada, contadores y tiendas):
+    // va PRIMERO para que sus patrones ganen los empates frente a respuestas
+    // guardadas y el bot responda siempre con los valores vigentes del admin.
+    foreach ( ws_chatbot_live_knowledge() as $item ) {
+        $out[] = array(
+            'id'       => sanitize_key( $item['id'] ),
+            'patterns' => array_values( array_filter( array_map( 'trim', (array) $item['patterns'] ) ) ),
+            'answer'   => (string) ( $item['answer'] ?? '' ),
+            'chip'     => ! empty( $item['chip'] ) ? $item['chip'] : null,
+        );
+    }
     // Miembros de negocio y el admin del sitio (burbuja en wp-admin) ven todo.
     $has_role  = (bool) ws_user_role() || current_user_can( 'manage_options' );
     foreach ( ws_chatbot_knowledge() as $item ) {
@@ -1485,6 +1501,176 @@ function ws_chatbot_resolve_link( $target ) {
  * ---------------------------------------------------------------------- */
 
 /**
+ * Contexto EN VIVO del sitio para el asistente: nombre, portada (hero),
+ * descripción y contadores reales del mercado (negocios, tiendas y productos
+ * publicados) más las tiendas mejor rankeadas.
+ *
+ * Se recalcula en cada petición (como el resto del config WSBOT), así el bot
+ * refleja SIEMPRE los últimos cambios del administrador: nombre del sitio,
+ * textos del hero, negocios nuevos, tiendas y productos publicados. Nada se
+ * guarda en caché ni en la base de conocimiento editable (que podría quedar
+ * con datos antiguos).
+ */
+function ws_chatbot_site_context() {
+    // El hero del SITIO es el del índice del mercado (lo edita el admin en
+    // wp-admin > Mercado), no la apariencia de cada negocio.
+    $mp   = ws_marketplace_theme();
+    $bizs = class_exists( 'WS_Business' ) ? WS_Business::marketplace_ranked() : array();
+
+    $businesses = count( $bizs );
+    $stores     = 0;
+    $products   = 0;
+    $top        = array();
+    foreach ( $bizs as $b ) {
+        $stores   += (int) ( $b->ws_pvs ?? 0 );
+        $products += (int) ( $b->ws_products ?? 0 );
+        if ( count( $top ) < 3 ) {
+            $slug = (string) ( $b->slug ?? '' );
+            $top[] = array(
+                'name' => (string) ( $b->name ?? '' ),
+                'url'  => '' !== $slug ? ws_business_home( $b ) : ws_business_url( $slug ),
+            );
+        }
+    }
+
+    // Nombre del SITIO (independiente de la página): el nombre del mercado que
+    // configura el admin o, si no, el nombre de WordPress.
+    $name = '' !== (string) ( $mp['name'] ?? '' ) ? (string) $mp['name'] : get_option( 'blogname' );
+
+    return array(
+        'name'        => $name,
+        'url'         => home_url(),
+        'hero_badge'  => (string) ( $mp['hero_badge'] ?? '' ),
+        'hero_title'  => (string) ( $mp['hero_title'] ?? '' ),
+        'hero_sub'    => (string) ( $mp['hero_sub'] ?? '' ),
+        'description' => (string) ( $mp['description'] ?? '' ),
+        'currency'    => ws_currency_symbol(),
+        'businesses'  => $businesses,
+        'stores'      => $stores,
+        'products'    => $products,
+        'top_stores'  => $top,
+    );
+}
+
+/**
+ * Conocimiento construido EN VIVO con los datos actuales del sitio (nombre,
+ * portada/hero, contadores del mercado y tiendas destacadas).
+ *
+ * Estos ítems se insertan al PRINCIPIO de la base de conocimiento del widget:
+ * sus patrones ganan los empates de longitud frente a las respuestas guardadas
+ * (p. ej. el ítem por defecto «que es esta pagina»), así el bot responde con
+ * los valores vigentes y nunca con texto viejo guardado en la opción.
+ */
+function ws_chatbot_live_knowledge() {
+    $site  = ws_chatbot_site_context();
+    $name  = $site['name'];
+    $norm  = ws_chatbot_norm_text( $name );
+
+    $stores_chip = array(
+        'label' => __( 'Ver tiendas', 'workshop' ),
+        'url'   => ws_marketplace_stores_url(),
+        'icon'  => 'fa-store',
+    );
+    $market_chip = array(
+        'label' => __( 'Ver el mercado', 'workshop' ),
+        'url'   => home_url( '/' ),
+        'icon'  => 'fa-store-alt',
+    );
+
+    $counts = sprintf(
+        __( 'Ahora mismo hay %1$d negocio(s), %2$d tienda(s) y %3$d producto(s) publicados.', 'workshop' ),
+        (int) $site['businesses'],
+        (int) $site['stores'],
+        (int) $site['products']
+    );
+
+    $items = array();
+    $items[] = array(
+        'id' => 'live-que-es',
+        'patterns' => array_values( array_unique( array_filter( array(
+            'que es esta pagina', 'que es este sitio', 'que es esta web', 'que hace esta pagina',
+            'que hace este sitio', 'en que consiste', 'que ofrecen', 'que ofrece este sitio',
+            'que es el sitio', 'como funciona esta pagina', 'como funciona este sitio',
+            'que es esta plataforma', 'que es esta tienda online',
+            // Variantes con el nombre real del sitio ("que es MiTienda").
+            '' !== $norm ? 'que es ' . $norm : '',
+            '' !== $norm ? 'que hace ' . $norm : '',
+            '' !== $norm ? 'como funciona ' . $norm : '',
+        ) ) ) ),
+        'answer' => sprintf(
+            /* translators: 1: nombre del sitio, 2: subtítulo del hero, 3: contadores. */
+            __( '%1$s es %2$s %3$s', 'workshop' ),
+            $name,
+            '' !== $site['hero_sub']
+                ? $site['hero_sub']
+                : __( 'un mercado de tiendas locales donde cada negocio publica sus productos y tú compras directo en cada tienda.', 'workshop' ),
+            $counts
+        ),
+        'chip' => $market_chip,
+    );
+    $items[] = array(
+        'id' => 'live-nombre',
+        'patterns' => array(
+            'como se llama este sitio', 'como se llama esta pagina', 'como se llama esta web',
+            'cual es el nombre de este sitio', 'cual es el nombre de la pagina',
+            'cual es el nombre de esta pagina', 'cual es el nombre de esta web',
+            'nombre del sitio', 'nombre de la pagina', 'como se llama la pagina',
+            'como se llama esta tienda online', 'que nombre tiene este sitio',
+        ),
+        'answer' => sprintf(
+            /* translators: 1: nombre del sitio, 2: contadores. */
+            __( 'Este sitio se llama %1$s. %2$s', 'workshop' ),
+            $name,
+            $counts
+        ),
+        'chip' => $stores_chip,
+    );
+    $items[] = array(
+        'id' => 'live-contadores',
+        'patterns' => array(
+            'cuantos negocios hay', 'cuantas tiendas hay', 'cuantos productos hay',
+            'cuantos negocios', 'cuantas tiendas', 'cuantos productos',
+            'cuantos negocios hay en el mercado', 'cuantas tiendas hay en el mercado',
+            'cuantos productos hay en el mercado', 'que negocios hay', 'que tiendas hay',
+            'cuales son los negocios', 'cuales son las tiendas',
+            'cuantos negocios tiene el sitio', 'cuantas tiendas tiene el sitio',
+            'cuantos productos tiene el sitio', 'cuantos negocios hay publicados',
+            'cuantas tiendas hay publicadas', 'cuantos productos hay publicados',
+            'cuantos negocios hay en la pagina', 'cuantas tiendas hay en la pagina',
+            'cuantos productos hay en la pagina', 'cuantos negocios tiene el mercado',
+            'cuantas tiendas tiene el mercado', 'cuantos productos tiene el mercado',
+        ),
+        'answer' => sprintf(
+            /* translators: 1: nombre del sitio, 2: contadores. */
+            __( 'En %1$s %2$s', 'workshop' ),
+            $name,
+            $counts
+        ),
+        'chip' => $stores_chip,
+    );
+    $items[] = array(
+        'id' => 'live-hero',
+        'patterns' => array(
+            'que dice el hero', 'que dice la portada', 'hero del sitio', 'portada del sitio',
+            'cual es el titulo del sitio', 'cual es el lema del sitio', 'lema del sitio',
+            'eslogan del sitio', 'cual es el eslogan', 'que dice la pagina principal',
+            'frase del hero', 'texto del hero', 'titulo de la portada', 'que dice el titulo',
+            'cual es el titulo', 'que dice la portada del sitio', 'que dice el hero del sitio',
+        ),
+        'answer' => sprintf(
+            /* translators: 1: nombre del sitio, 2: título del hero, 3: subtítulo, 4: etiqueta. */
+            __( 'La portada de %1$s dice: «%2$s» — %3$s. %4$s', 'workshop' ),
+            $name,
+            $site['hero_title'],
+            $site['hero_sub'],
+            '' !== $site['hero_badge'] ? sprintf( __( 'Etiqueta: %1$s.', 'workshop' ), $site['hero_badge'] ) : ''
+        ),
+        'chip' => $market_chip,
+    );
+    return $items;
+}
+
+/**
  * Contexto en vivo de la app para el asistente: sitio, usuario, negocio y
  * navegación. Se usa para enriquecer el prompt de la IA y los fallbacks.
  */
@@ -1495,11 +1681,24 @@ function ws_chatbot_app_context() {
     $suf   = ws_biz_table_suffix( $biz );
     $T     = function ( $t ) use ( $suf ) { return ws_table_for( $suf, $t ); };
     $cur   = ws_currency_symbol();
+    // Datos en vivo del sitio (nombre, portada y contadores del mercado) para
+    // que la IA responda con los valores reales actuales, no inventados.
+    $sc    = ws_chatbot_site_context();
     $out   = array(
         'site'    => array(
-            'name'  => ws_site_name(),
-            'url'   => home_url(),
+            'name'  => $sc['name'],
+            'url'   => $sc['url'],
             'currency' => $cur,
+            'hero'  => array(
+                'badge' => (string) ( $sc['hero_badge'] ?? '' ),
+                'title' => (string) ( $sc['hero_title'] ?? '' ),
+                'sub'   => (string) ( $sc['hero_sub'] ?? '' ),
+            ),
+            'marketplace' => array(
+                'businesses' => (int) ( $sc['businesses'] ?? 0 ),
+                'stores'     => (int) ( $sc['stores'] ?? 0 ),
+                'products'   => (int) ( $sc['products'] ?? 0 ),
+            ),
         ),
         'user'    => array(
             'id'   => get_current_user_id(),
@@ -1554,6 +1753,16 @@ function ws_chatbot_app_context() {
 function ws_chatbot_context_text() {
     $c = ws_chatbot_app_context();
     $lines = array( 'Sitio: ' . $c['site']['name'] . ' (' . $c['site']['url'] . ')' );
+    // Portada y contadores reales del mercado: la IA los usa para responder
+    // preguntas sobre el sitio con datos vigentes.
+    $lines[] = sprintf( 'Mercado en vivo: %d negocios, %d tiendas, %d productos publicados. Portada: «%s» — %s%s',
+        (int) ( $c['site']['marketplace']['businesses'] ?? 0 ),
+        (int) ( $c['site']['marketplace']['stores'] ?? 0 ),
+        (int) ( $c['site']['marketplace']['products'] ?? 0 ),
+        (string) ( $c['site']['hero']['title'] ?? '' ),
+        (string) ( $c['site']['hero']['sub'] ?? '' ),
+        '' !== (string) ( $c['site']['hero']['badge'] ?? '' ) ? ' (' . $c['site']['hero']['badge'] . ')' : ''
+    );
     $lines[] = 'Usuario: ' . ( $c['user']['role_label'] ? $c['user']['role_label'] : 'visitante' );
     if ( isset( $c['business'] ) ) {
         $b = $c['business'];
@@ -2443,8 +2652,21 @@ function ws_ajax_chatbot_llm() {
     }
     $history = array_slice( $history, -6 );
 
-    $system = 'Eres el asistente virtual de ShopUp, un mercado de tiendas locales donde cada negocio tiene su propia tienda online y panel de gestión. ' .
-        'Los VISITANTES buscan productos, quieren saber cómo comprar, cómo seguir un pedido, devoluciones y envíos; invítalos a registrarse gratis para montar su negocio. ' .
+    $site = ws_chatbot_site_context();
+    // El nombre del sitio y su portada se toman EN VIVO: si el admin cambia el
+    // nombre, el hero o publica negocios/productos, la IA responde con los
+    // valores actuales (nunca con el nombre por defecto hardcodeado).
+    $system = sprintf(
+        'Eres el asistente virtual de %1$s, un mercado de tiendas locales donde cada negocio tiene su propia tienda online y panel de gestión. ' .
+        'DATOS ACTUALES DEL SITIO: %1$s — %2$d negocio(s), %3$d tienda(s) y %4$d producto(s) publicados. Portada: «%5$s» — %6$s. ' .
+        'Los VISITANTES buscan productos, quieren saber cómo comprar, cómo seguir un pedido, devoluciones y envíos; invítalos a registrarse gratis para montar su negocio. ',
+        $site['name'],
+        (int) ( $site['businesses'] ?? 0 ),
+        (int) ( $site['stores'] ?? 0 ),
+        (int) ( $site['products'] ?? 0 ),
+        (string) ( $site['hero_title'] ?? '' ),
+        (string) ( $site['hero_sub'] ?? '' )
+    ) .
         'Los NEGOCIOS gestionan en su panel: productos, stock (entradas/salidas/transferencias), pedidos (aceptar/rechazar), ventas POS con caja, clientes (CRM), trabajadores con roles, reportes y planes. ' .
         'El bot puede crear/editar/eliminar productos, reponer stock, aceptar pedidos, crear clientes y registrar ventas si el usuario lo pide. ' .
         'Responde en español, breve y con tono amable (algún emoji). Si te piden algo fuera de estas capacidades, sugiere contactar soporte por la página de Contacto o WhatsApp. ' .
