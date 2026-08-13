@@ -116,7 +116,7 @@ $ws_ann_types    = array(
                         <span class="ws-ann-tag ws-ann-tag-pin" x-show="a.pinned"><i class="fa-solid fa-thumbtack"></i> <?php esc_html_e( 'Anclado', 'workshop' ); ?></span>
                         <span class="ws-ann-tag" x-show="!a.active"><i class="fa-solid fa-eye-slash"></i> <?php esc_html_e( 'Inactivo', 'workshop' ); ?></span>
                     </div>
-                    <template x-if="can">
+                    <template x-if="can && (a.scope !== 'site' || canSite)">
                         <div class="ws-ann-item-actions">
                             <button type="button" class="ws-btn ws-btn-sm ws-btn-secondary" @click="edit(a)" title="<?php esc_attr_e( 'Editar', 'workshop' ); ?>"><i class="fa-solid fa-pen"></i></button>
                             <button type="button" class="ws-btn ws-btn-sm ws-btn-secondary" @click="toggle(a, 'pinned')" :title="a.pinned ? '<?php esc_attr_e( 'Desfijar', 'workshop' ); ?>' : '<?php esc_attr_e( 'Fijar como banner', 'workshop' ); ?>'">

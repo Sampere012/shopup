@@ -125,14 +125,11 @@ function ws_announcements_site() {
 }
 
 /**
- * Anuncios que ve el panel de Anuncios:
- *  - Admin: los de su negocio actual + los globales del sitio.
- *  - Dueño: solo los de su negocio.
+ * Anuncios que ve el panel de Anuncios (todos los usuarios con acceso):
+ * los de su negocio actual más los globales del sitio. Los globales solo los
+ * gestiona el admin (el dueño los ve como información).
  */
 function ws_announcements_panel( $biz_id = 0 ) {
-    if ( ! ws_announcement_can_site() ) {
-        return ws_announcements_for_business( $biz_id );
-    }
     global $wpdb;
     if ( ! $biz_id ) {
         $biz_id = ws_current_business_id();
