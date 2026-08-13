@@ -133,7 +133,7 @@ $can_manage = ws_can( 'loyalty_manage' );
     </div>
 
     <!-- Modal de ajuste de puntos -->
-    <div class="ws-modal" x-show="showPointsModal" x-transition>
+    <div class="ws-modal" x-show="showPointsModal" x-cloak x-transition>
         <div class="ws-modal-content" @click.away="showPointsModal = false">
             <div class="ws-modal-header">
                 <h3><?php esc_html_e( 'Ajustar Puntos', 'workshop' ); ?></h3>
@@ -171,7 +171,7 @@ $can_manage = ws_can( 'loyalty_manage' );
     </div>
 
     <!-- Modal de configuración -->
-    <div class="ws-modal" x-show="showSettingsModal" x-transition>
+    <div class="ws-modal" x-show="showSettingsModal" x-cloak x-transition>
         <div class="ws-modal-content" @click.away="showSettingsModal = false">
             <div class="ws-modal-header">
                 <h3><?php esc_html_e( 'Configurar Programa de Fidelización', 'workshop' ); ?></h3>
@@ -209,7 +209,7 @@ $can_manage = ws_can( 'loyalty_manage' );
     </div>
 
     <!-- Modal de historial de puntos -->
-    <div class="ws-modal" x-show="showHistoryModal" x-transition>
+    <div class="ws-modal" x-show="showHistoryModal" x-cloak x-transition>
         <div class="ws-modal-content ws-modal-lg" @click.away="showHistoryModal = false">
             <div class="ws-modal-header">
                 <h3><?php esc_html_e( 'Historial de Puntos', 'workshop' ); ?> — <span x-text="historyCustomer?.name"></span></h3>

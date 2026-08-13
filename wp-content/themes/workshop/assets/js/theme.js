@@ -1817,6 +1817,9 @@
                     });
                     return out;
                 },
+                total() {
+                    return (this.list || []).reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
+                },
                 resetForm() {
                     this.editingId = 0;
                     this.form = { concept: '', amount: 0, category: '', note: '', expense_date: '' };

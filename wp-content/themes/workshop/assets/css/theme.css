@@ -2566,3 +2566,12 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 /* Menú superior generado por WordPress (wp_nav_menu) dentro del navbar */
 ul.ws-topbar-nav { list-style: none; margin: 0 auto; padding: 0; }
 .ws-topbar-nav li { list-style: none; margin: 0; padding: 0; }
+
+/* ---------------------------------------------------------------------
+ * Gastos: selector de mes + total (la utilidad vive en Reportes).
+ * ------------------------------------------------------------------ */
+.ws-exp-summary { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.ws-exp-summary .ws-field { margin-bottom: 0; min-width: 150px; }
+.ws-exp-total { text-align: right; }
+.ws-exp-total span { display: block; font-size: .78em; color: var(--ws-muted, #64748b); margin-bottom: 2px; }
+.ws-exp-total strong { font-size: 1.35rem; color: var(--ws-primary, #4f46e5); }

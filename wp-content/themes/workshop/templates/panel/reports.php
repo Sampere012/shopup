@@ -16,6 +16,7 @@ if ( ! $role ) {
 // comparten con la exportación a Excel (inc/reports.php).
 $filters = ws_reports_filters( false );
 $data    = ws_reports_data( $filters );
+$utils   = ws_reports_utilities( $filters );
 
 $sales    = $data['sales'];
 $by_type  = $data['by_type'];
@@ -62,6 +63,72 @@ if ( $ws_biz && ! empty( $ws_biz->slug ) ) {
     <div class="ws-kpi">
         <div class="ws-kpi-icon ws-kpi-amber"><i class="fa-solid fa-right-left"></i></div>
         <div><span><?php esc_html_e( 'Movimientos', 'workshop' ); ?></span><strong><?php echo esc_html( number_format_i18n( $data['total_moves'] ) ); ?></strong></div>
+    </div>
+</div>
+
+<!-- Utilidades: ingresos menos gastos, por mes y por punto de venta -->
+<div class="ws-grid-2">
+    <div class="ws-card">
+        <h3 class="ws-card-title"><i class="fa-solid fa-scale-balanced"></i> <?php esc_html_e( 'Utilidades mensuales', 'workshop' ); ?></h3>
+        <?php if ( empty( $utils['months'] ) ) : ?>
+            <p class="ws-empty"><?php esc_html_e( 'Sin movimientos en el período.', 'workshop' ); ?></p>
+        <?php else : ?>
+        <table class="ws-table" data-sortable data-ts="reports-utilities">
+            <thead><tr>
+                <th><?php esc_html_e( 'Mes', 'workshop' ); ?></th>
+                <th><?php esc_html_e( 'Ingresos', 'workshop' ); ?></th>
+                <th><?php esc_html_e( 'Gastos', 'workshop' ); ?></th>
+                <th><?php esc_html_e( 'Utilidad', 'workshop' ); ?></th>
+            </tr></thead>
+            <tbody>
+                <?php foreach ( array_reverse( $utils['months'] ) as $m ) : ?>
+                <tr>
+                    <td><strong><?php echo esc_html( $m['label'] ); ?></strong></td>
+                    <td><?php echo ws_money( $m['income'], $currency ); ?></td>
+                    <td><?php echo ws_money( $m['expenses'], $currency ); ?></td>
+                    <td class="ws-strong" style="color:<?php echo $m['utility'] >= 0 ? 'var(--ws-success)' : 'var(--ws-danger)'; ?>"><?php echo ws_money( $m['utility'], $currency ); ?></td>
+                </tr>
+                <?php endforeach; ?>
+                <tr>
+                    <td><strong><?php esc_html_e( 'Total del período', 'workshop' ); ?></strong></td>
+                    <td><strong><?php echo ws_money( $utils['totals']['income'], $currency ); ?></strong></td>
+                    <td><strong><?php echo ws_money( $utils['totals']['expenses'], $currency ); ?></strong></td>
+                    <td class="ws-strong" style="color:<?php echo $utils['totals']['utility'] >= 0 ? 'var(--ws-success)' : 'var(--ws-danger)'; ?>"><strong><?php echo ws_money( $utils['totals']['utility'], $currency ); ?></strong></td>
+                </tr>
+            </tbody>
+        </table>
+        <p class="ws-muted" style="margin:10px 0 0;font-size:.82em"><?php esc_html_e( 'Utilidad = ingresos (pedidos + ventas POS) − gastos del negocio. Los gastos son globales y por mes; los ingresos respetan el filtro de ubicación.', 'workshop' ); ?></p>
+        <?php endif; ?>
+    </div>
+
+    <div class="ws-card">
+        <h3 class="ws-card-title"><i class="fa-solid fa-store"></i> <?php esc_html_e( 'Ingresos por punto de venta', 'workshop' ); ?></h3>
+        <?php if ( empty( $utils['by_loc'] ) ) : ?>
+            <p class="ws-empty"><?php esc_html_e( 'Sin ingresos en el período.', 'workshop' ); ?></p>
+        <?php else : ?>
+        <table class="ws-table" data-sortable data-ts="reports-by-loc">
+            <thead><tr>
+                <th><?php esc_html_e( 'Punto de venta', 'workshop' ); ?></th>
+                <th><?php esc_html_e( 'Ingresos', 'workshop' ); ?></th>
+                <th><?php esc_html_e( 'Participación', 'workshop' ); ?></th>
+            </tr></thead>
+            <tbody>
+                <?php foreach ( $utils['by_loc'] as $lid => $total ) :
+                    $lname = '#' . $lid;
+                    foreach ( $utils['locations'] as $l ) {
+                        if ( (int) $l->id === (int) $lid ) { $lname = $l->name; break; }
+                    }
+                    $pct = $utils['totals']['income'] > 0 ? round( $total / $utils['totals']['income'] * 100, 1 ) : 0;
+                ?>
+                <tr>
+                    <td><strong><?php echo esc_html( $lname ); ?></strong></td>
+                    <td><?php echo ws_money( $total, $currency ); ?></td>
+                    <td><?php echo esc_html( number_format_i18n( $pct, 1 ) ); ?>%</td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+        <?php endif; ?>
     </div>
 </div>
 

@@ -147,7 +147,7 @@ $can_view = ws_can( 'pos_view' );
     </div>
 
     <!-- Modal de detalles de venta -->
-    <div class="ws-modal" x-show="showDetailsModal" x-transition>
+    <div class="ws-modal" x-show="showDetailsModal" x-cloak x-transition>
         <div class="ws-modal-content ws-modal-lg" @click.away="showDetailsModal = false">
             <div class="ws-modal-header">
                 <h3><?php esc_html_e( 'Detalles de Venta', 'workshop' ); ?> #<span x-text="selectedSale?.id"></span></h3>

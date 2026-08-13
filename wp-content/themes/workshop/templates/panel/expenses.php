@@ -55,11 +55,11 @@ $ws_months = array(
     <div class="ws-alert ws-alert-info">
         <i class="fa-solid fa-money-bill-wave"></i>
         <span>
-            <?php esc_html_e( 'Registra los gastos de tu negocio con su fecha: la utilidad del mes se calcula restando los gastos del mes a los ingresos del mismo mes (pedidos + ventas POS).', 'workshop' ); ?>
+            <?php esc_html_e( 'Registra aquí los gastos de tu negocio con su fecha (el gasto es por mes). Las utilidades se calculan en Reportes: ingresos del mes (pedidos + ventas POS) menos los gastos del mes.', 'workshop' ); ?>
         </span>
     </div>
 
-    <!-- Selector de mes + KPIs de utilidad mensual -->
+    <!-- Filtro de mes para la lista + total del mes -->
     <div class="ws-card ws-exp-summary">
         <div class="ws-exp-month-picker">
             <label class="ws-field">
@@ -79,19 +79,9 @@ $ws_months = array(
                 </select>
             </label>
         </div>
-        <div class="ws-kpis" style="margin-top:14px">
-            <div class="ws-kpi">
-                <div class="ws-kpi-icon ws-kpi-blue"><i class="fa-solid fa-circle-dollar"></i></div>
-                <div><span x-text="'<?php esc_js( __( 'Ingresos del mes', 'workshop' ) ); ?>'"></span><strong x-text="money(summary.income)"></strong></div>
-            </div>
-            <div class="ws-kpi">
-                <div class="ws-kpi-icon ws-kpi-amber"><i class="fa-solid fa-money-bill-wave"></i></div>
-                <div><span x-text="'<?php esc_js( __( 'Gastos del mes', 'workshop' ) ); ?>'"></span><strong x-text="money(summary.expenses)"></strong></div>
-            </div>
-            <div class="ws-kpi">
-                <div class="ws-kpi-icon" :class="summary.utility >= 0 ? 'ws-kpi-green' : 'ws-kpi-red'"><i class="fa-solid fa-scale-balanced"></i></div>
-                <div><span x-text="'<?php esc_js( __( 'Utilidad del mes', 'workshop' ) ); ?>'"></span><strong x-text="money(summary.utility)"></strong></div>
-            </div>
+        <div class="ws-exp-total">
+            <span><?php esc_html_e( 'Gastos del mes', 'workshop' ); ?></span>
+            <strong x-text="money(total())"></strong>
         </div>
     </div>
 

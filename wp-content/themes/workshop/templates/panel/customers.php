@@ -105,7 +105,7 @@ $can_delete = ws_can( 'customers_delete' );
     </div>
 
     <!-- Modal de cliente -->
-    <div class="ws-modal" x-show="showModal" x-transition>
+    <div class="ws-modal" x-show="showModal" x-cloak x-transition>
         <div class="ws-modal-content" @click.away="showModal = false">
             <div class="ws-modal-header">
                 <h3 x-text="editingCustomer ? '<?php esc_html_e( 'Editar Cliente', 'workshop' ); ?>' : '<?php esc_html_e( 'Nuevo Cliente', 'workshop' ); ?>'"></h3>
