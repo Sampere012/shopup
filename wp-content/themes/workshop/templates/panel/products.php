@@ -19,6 +19,8 @@ $can_fraction = ws_can( 'products_fraction' );
 // Categorías en ÁRBOL: selector con indentación por nivel (Padre / Hijo / Nieto).
 $cat_payload = function_exists( 'ws_categories_payload' ) ? ws_categories_payload() : array( 'flat' => array() );
 $categories  = $cat_payload['flat'];
+// Las categorías viven como PESTAÑA dentro de Productos (solo quien las gestiona).
+$can_categories = ws_can( 'categories_manage' );
 
 // Estado del plan: límite de productos palpable en la pantalla de creación.
 $plan_status = ws_plan_limit_status( 'products' );
@@ -46,6 +48,9 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
     <div class="ws-tabs">
         <button type="button" class="ws-tab" :class="tab === 'products' && 'is-active'" @click="setTab('products')"><i class="fa-solid fa-boxes-stacked"></i> <?php esc_html_e( 'Productos', 'workshop' ); ?></button>
         <button type="button" class="ws-tab" :class="tab === 'history' && 'is-active'" @click="setTab('history')"><i class="fa-solid fa-chart-line"></i> <?php esc_html_e( 'Historial de precios', 'workshop' ); ?></button>
+        <?php if ( $can_categories ) : ?>
+        <button type="button" class="ws-tab" :class="tab === 'categories' && 'is-active'" @click="setTab('categories')"><i class="fa-solid fa-sitemap"></i> <?php esc_html_e( 'Categorías', 'workshop' ); ?></button>
+        <?php endif; ?>
     </div>
 
     <div x-show="tab === 'products'">
@@ -212,6 +217,13 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
             </div>
         </div>
     </div>
+
+    <!-- Pestaña: Categorías (árbol de subcategorías, dentro de Productos) -->
+    <?php if ( $can_categories ) : ?>
+    <div x-show="tab === 'categories'" x-cloak>
+        <?php include WS_PATH . 'templates/panel/categories.php'; ?>
+    </div>
+    <?php endif; ?>
 
     <!-- Modal formulario -->
     <div class="ws-modal" x-show="formOpen" x-cloak @keydown.escape.window="formOpen=false">

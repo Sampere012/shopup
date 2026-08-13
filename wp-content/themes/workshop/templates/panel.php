@@ -30,7 +30,6 @@ $items = array(
     'pos-sales' => array( 'icon' => 'fa-chart-line',   'label' => __( 'Ventas POS', 'workshop' ), 'caps' => array( 'pos_view' ) ),
     'reviews'   => array( 'icon' => 'fa-star',         'label' => __( 'Valoraciones', 'workshop' ), 'caps' => array( 'reviews_view' ) ),
     'loyalty'   => array( 'icon' => 'fa-gift',         'label' => __( 'Fidelización', 'workshop' ), 'caps' => array( 'loyalty_manage' ) ),
-    'categories' => array( 'icon' => 'fa-sitemap',     'label' => __( 'Categorías', 'workshop' ), 'caps' => array( 'categories_manage' ) ),
     'expenses'  => array( 'icon' => 'fa-money-bill-wave', 'label' => __( 'Gastos', 'workshop' ), 'caps' => array( 'expenses_manage' ) ),
     'anuncios'  => array( 'icon' => 'fa-bullhorn',     'label' => __( 'Anuncios', 'workshop' ), 'caps' => array( 'settings_manage', 'workers_manage' ) ),
     'plan'      => array( 'icon' => 'fa-crown',        'label' => __( 'Plan', 'workshop' ), 'caps' => array() ),
