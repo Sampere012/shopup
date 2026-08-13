@@ -131,14 +131,123 @@ function ws_admin_page_announcements() {
         wp_die( esc_html__( 'No tienes permiso para acceder a esta página.', 'workshop' ) );
     }
 
+    $notice = '';
+    if ( isset( $_POST['ws_announcement_nonce'] ) && wp_verify_nonce( $_POST['ws_announcement_nonce'], 'ws_manage_announcements' ) ) {
+        $payload = array(
+            'title'       => $_POST['title'] ?? '',
+            'message'     => $_POST['message'] ?? '',
+            'type'        => sanitize_key( $_POST['type'] ?? 'info' ),
+            'scope'       => sanitize_key( $_POST['scope'] ?? 'business' ),
+            'business_id' => (int) ( $_POST['business_id'] ?? ws_current_business_id() ),
+            'pinned'      => ! empty( $_POST['pinned'] ) ? 1 : 0,
+            'dismissible' => ! empty( $_POST['dismissible'] ) ? 1 : 0,
+            'pinned_days' => (int) ( $_POST['pinned_days'] ?? 7 ),
+            'show_from'   => $_POST['show_from'] ?? '',
+            'show_until'  => $_POST['show_until'] ?? '',
+            'active'      => ! empty( $_POST['active'] ) ? 1 : 1,
+        );
+        $id = ws_announcement_save( $payload, (int) ( $_POST['ann_id'] ?? 0 ) );
+        if ( $id ) {
+            $notice = array( 'success', __( 'Anuncio guardado correctamente.', 'workshop' ) );
+        } else {
+            $notice = array( 'error', __( 'El título es obligatorio para guardar el anuncio.', 'workshop' ) );
+        }
+    }
+
     $rows = function_exists( 'ws_announcements_site' ) ? ws_announcements_site() : array();
+    $businesses = class_exists( 'WS_Business' ) ? WS_Business::all() : array();
     ?>
     <div class="wrap ws-ann-admin-page">
         <h1><span class="dashicons dashicons-megaphone" style="vertical-align:middle"></span> <?php esc_html_e( 'Anuncios del sitio', 'workshop' ); ?></h1>
-        <p class="description"><?php esc_html_e( 'Gestiona los avisos globales para todos los negocios, con fijado y programación de fecha si hace falta.', 'workshop' ); ?></p>
+        <p class="description"><?php esc_html_e( 'Crea avisos para un negocio concreto o para todos los negocios y la landing, con fechas de activación, anclaje y caducidad.', 'workshop' ); ?></p>
+
+        <?php if ( $notice ) : ?>
+            <div class="notice notice-<?php echo esc_attr( $notice[0] ); ?> is-dismissible"><p><?php echo esc_html( $notice[1] ); ?></p></div>
+        <?php endif; ?>
+
+        <div class="card" style="margin:20px 0;padding:20px;background:#fff;border:1px solid #dcdcde;border-radius:8px;max-width:960px;">
+            <h2 style="margin-top:0"><?php esc_html_e( 'Crear anuncio', 'workshop' ); ?></h2>
+            <form method="post">
+                <?php wp_nonce_field( 'ws_manage_announcements', 'ws_announcement_nonce' ); ?>
+                <table class="form-table" role="presentation">
+                    <tr>
+                        <th scope="row"><label for="ws-ann-title"><?php esc_html_e( 'Título', 'workshop' ); ?> *</label></th>
+                        <td><input id="ws-ann-title" type="text" name="title" class="regular-text" required></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="ws-ann-message"><?php esc_html_e( 'Mensaje', 'workshop' ); ?></label></th>
+                        <td><textarea id="ws-ann-message" name="message" rows="4" class="large-text"></textarea></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="ws-ann-type"><?php esc_html_e( 'Tipo', 'workshop' ); ?></label></th>
+                        <td>
+                            <select id="ws-ann-type" name="type">
+                                <option value="info"><?php esc_html_e( 'Información', 'workshop' ); ?></option>
+                                <option value="success"><?php esc_html_e( 'Éxito', 'workshop' ); ?></option>
+                                <option value="warning"><?php esc_html_e( 'Aviso', 'workshop' ); ?></option>
+                                <option value="danger"><?php esc_html_e( 'Urgente', 'workshop' ); ?></option>
+                            </select>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="ws-ann-scope"><?php esc_html_e( 'Destino', 'workshop' ); ?></label></th>
+                        <td>
+                            <select id="ws-ann-scope" name="scope">
+                                <option value="business"><?php esc_html_e( 'Un negocio concreto', 'workshop' ); ?></option>
+                                <option value="site"><?php esc_html_e( 'Todo el sitio / landing', 'workshop' ); ?></option>
+                            </select>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="ws-ann-business"><?php esc_html_e( 'Negocio', 'workshop' ); ?></label></th>
+                        <td>
+                            <select id="ws-ann-business" name="business_id">
+                                <?php foreach ( $businesses as $b ) : ?>
+                                    <option value="<?php echo (int) $b->id; ?>"><?php echo esc_html( $b->name ); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><?php esc_html_e( 'Fijar', 'workshop' ); ?></th>
+                        <td>
+                            <label><input type="checkbox" name="pinned" value="1"> <?php esc_html_e( 'Mostrar como banner fijo en el panel o landing', 'workshop' ); ?></label>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="ws-ann-pinned-days"><?php esc_html_e( 'Duración fija (días)', 'workshop' ); ?></label></th>
+                        <td><input id="ws-ann-pinned-days" type="number" name="pinned_days" min="1" max="365" value="7" class="small-text"></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="ws-ann-show-from"><?php esc_html_e( 'Mostrar desde', 'workshop' ); ?></label></th>
+                        <td><input id="ws-ann-show-from" type="datetime-local" name="show_from" class="regular-text"></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="ws-ann-show-until"><?php esc_html_e( 'Mostrar hasta', 'workshop' ); ?></label></th>
+                        <td><input id="ws-ann-show-until" type="datetime-local" name="show_until" class="regular-text"></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><?php esc_html_e( 'Cierre', 'workshop' ); ?></th>
+                        <td>
+                            <label><input type="checkbox" name="dismissible" value="1" checked> <?php esc_html_e( 'Los usuarios pueden cerrarlo', 'workshop' ); ?></label>
+                            <p class="description"><?php esc_html_e( 'Si lo desmarcas, solo el admin podrá cerrarlo en los banners fijos.', 'workshop' ); ?></p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><?php esc_html_e( 'Activo', 'workshop' ); ?></th>
+                        <td>
+                            <label><input type="checkbox" name="active" value="1" checked> <?php esc_html_e( 'Activar inmediatamente', 'workshop' ); ?></label>
+                        </td>
+                    </tr>
+                </table>
+                <?php submit_button( __( 'Guardar anuncio', 'workshop' ) ); ?>
+            </form>
+        </div>
+
         <?php if ( empty( $rows ) ) : ?>
             <p class="description"><?php esc_html_e( 'Todavía no hay anuncios del sitio.', 'workshop' ); ?></p>
         <?php else : ?>
+            <h2><?php esc_html_e( 'Anuncios activos del sitio', 'workshop' ); ?></h2>
             <table class="widefat striped">
                 <thead>
                     <tr>

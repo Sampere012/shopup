@@ -96,6 +96,14 @@ $ws_ann_types    = array(
                         <span><i class="fa-solid fa-lock"></i> <?php esc_html_e( 'Solo el admin puede cerrar este banner', 'workshop' ); ?></span>
                     </label>
                 </label>
+                <label class="ws-field">
+                    <span><?php esc_html_e( 'Visible desde', 'workshop' ); ?></span>
+                    <input type="datetime-local" x-model="form.showFrom">
+                </label>
+                <label class="ws-field">
+                    <span><?php esc_html_e( 'Visible hasta', 'workshop' ); ?></span>
+                    <input type="datetime-local" x-model="form.showUntil">
+                </label>
             </div>
             <div class="ws-ann-form-actions">
                 <button class="ws-btn ws-btn-primary" type="submit" :disabled="saving">
@@ -164,11 +172,11 @@ document.addEventListener('alpine:init', function () {
             },
             editingId: 0,
             saving: false,
-            form: { title: '', message: '', type: 'info', pinned: false, pinnedDays: 7, dismissible: true },
+            form: { title: '', message: '', type: 'info', pinned: false, pinnedDays: 7, dismissible: true, showFrom: '', showUntil: '' },
 
             resetForm: function () {
                 this.editingId = 0;
-                this.form = { title: '', message: '', type: 'info', pinned: false, pinnedDays: 7, dismissible: true };
+                this.form = { title: '', message: '', type: 'info', pinned: false, pinnedDays: 7, dismissible: true, showFrom: '', showUntil: '' };
             },
 
             edit: function (a) {
@@ -179,7 +187,9 @@ document.addEventListener('alpine:init', function () {
                     type: a.type || 'info',
                     pinned: !!a.pinned,
                     pinnedDays: a.pinned_until ? 7 : 7,
-                    dismissible: a.dismissible !== 0
+                    dismissible: a.dismissible !== 0,
+                    showFrom: a.show_from ? a.show_from.slice(0, 16) : '',
+                    showUntil: a.show_until ? a.show_until.slice(0, 16) : ''
                 };
                 if (a.scope === 'site') { this.scope = 'site'; }
                 window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -208,7 +218,9 @@ document.addEventListener('alpine:init', function () {
                     scope: this.canSite ? this.scope : 'business',
                     pinned: this.form.pinned ? '1' : '0',
                     pinned_days: String(this.form.pinned ? (this.form.pinnedDays || 7) : 0),
-                    dismissible: this.form.pinned && !this.form.dismissible ? '0' : '1'
+                    dismissible: this.form.pinned && !this.form.dismissible ? '0' : '1',
+                    show_from: this.form.showFrom || '',
+                    show_until: this.form.showUntil || ''
                 }, function (json) {
                     self.saving = false;
                     if (json && json.success) {

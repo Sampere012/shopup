@@ -2356,14 +2356,18 @@ function ws_announcements_json() {
     }
     return array_map( static function ( $a ) {
         return array(
-            'id'      => (int) $a->id,
-            'title'   => (string) $a->title,
-            'message' => (string) $a->message,
-            'type'    => (string) $a->type,
-            'scope'   => (string) $a->scope,
-            'pinned'  => (int) $a->pinned,
-            'active'  => (int) $a->active,
-            'date'    => mysql2date( 'd/m/Y H:i', $a->created_at ),
+            'id'          => (int) $a->id,
+            'title'       => (string) $a->title,
+            'message'     => (string) $a->message,
+            'type'        => (string) $a->type,
+            'scope'       => (string) $a->scope,
+            'pinned'      => (int) $a->pinned,
+            'dismissible' => (int) ( $a->dismissible ?? 1 ),
+            'pinned_until'=> (string) ( $a->pinned_until ?? '' ),
+            'show_from'   => (string) ( $a->show_from ?? '' ),
+            'show_until'  => (string) ( $a->show_until ?? '' ),
+            'active'      => (int) $a->active,
+            'date'        => mysql2date( 'd/m/Y H:i', $a->created_at ),
         );
     }, ws_announcements_panel() );
 }
