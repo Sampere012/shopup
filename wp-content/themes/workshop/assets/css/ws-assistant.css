@@ -286,6 +286,34 @@ body.wsb-chat-open { overflow: hidden; }
 .wsb-card .wsb-card-item-meta b { color: var(--wsb-primary); }
 
 /* ---------- Widgets ricos: planes, tiendas y secciones ---------- */
+.wsb-rich-reply {
+    display: flex; flex-direction: column; gap: 10px; width: 100%;
+}
+.wsb-stat-grid {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;
+    width: 100%;
+}
+.wsb-stat-card {
+    background: linear-gradient(135deg, #f8fafc, #eef2ff);
+    border: 1px solid var(--wsb-border, #e5e7eb);
+    border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px;
+}
+.wsb-stat-card strong {
+    font-size: .95rem; color: var(--wsb-primary, #4f46e5);
+}
+.wsb-stat-card span {
+    color: var(--wsb-muted, #6b7280); font-size: .7rem; text-transform: uppercase; letter-spacing: .04em;
+}
+.wsb-link-row {
+    display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px;
+}
+.wsb-action-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, var(--wsb-primary, #4f46e5), var(--wsb-primary-dark, #4338ca));
+    color: #fff; border-radius: 10px; padding: 7px 12px; font-size: .76rem; font-weight: 700;
+    text-decoration: none; box-shadow: 0 6px 16px rgba(79, 70, 229, .15);
+}
+.wsb-action-btn:hover { color: #fff; text-decoration: none; }
 .wsb-widget {
     display: flex; flex-direction: column; gap: 8px;
     background: var(--wsb-card-bg, #fff);

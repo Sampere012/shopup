@@ -111,6 +111,97 @@
         return row;
     }
 
+    function tryParseStructuredReply(text) {
+        if (!text || typeof text !== 'string') { return { text: text || '', rich: null }; }
+        var trimmed = text.trim();
+        if (!trimmed || trimmed.indexOf('{') !== 0) { return { text: text, rich: null }; }
+        try {
+            var obj = JSON.parse(trimmed);
+            if (obj && typeof obj === 'object') {
+                var rich = obj.rich || obj.data || null;
+                return {
+                    text: (obj.text || obj.summary || obj.message || '').toString(),
+                    rich: rich
+                };
+            }
+        } catch (e) {}
+        return { text: text, rich: null };
+    }
+
+    function renderRichReply(data) {
+        if (!data) { return; }
+        var text = data.text || '';
+        var rich = data.rich || data;
+        var row = document.createElement('div');
+        row.className = 'wsb-msg';
+
+        var wrap = document.createElement('div');
+        wrap.className = 'wsb-rich-reply';
+
+        if (text) {
+            var bubble = document.createElement('div');
+            bubble.className = 'wsb-bubble';
+            bubble.innerHTML = escapeHtml(text).replace(/\n/g, '<br>');
+            wrap.appendChild(bubble);
+        }
+
+        if (rich && rich.metrics && rich.metrics.length) {
+            var metricsRow = document.createElement('div');
+            metricsRow.className = 'wsb-stat-grid';
+            rich.metrics.forEach(function (m) {
+                var item = document.createElement('div');
+                item.className = 'wsb-stat-card';
+                item.innerHTML = '<strong>' + escapeHtml(m.value || '') + '</strong><span>' + escapeHtml(m.label || '') + '</span>';
+                metricsRow.appendChild(item);
+            });
+            wrap.appendChild(metricsRow);
+        }
+
+        if (rich && rich.cards && rich.cards.length) {
+            var widget = document.createElement('div');
+            widget.className = 'wsb-widget';
+            var html = '';
+            rich.cards.forEach(function (it) {
+                var badge = it.badge ? '<span class="wsb-widget-badge ' + (it.badgeCls || 'is-hot') + '">' + escapeHtml(it.badge) + '</span>' : '';
+                var icon = it.icon ? '<span class="wsb-widget-ico"><i class="fa-solid ' + escapeHtml(it.icon) + '"></i></span>' : '';
+                var meta = it.meta ? '<span class="wsb-widget-meta">' + escapeHtml(it.meta) + '</span>' : '';
+                var value = it.value ? '<b class="wsb-price">' + escapeHtml(it.value) + '</b>' : '';
+                var desc = it.desc ? '<span class="wsb-widget-desc">' + escapeHtml(it.desc) + '</span>' : '';
+                var btn = it.url ? '<a class="wsb-action-btn" href="' + escapeHtml(it.url) + '" target="_blank" rel="noopener">' + escapeHtml(it.action || 'Abrir') + '</a>' : '';
+                html += '<div class="wsb-widget-item is-rich-card">' +
+                    '<div class="wsb-widget-body">' +
+                    '<span class="wsb-widget-name">' + (icon || '') + escapeHtml(it.title || it.name || '') + badge + '</span>' +
+                    (desc ? desc : '') +
+                    (meta || value ? '<span class="wsb-widget-meta-row">' + (meta || '') + (value || '') + '</span>' : '') +
+                    '</div>' +
+                    (btn ? '<span class="wsb-widget-go">' + btn + '</span>' : '') +
+                '</div>';
+            });
+            widget.innerHTML = html;
+            wrap.appendChild(widget);
+        }
+
+        if (rich && rich.actions && rich.actions.length) {
+            var actions = document.createElement('div');
+            actions.className = 'wsb-link-row';
+            rich.actions.forEach(function (a) {
+                var el = document.createElement('a');
+                el.href = a.url || '#';
+                el.target = a.newTab ? '_blank' : '_self';
+                el.rel = 'noopener';
+                el.className = 'wsb-action-btn';
+                el.textContent = a.label || 'Abrir';
+                actions.appendChild(el);
+            });
+            wrap.appendChild(actions);
+        }
+
+        row.appendChild(wrap);
+        body.appendChild(row);
+        body.scrollTop = body.scrollHeight;
+        return row;
+    }
+
     function showTyping() {
         var row = document.createElement('div');
         row.className = 'wsb-msg wsb-typing-row';
@@ -1704,7 +1795,14 @@
         api('ws_chatbot_llm', { text: text, history: JSON.stringify(chatHistory.slice(-6)) }, function (json) {
             removeTyping(t);
             if (json && json.success && json.data && json.data.text) {
-                appendMsg(json.data.text, false);
+                var parsed = tryParseStructuredReply(json.data.text);
+                if (parsed.rich) {
+                    renderRichReply({ text: parsed.text || json.data.text, rich: parsed.rich });
+                } else if (json.data.rich) {
+                    renderRichReply({ text: json.data.text, rich: json.data.rich });
+                } else {
+                    appendMsg(json.data.text, false);
+                }
                 chatHistory.push({ role: 'assistant', content: json.data.text });
                 track('llm:used');
             } else {

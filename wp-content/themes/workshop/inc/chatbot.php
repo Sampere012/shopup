@@ -1352,6 +1352,49 @@ function ws_chatbot_norm_text( $text ) {
 }
 
 /**
+ * Respuesta de ayuda rápida del FAQ cuando no hay IA activa o falla el
+ * proveedor. Se usa para CRM/clientes en prioridad porque es la consulta más
+ * frecuente del negocio y siempre debe devolver algo útil.
+ */
+function ws_chatbot_fallback_faq_text( $query = '' ) {
+    $all = ws_site_faqs_all();
+    $matches = array();
+    $needle = ws_chatbot_norm_text( (string) $query );
+
+    foreach ( (array) $all as $topic ) {
+        if ( ! is_array( $topic ) ) {
+            continue;
+        }
+        $topic_name = trim( (string) ( $topic['topic'] ?? '' ) );
+        $items = (array) ( $topic['items'] ?? array() );
+        foreach ( $items as $item ) {
+            if ( ! is_array( $item ) ) {
+                continue;
+            }
+            $q = trim( (string) ( $item['q'] ?? '' ) );
+            $a = trim( (string) ( $item['a'] ?? '' ) );
+            if ( '' === $q || '' === $a ) {
+                continue;
+            }
+            if ( false !== stripos( $topic_name, 'clientes' ) || false !== stripos( $topic_name, 'crm' ) || false !== stripos( ws_chatbot_norm_text( $q ), 'cliente' ) || false !== stripos( ws_chatbot_norm_text( $q ), 'crm' ) || false !== strpos( $needle, 'cliente' ) || false !== strpos( $needle, 'crm' ) ) {
+                $matches[] = array( 'q' => $q, 'a' => $a );
+            }
+        }
+    }
+
+    if ( empty( $matches ) ) {
+        return '';
+    }
+
+    $matches = array_slice( $matches, 0, 5 );
+    $lines = array( 'No tengo IA activa ahora, pero te dejo la ayuda rápida de Clientes y CRM:' );
+    foreach ( $matches as $m ) {
+        $lines[] = '• ' . $m['q'] . ' — ' . wp_trim_words( $m['a'], 18, '…' );
+    }
+    return implode( "\n", $lines );
+}
+
+/**
  * Patrones de emparejamiento para una pregunta del FAQ: la pregunta
  * normalizada y una variante sin la palabra interrogativa inicial.
  */
@@ -2976,6 +3019,10 @@ function ws_ajax_chatbot_llm() {
     $admin = ws_chatbot_admin_settings();
     $key   = trim( (string) $admin['llm_key'] );
     if ( '' === $key ) {
+        $faq = ws_chatbot_fallback_faq_text( $text );
+        if ( '' !== $faq ) {
+            wp_send_json_success( array( 'text' => $faq ) );
+        }
         wp_send_json_error( array( 'msg' => __( 'La IA no está configurada.', 'workshop' ) ) );
     }
     // El nonce es público (el widget corre para visitantes): la clave del admin
@@ -3035,6 +3082,7 @@ function ws_ajax_chatbot_llm() {
         '2) El flujo correcto es: PRIMERO consulta (herramienta), LUEGO refina el resultado con los datos obtenidos, y AL FINAL devuelve la respuesta con formato claro. ' .
         '3) Cuando el usuario pida crear, editar o eliminar (producto, categoría, gasto), usa la herramienta correspondiente y confirma el resultado. ' .
         '4) Si preguntan por tiendas/negocios del mercado o "cuántos negocios hay", menciona los contadores reales y recomienda las tiendas nuevas con su enlace: ' . ws_chatbot_stores_context_text() .
+        '5) Si la consulta se basa en datos del negocio (ventas, stock, gastos, clientes, pedidos, categorías, utilidad, puntos de venta, tiendas), responde en formato JSON estructurado para UI enriquecida con este esquema: {"text":"resumen breve","rich":{"metrics":[{"label":"Ventas hoy","value":"1234 CUP"},{"label":"Utilidad","value":"+450 CUP"}],"cards":[{"title":"Pedido más alto","desc":"Pedido #12","value":"890 CUP","action":"Ver detalle","url":"/panel/"}],"actions":[{"label":"Ver reportes","url":"/panel/"}]}}. Si no hay datos suficientes, responde en texto normal y claro. ' .
         ' DATOS EN VIVO DEL USUARIO (úsalos para responder con datos reales del negocio, nunca inventes cifras): ' . ws_chatbot_context_text();
 
     $log  = get_option( 'ws_chatbot_stats', array() );
@@ -3089,6 +3137,10 @@ function ws_ajax_chatbot_llm() {
         if ( function_exists( 'ws_log_error' ) ) {
             ws_log_error( 'LLM (' . $provider_label . ') no disponible: ' . $resp->get_error_message() );
         }
+        $faq = ws_chatbot_fallback_faq_text( $text );
+        if ( '' !== $faq ) {
+            wp_send_json_success( array( 'text' => $faq ) );
+        }
         wp_send_json_error( array( 'msg' => __( 'La IA no está disponible ahora.', 'workshop' ) ) );
     }
     $code = (int) wp_remote_retrieve_response_code( $resp );
@@ -3098,6 +3150,10 @@ function ws_ajax_chatbot_llm() {
         $err = (string) ( $json['error']['message'] ?? __( 'La IA no respondió.', 'workshop' ) );
         if ( function_exists( 'ws_log_error' ) ) {
             ws_log_error( 'LLM (' . $provider_label . ') respondió HTTP ' . $code . ': ' . mb_substr( $err, 0, 200 ) );
+        }
+        $faq = ws_chatbot_fallback_faq_text( $text );
+        if ( '' !== $faq ) {
+            wp_send_json_success( array( 'text' => $faq ) );
         }
         wp_send_json_error( array( 'msg' => mb_substr( $err, 0, 200 ) ) );
     }
