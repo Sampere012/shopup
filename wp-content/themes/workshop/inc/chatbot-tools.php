@@ -106,7 +106,12 @@ function ws_chatbot_tools_schema() {
     if ( empty( $tables ) ) {
         return array();
     }
-    $json = array( 'type' => 'object', 'properties' => array(), 'required' => array() );
+    $empty_object = (object) array();
+    $json = array(
+        'type'                 => 'object',
+        'properties'           => $empty_object,
+        'additionalProperties' => false,
+    );
 
     $tools = array(
         array(
@@ -114,7 +119,11 @@ function ws_chatbot_tools_schema() {
             'function' => array(
                 'name'        => 'biz_snapshot',
                 'description' => 'Devuelve los números clave EN VIVO del negocio actual: productos totales, con stock bajo y agotados, pedidos pendientes, ventas y monto de hoy, clientes, trabajadores, categorías, gastos y utilidad del mes actual, y si la caja está abierta.',
-                'parameters'  => $json,
+                'parameters'  => array(
+                    'type'                 => 'object',
+                    'properties'           => (object) array(),
+                    'additionalProperties' => false,
+                ),
             ),
         ),
         array(
@@ -122,7 +131,11 @@ function ws_chatbot_tools_schema() {
             'function' => array(
                 'name'        => 'biz_categories',
                 'description' => 'Devuelve las categorías y subcategorías del negocio en árbol, con su ruta "Padre / Hijo" y el número de productos activos de cada una.',
-                'parameters'  => $json,
+                'parameters'  => array(
+                    'type'                 => 'object',
+                    'properties'           => (object) array(),
+                    'additionalProperties' => false,
+                ),
             ),
         ),
         array(
