@@ -3018,6 +3018,7 @@ function ws_ajax_chatbot_llm() {
     }
     $admin = ws_chatbot_admin_settings();
     $key   = trim( (string) $admin['llm_key'] );
+    $text  = sanitize_textarea_field( wp_unslash( $_POST['text'] ?? '' ) );
     if ( '' === $key ) {
         $faq = ws_chatbot_fallback_faq_text( $text );
         if ( '' !== $faq ) {
