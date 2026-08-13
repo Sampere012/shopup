@@ -89,13 +89,20 @@ class WS_Categories {
         return $p ? implode( ' / ', $p ) : '';
     }
 
+    /** Nombre legible para la UI: "Padre › Hijo" en vez de guiones para no confundir. */
+    public static function display_name( $id ) {
+        $path = self::path( (int) $id );
+        return $path ? implode( ' › ', $path ) : '';
+    }
+
     /** Lista plana con profundidad, para <select> con indentación. */
     public static function flat( $parent = 0, $depth = 0 ) {
         $out = array();
         foreach ( self::children( $parent ) as $c ) {
+            $label = self::display_name( (int) $c->id );
             $out[] = array(
                 'id'    => (int) $c->id,
-                'name'  => str_repeat( '— ', max( 0, $depth ) ) . (string) $c->name,
+                'name'  => $label ? $label : (string) $c->name,
                 'depth' => (int) $depth,
             );
             $out = array_merge( $out, self::flat( (int) $c->id, $depth + 1 ) );
