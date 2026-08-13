@@ -1693,7 +1693,42 @@
                 flat: data.flat || [],
                 editingId: 0,
                 saving: false,
+                open: {},
                 form: { name: '', parent_id: 0, sort_order: 0, active: true },
+
+                init() {
+                    // Al cargar, las categorías raíz quedan abiertas: se ve la
+                    // jerarquía de un vistazo y cada rama se pliega con el acordeón.
+                    this.list.forEach((c) => {
+                        if (!c.parent_id || !this.list.some((x) => x.id === c.parent_id)) {
+                            this.open[c.id] = true;
+                        }
+                    });
+                },
+                hasChildren(c) {
+                    return (c.children || 0) > 0;
+                },
+                depth(c) {
+                    return (c.path ? c.path.split(' / ').length : 1) - 1;
+                },
+                isOpen(id) {
+                    return !!this.open[id];
+                },
+                toggle(id) {
+                    this.open[id] = !this.open[id];
+                },
+                // Un nodo se muestra solo si TODOS sus ancestros están abiertos
+                // (recursivo por parent_id, soporta cualquier profundidad).
+                isVisible(c) {
+                    if (!c.parent_id) {
+                        return true;
+                    }
+                    const parent = this.list.find((x) => x.id === c.parent_id);
+                    if (!parent) {
+                        return true;
+                    }
+                    return !!this.open[parent.id] && this.isVisible(parent);
+                },
 
                 resetForm() {
                     this.editingId = 0;

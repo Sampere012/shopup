@@ -2575,3 +2575,20 @@ ul.ws-topbar-nav { list-style: none; margin: 0 auto; padding: 0; }
 .ws-exp-total { text-align: right; }
 .ws-exp-total span { display: block; font-size: .78em; color: var(--ws-muted, #64748b); margin-bottom: 2px; }
 .ws-exp-total strong { font-size: 1.35rem; color: var(--ws-primary, #4f46e5); }
+
+/* ---------------------------------------------------------------------
+ * Categorías: acordeón (árbol plegable).
+ * ------------------------------------------------------------------ */
+.ws-cat-accordion { display: flex; flex-direction: column; }
+.ws-cat-node { border-radius: 12px; }
+.ws-cat-head { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 12px; cursor: pointer; user-select: none; transition: background .15s ease; }
+.ws-cat-head:hover { background: var(--ws-bg, #f1f5f9); }
+.ws-cat-node.is-open > .ws-cat-head { background: #eef2ff; }
+.ws-cat-indent { flex: 0 0 auto; }
+.ws-cat-chevron { flex: 0 0 auto; width: 20px; text-align: center; color: var(--ws-muted, #64748b); font-size: .8rem; }
+.ws-cat-chevron .fa-circle { font-size: .45rem; color: #cbd5e1; }
+.ws-cat-name { flex: 1 1 auto; min-width: 0; font-weight: 600; color: var(--ws-heading, #0f172a); }
+.ws-cat-count { flex: 0 0 auto; min-width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: #eef2ff; color: var(--ws-primary, #4f46e5); font-size: .75rem; font-weight: 700; }
+.ws-cat-products { flex: 0 0 auto; font-size: .82rem; color: var(--ws-muted, #64748b); }
+.ws-cat-products i { color: var(--ws-primary, #4f46e5); margin-right: 4px; }
+.ws-cat-actions { flex: 0 0 auto; display: flex; gap: 6px; }

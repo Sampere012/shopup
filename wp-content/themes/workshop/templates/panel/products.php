@@ -47,10 +47,10 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
 
     <div class="ws-tabs">
         <button type="button" class="ws-tab" :class="tab === 'products' && 'is-active'" @click="setTab('products')"><i class="fa-solid fa-boxes-stacked"></i> <?php esc_html_e( 'Productos', 'workshop' ); ?></button>
-        <button type="button" class="ws-tab" :class="tab === 'history' && 'is-active'" @click="setTab('history')"><i class="fa-solid fa-chart-line"></i> <?php esc_html_e( 'Historial de precios', 'workshop' ); ?></button>
         <?php if ( $can_categories ) : ?>
         <button type="button" class="ws-tab" :class="tab === 'categories' && 'is-active'" @click="setTab('categories')"><i class="fa-solid fa-sitemap"></i> <?php esc_html_e( 'Categorías', 'workshop' ); ?></button>
         <?php endif; ?>
+        <button type="button" class="ws-tab" :class="tab === 'history' && 'is-active'" @click="setTab('history')"><i class="fa-solid fa-chart-line"></i> <?php esc_html_e( 'Historial de precios', 'workshop' ); ?></button>
     </div>
 
     <div x-show="tab === 'products'">

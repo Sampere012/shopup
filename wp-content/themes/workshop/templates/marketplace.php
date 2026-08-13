@@ -363,6 +363,12 @@ get_header();
                                     <?php echo esc_html( sprintf( __( '%1$s: %2$s', 'workshop' ), ucfirst( WS_Plans::limit_label( $k ) ), $v > 0 ? number_format_i18n( $v ) : '∞' ) ); ?>
                                 </li>
                             <?php endforeach; ?>
+                            <li>
+                                <i class="fa-solid <?php echo WS_Plans::has_chatbot( $p ) ? 'fa-check' : 'fa-xmark'; ?>"></i>
+                                <?php echo esc_html( WS_Plans::has_chatbot( $p )
+                                    ? __( 'Asistente chatbot en tu panel', 'workshop' )
+                                    : __( 'Sin chatbot (mejora con upgrade)', 'workshop' ) ); ?>
+                            </li>
                         </ul>
                     </div>
                 <?php endforeach; ?>

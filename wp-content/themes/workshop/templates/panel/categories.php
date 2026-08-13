@@ -94,34 +94,29 @@ $ws_cat_flat = array_map( static function ( $c ) {
             <p class="ws-empty"><?php esc_html_e( 'Aún no hay categorías. Crea la primera arriba (o usa Productos con el texto libre y se migrarán cuando elijas una categoría).', 'workshop' ); ?></p>
         </template>
 
-        <table class="ws-table" x-show="list.length > 0">
-            <thead>
-                <tr>
-                    <th><?php esc_html_e( 'Ruta', 'workshop' ); ?></th>
-                    <th><?php esc_html_e( 'Subcategorías', 'workshop' ); ?></th>
-                    <th><?php esc_html_e( 'Productos', 'workshop' ); ?></th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-                <template x-for="c in list" :key="c.id">
-                    <tr :class="!c.active ? 'is-inactive' : ''">
-                        <td>
-                            <span class="ws-badge" x-show="!c.active" style="margin-right:6px"><?php esc_html_e( 'Inactiva', 'workshop' ); ?></span>
-                            <span x-text="'— '.repeat(Math.max(0, c.path.split(' / ').length - 1))"></span>
-                            <strong x-text="c.name"></strong>
-                            <small class="ws-muted" x-show="c.slug" x-text="' (' + c.slug + ')'"></small>
-                        </td>
-                        <td x-text="c.children"></td>
-                        <td x-text="c.products"></td>
-                        <td class="ws-actions" x-show="can">
+        <div class="ws-cat-accordion" x-show="list.length > 0" x-cloak>
+            <template x-for="c in list" :key="c.id">
+                <div class="ws-cat-node" :class="isOpen(c.id) && 'is-open'" x-show="isVisible(c)" x-cloak>
+                    <div class="ws-cat-head" @click="hasChildren(c) && toggle(c.id)">
+                        <span class="ws-cat-indent" :style="'width:' + (depth(c) * 20) + 'px'"></span>
+                        <span class="ws-cat-chevron">
+                            <i class="fa-solid" :class="hasChildren(c)
+                                ? (isOpen(c.id) ? 'fa-chevron-down' : 'fa-chevron-right')
+                                : 'fa-circle'"></i>
+                        </span>
+                        <span class="ws-badge" x-show="!c.active" style="margin-right:2px"><?php esc_html_e( 'Inactiva', 'workshop' ); ?></span>
+                        <strong class="ws-cat-name" x-text="c.name"></strong>
+                        <small class="ws-muted" x-show="c.slug" x-text="'(' + c.slug + ')'"></small>
+                        <span class="ws-cat-count" x-show="c.children" :title="c.children + ' <?php esc_attr_e( 'subcategorías', 'workshop' ); ?>'" x-text="c.children"></span>
+                        <span class="ws-cat-products"><i class="fa-solid fa-box"></i> <span x-text="c.products"></span></span>
+                        <span class="ws-cat-actions" x-show="can" @click.stop>
                             <button class="ws-icon-btn" title="<?php esc_attr_e( 'Editar', 'workshop' ); ?>" @click="edit(c)"><i class="fa-solid fa-pen"></i></button>
                             <button class="ws-icon-btn ws-danger" title="<?php esc_attr_e( 'Eliminar (podar rama)', 'workshop' ); ?>" @click="remove(c)"><i class="fa-solid fa-trash-can"></i></button>
-                        </td>
-                    </tr>
-                </template>
-            </tbody>
-        </table>
+                        </span>
+                    </div>
+                </div>
+            </template>
+        </div>
     </div>
 
 </div>
