@@ -31,7 +31,7 @@ defined( 'ABSPATH' ) || exit;
 
 add_action( 'init', 'ws_rewrite_rules' );
 function ws_rewrite_rules() {
-    $pages = 'dashboard|products|locations|suppliers|stock|movements|orders|shifts|workers|permissions|reports|settings|account|appearance|customers|reviews|loyalty|pos|pos-sales|plan|anuncios|expenses';
+    $pages = 'dashboard|products|locations|stock|movements|orders|shifts|workers|permissions|reports|settings|account|appearance|customers|reviews|loyalty|pos|pos-sales|plan|anuncios|expenses';
 
     add_rewrite_tag( '%ws_page%', '(' . $pages . ')' );
     add_rewrite_tag( '%ws_loc%', '([^/]+)' );
@@ -90,7 +90,7 @@ function ws_rewrite_rules() {
  */
 add_action( 'init', 'ws_maybe_flush_rewrite_rules', 20 );
 function ws_maybe_flush_rewrite_rules() {
-    $version = '2026-08-12-wp-content-anuncios';
+    $version = '2026-08-13-panel-suppliers-tab';
     if ( get_option( 'ws_rewrite_rules_version' ) !== $version ) {
         update_option( 'ws_rewrite_rules_version', $version );
         ws_flush_rewrite_rules();
@@ -371,14 +371,13 @@ function ws_handle_panel( $role ) {
     }
 
     $page = ws_current_page();
-    if ( ! in_array( $page, array( 'dashboard', 'products', 'locations', 'suppliers', 'stock', 'movements', 'orders', 'shifts', 'workers', 'permissions', 'reports', 'settings', 'account', 'appearance', 'customers', 'reviews', 'loyalty', 'pos', 'pos-sales', 'plan', 'anuncios', 'expenses' ), true ) ) {
+    if ( ! in_array( $page, array( 'dashboard', 'products', 'locations', 'stock', 'movements', 'orders', 'shifts', 'workers', 'permissions', 'reports', 'settings', 'account', 'appearance', 'customers', 'reviews', 'loyalty', 'pos', 'pos-sales', 'plan', 'anuncios', 'expenses' ), true ) ) {
         $page = 'dashboard';
     }
     // Guardas de permisos por página.
     $cap_guard = array(
         'products'    => 'products_view',
         'locations'   => 'locations_view',
-        'suppliers'   => 'suppliers_view',
         'stock'       => 'stock_view',
         'movements'   => 'movements_view',
         'orders'      => 'orders_view',

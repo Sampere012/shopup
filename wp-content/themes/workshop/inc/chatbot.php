@@ -548,7 +548,7 @@ function ws_chatbot_panel_shortcuts() {
         'customers'   => array( __( 'Clientes (CRM)', 'workshop' ), 'fa-users', 'customers', 'customers_view' ),
         'pos'         => array( __( 'Vender (POS)', 'workshop' ), 'fa-cash-register', 'pos', 'pos_sell' ),
         'posSales'    => array( __( 'Ventas POS', 'workshop' ), 'fa-receipt', 'pos-sales', 'pos_view' ),
-        'suppliers'   => array( __( 'Proveedores', 'workshop' ), 'fa-truck-field', 'suppliers', 'suppliers_view' ),
+        'suppliers'   => array( __( 'Proveedores', 'workshop' ), 'fa-truck-field', 'products', 'suppliers_view' ),
         'reports'     => array( __( 'Reportes', 'workshop' ), 'fa-chart-line', 'reports', 'reports_view' ),
         'workers'     => array( __( 'Trabajadores', 'workshop' ), 'fa-user-gear', 'workers', 'workers_manage' ),
         'loyalty'     => array( __( 'Fidelización', 'workshop' ), 'fa-gift', 'loyalty', 'loyalty_manage' ),

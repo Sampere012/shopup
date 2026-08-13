@@ -19,7 +19,6 @@ $items = array(
     'dashboard' => array( 'icon' => 'fa-gauge-high',  'label' => __( 'Dashboard', 'workshop' ), 'caps' => array() ),
     'products'  => array( 'icon' => 'fa-boxes-stacked', 'label' => __( 'Productos', 'workshop' ), 'caps' => array( 'products_view' ) ),
     'locations' => array( 'icon' => 'fa-location-dot', 'label' => __( 'Ubicaciones', 'workshop' ), 'caps' => array( 'locations_view' ) ),
-    'suppliers' => array( 'icon' => 'fa-truck-field',  'label' => __( 'Proveedores', 'workshop' ), 'caps' => array( 'suppliers_view' ) ),
     'stock'     => array( 'icon' => 'fa-warehouse',    'label' => __( 'Stock', 'workshop' ), 'caps' => array( 'stock_view' ) ),
     'movements' => array( 'icon' => 'fa-clock-rotate-left', 'label' => __( 'Historial', 'workshop' ), 'caps' => array( 'movements_view' ) ),
     'orders'    => array( 'icon' => 'fa-receipt',      'label' => __( 'Pedidos', 'workshop' ), 'caps' => array( 'orders_view' ) ),

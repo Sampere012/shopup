@@ -115,7 +115,7 @@ function ws_register_url() {
 
 function ws_is_panel() {
     $page = ws_current_page();
-    return in_array( $page, array( 'dashboard', 'products', 'locations', 'suppliers', 'stock', 'movements', 'orders', 'shifts', 'workers', 'permissions', 'reports', 'settings', 'account', 'appearance', 'anuncios', 'expenses' ), true );
+    return in_array( $page, array( 'dashboard', 'products', 'locations', 'stock', 'movements', 'orders', 'shifts', 'workers', 'permissions', 'reports', 'settings', 'account', 'appearance', 'anuncios', 'expenses' ), true );
 }
 
 /**

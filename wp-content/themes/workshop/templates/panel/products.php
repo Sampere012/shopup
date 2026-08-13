@@ -21,6 +21,8 @@ $cat_payload = function_exists( 'ws_categories_payload' ) ? ws_categories_payloa
 $categories  = $cat_payload['flat'];
 // Las categorías viven como PESTAÑA dentro de Productos (solo quien las gestiona).
 $can_categories = ws_can( 'categories_manage' );
+// Los proveedores también viven como PESTAÑA dentro de Productos (quien los ve).
+$can_suppliers = ws_can( 'suppliers_view' );
 
 // Estado del plan: límite de productos palpable en la pantalla de creación.
 $plan_status = ws_plan_limit_status( 'products' );
@@ -49,6 +51,9 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
         <button type="button" class="ws-tab" :class="tab === 'products' && 'is-active'" @click="setTab('products')"><i class="fa-solid fa-boxes-stacked"></i> <?php esc_html_e( 'Productos', 'workshop' ); ?></button>
         <?php if ( $can_categories ) : ?>
         <button type="button" class="ws-tab" :class="tab === 'categories' && 'is-active'" @click="setTab('categories')"><i class="fa-solid fa-sitemap"></i> <?php esc_html_e( 'Categorías', 'workshop' ); ?></button>
+        <?php endif; ?>
+        <?php if ( $can_suppliers ) : ?>
+        <button type="button" class="ws-tab" :class="tab === 'suppliers' && 'is-active'" @click="setTab('suppliers')"><i class="fa-solid fa-truck-field"></i> <?php esc_html_e( 'Proveedores', 'workshop' ); ?></button>
         <?php endif; ?>
         <button type="button" class="ws-tab" :class="tab === 'history' && 'is-active'" @click="setTab('history')"><i class="fa-solid fa-chart-line"></i> <?php esc_html_e( 'Historial de precios', 'workshop' ); ?></button>
     </div>
@@ -222,6 +227,13 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
     <?php if ( $can_categories ) : ?>
     <div x-show="tab === 'categories'" x-cloak>
         <?php include WS_PATH . 'templates/panel/categories.php'; ?>
+    </div>
+    <?php endif; ?>
+
+    <!-- Pestaña: Proveedores (dentro de Productos) -->
+    <?php if ( $can_suppliers ) : ?>
+    <div x-show="tab === 'suppliers'" x-cloak>
+        <?php include WS_PATH . 'templates/panel/suppliers.php'; ?>
     </div>
     <?php endif; ?>
 

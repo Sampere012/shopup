@@ -326,7 +326,6 @@ function ws_chatbot_admin_kb_form( $editing ) {
         'panel:pos'          => __( 'Panel: Vender (POS)', 'workshop' ),
         'panel:pos-sales'    => __( 'Panel: Ventas POS', 'workshop' ),
         'panel:customers'    => __( 'Panel: Clientes', 'workshop' ),
-        'panel:suppliers'    => __( 'Panel: Proveedores', 'workshop' ),
         'panel:workers'      => __( 'Panel: Trabajadores', 'workshop' ),
         'panel:reports'      => __( 'Panel: Reportes', 'workshop' ),
         'panel:loyalty'      => __( 'Panel: Fidelización', 'workshop' ),
