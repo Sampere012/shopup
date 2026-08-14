@@ -541,6 +541,12 @@ document.addEventListener('alpine:init', () => {
         cuadreFaltantes() { return this.cuadre.filter(r => this.cuadreDiff(r) < -0.004).length; },
 
         async openCash() {
+            // Si las ubicaciones aún no cargaron, no mandar location_id nulo
+            // (el botón se puede pulsar antes de que terminen de cargar).
+            if (!this.currentLocationId) {
+                Swal.fire({ icon: 'warning', title: '<?php esc_html_e( 'Espera un momento', 'workshop' ); ?>', text: '<?php esc_html_e( 'Cargando ubicaciones…', 'workshop' ); ?>' });
+                return;
+            }
             this.cashSaving = true;
             try {
                 const response = await $('ws_pos_cash_open', {
@@ -635,6 +641,8 @@ document.addEventListener('alpine:init', () => {
                     if (window.WSIndexedDB && Array.isArray(this.products)) {
                         try { await WSIndexedDB.saveProducts(this.products); } catch (e) { /* no disponible */ }
                     }
+                    // Venta repetida desde "Ventas POS": poner los productos en el carrito.
+                    this.restoreRepeatSale();
                 }
             } catch (error) {
                 console.error('Error cargando productos, usando copia offline:', error);
@@ -646,6 +654,7 @@ document.addEventListener('alpine:init', () => {
                             this.products = offline;
                             this.offlineMode = true;
                             this.refreshOfflineBadge();
+                            this.restoreRepeatSale();
                         }
                     } catch (e) { /* sin datos offline */ }
                 }
@@ -785,6 +794,45 @@ document.addEventListener('alpine:init', () => {
         },
 
         /* ---------- Carrito ---------- */
+
+        // Restaura en el carrito los productos de una venta repetida desde
+        // "Ventas POS" (guardados en localStorage). Solo aplica los productos
+        // que existen y tienen stock en la ubicación actual; el vendedor
+        // revisa el carrito y cobra por el flujo normal.
+        restoreRepeatSale() {
+            let raw = null;
+            try { raw = localStorage.getItem('ws_pos_repeat_items'); } catch (e) {}
+            if (!raw) return;
+            let items = [];
+            try { items = JSON.parse(raw) || []; } catch (e) { items = []; }
+            if (!items.length) {
+                try { localStorage.removeItem('ws_pos_repeat_items'); } catch (e) {}
+                return;
+            }
+            // Productos aún no cargados: reintentar cuando termine loadProducts.
+            if (!this.products.length) return;
+            try { localStorage.removeItem('ws_pos_repeat_items'); } catch (e) {}
+            let added = 0;
+            items.forEach((it) => {
+                const p = this.products.find((x) => String(x.id) === String(it.product_id));
+                if (!p || !(Number(p.stock) > 0)) return;
+                const qty = Math.min(Math.max(1, Math.floor(Number(it.qty) || 1)), Number(p.stock));
+                const existing = this.cart.find((c) => String(c.product_id) === String(p.id));
+                if (existing) {
+                    existing.qty = Math.min((Number(existing.qty) || 0) + qty, Number(p.stock));
+                } else {
+                    this.cart.push({ product_id: p.id, product_name: p.name, price: p.sale_price, qty: qty, stock: p.stock });
+                }
+                added++;
+            });
+            if (window.Swal) {
+                if (added) {
+                    Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: '<?php esc_html_e( 'Venta repetida: revisa el carrito y cobra', 'workshop' ); ?>', showConfirmButton: false, timer: 2500 });
+                } else {
+                    Swal.fire({ icon: 'warning', title: '<?php esc_html_e( 'Venta no repetida', 'workshop' ); ?>', text: '<?php esc_html_e( 'Los productos de esa venta no están disponibles en esta ubicación.', 'workshop' ); ?>', timer: 3000, showConfirmButton: false });
+                }
+            }
+        },
 
         addToCart(product) {
             if (product.stock <= 0) {

@@ -132,6 +132,9 @@ $can_view = ws_can( 'pos_view' );
                         </td>
                         <td>
                             <div class="ws-actions">
+                                <button class="ws-btn-icon" @click="repeatSale(sale)" title="<?php esc_attr_e( 'Repetir venta (cargar en el POS)', 'workshop' ); ?>">
+                                    <i class="fa-solid fa-copy"></i>
+                                </button>
                                 <button class="ws-btn-icon" @click="viewSaleDetails(sale)" title="<?php esc_attr_e( 'Ver detalles', 'workshop' ); ?>">
                                     <i class="fa-solid fa-eye"></i>
                                 </button>
@@ -428,6 +431,30 @@ document.addEventListener('alpine:init', () => {
                 console.error('Error cargando items:', error);
             }
             this.showDetailsModal = true;
+        },
+
+        // Repetir venta: carga los productos de una venta anterior en el carrito
+        // del POS (via localStorage) para cobrarla de nuevo sin reescribir nada.
+        // El vendedor solo ajusta cantidades o el cliente y cobra por el flujo
+        // normal del POS (caja, pago, stock…).
+        async repeatSale(sale) {
+            try {
+                const response = await $('ws_pos_sale_items_get', { sale_id: sale.id });
+                if (!response.success) throw new Error('No se pudieron cargar los productos');
+                const items = response.data.data || [];
+                if (!items.length) {
+                    if (window.Swal) Swal.fire({ icon: 'warning', title: '<?php esc_html_e( 'Sin productos', 'workshop' ); ?>', text: '<?php esc_html_e( 'Esta venta no tiene productos para repetir.', 'workshop' ); ?>', timer: 2000, showConfirmButton: false });
+                    return;
+                }
+                try {
+                    localStorage.setItem('ws_pos_repeat_items', JSON.stringify(items));
+                } catch (e) { /* almacenamiento no disponible */ }
+                // Ir al POS: la página de POS detecta los items guardados y los
+                // pone en el carrito para revisarlos antes de cobrar.
+                window.location.href = location.pathname.replace(/pos-sales\/?$/, 'pos/');
+            } catch (error) {
+                if (window.Swal) Swal.fire({ icon: 'error', title: '<?php esc_html_e( 'Error', 'workshop' ); ?>', text: '<?php esc_html_e( 'No se pudo repetir la venta.', 'workshop' ); ?>' });
+            }
         },
 
         printSale(sale) {
