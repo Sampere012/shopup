@@ -1159,27 +1159,102 @@
                 this.canvasTick++;
                 this.persistZoomState();
             },
-            // Paneo arrastrando el fondo del lienzo (no nodos/líneas).
+            // Paneo arrastrando el fondo (no nodos/líneas) + ZOOM CON PELIZCO
+            // en táctil: un dedo mueve la vista y dos dedos hacen zoom hacia
+            // el punto medio del pellizco (mantiene anclado el centro inicial).
             startPan(evt) {
                 if (!evt.target || !evt.target.closest) return;
                 if (evt.target.closest('.ws-link-node, .ws-link-line, .ws-link-mid, .ws-link-temp, .ws-canvas-zoom')) return;
+                if (!this._pinchPtrs) this._pinchPtrs = {};
+                const first = Object.keys(this._pinchPtrs).length === 0;
+                this._pinchPtrs[evt.pointerId] = { x: evt.clientX, y: evt.clientY };
+                if (!first) {
+                    // Segundo dedo: arranca el pellizco (el primer dedo ya
+                    // tiene los listeners globales del gesto).
+                    this.startPinch();
+                    return;
+                }
                 this.panning = true;
                 this._panStartX = evt.clientX - this.panX;
                 this._panStartY = evt.clientY - this.panY;
                 const move = (e) => {
+                    if (this._pinchPtrs && this._pinchPtrs[e.pointerId]) {
+                        this._pinchPtrs[e.pointerId] = { x: e.clientX, y: e.clientY };
+                    }
+                    if (this._pinchActive) {
+                        this.applyPinch();
+                        return;
+                    }
                     if (!this.panning) return;
                     this.panX = e.clientX - this._panStartX;
                     this.panY = e.clientY - this._panStartY;
                     this.canvasTick++;
                 };
-                const up = () => {
+                const up = (e) => {
+                    if (this._pinchPtrs && this._pinchPtrs[e.pointerId]) {
+                        delete this._pinchPtrs[e.pointerId];
+                        const ids = Object.keys(this._pinchPtrs);
+                        if (ids.length === 1) {
+                            // Queda un dedo: vuelve a paneo simple anclado a él.
+                            this._pinchActive = false;
+                            const p = this._pinchPtrs[ids[0]];
+                            this._panStartX = p.x - this.panX;
+                            this._panStartY = p.y - this.panY;
+                            return;
+                        }
+                        if (ids.length === 0) {
+                            this._pinchActive = false;
+                            this.panning = false;
+                            window.removeEventListener('pointermove', move);
+                            window.removeEventListener('pointerup', up);
+                            window.removeEventListener('pointercancel', up);
+                            this.persistZoomState();
+                        }
+                        return;
+                    }
                     this.panning = false;
                     window.removeEventListener('pointermove', move);
                     window.removeEventListener('pointerup', up);
+                    window.removeEventListener('pointercancel', up);
                     this.persistZoomState();
                 };
                 window.addEventListener('pointermove', move);
                 window.addEventListener('pointerup', up);
+                window.addEventListener('pointercancel', up);
+            },
+            startPinch() {
+                const ids = Object.keys(this._pinchPtrs || {});
+                if (ids.length < 2) return;
+                const a = this._pinchPtrs[ids[0]], b = this._pinchPtrs[ids[1]];
+                const rect = this.$refs.canvas.getBoundingClientRect();
+                this._pinchActive = true;
+                this._pinchStart = {
+                    dist: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
+                    m0x: (a.x + b.x) / 2 - rect.left,
+                    m0y: (a.y + b.y) / 2 - rect.top,
+                    zoom: this.zoom,
+                    panX: this.panX,
+                    panY: this.panY
+                };
+                this.canvasTick++;
+            },
+            applyPinch() {
+                const ids = Object.keys(this._pinchPtrs || {});
+                if (ids.length < 2 || !this._pinchStart) return;
+                const a = this._pinchPtrs[ids[0]], b = this._pinchPtrs[ids[1]];
+                const rect = this.$refs.canvas.getBoundingClientRect();
+                const mx = (a.x + b.x) / 2 - rect.left;
+                const my = (a.y + b.y) / 2 - rect.top;
+                const dist = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
+                const s = this._pinchStart;
+                const next = Math.max(0.4, Math.min(2.5, s.zoom * (dist / s.dist)));
+                const k = next / s.zoom;
+                // Zoom hacia el punto medio actual: el punto del lienzo que
+                // estaba bajo el centro del pellizco sigue bajo los dedos.
+                this.panX = mx - (s.m0x - s.panX) * k;
+                this.panY = my - (s.m0y - s.panY) * k;
+                this.zoom = next;
+                this.canvasTick++;
             },
             initCanvas() {
                 try {
