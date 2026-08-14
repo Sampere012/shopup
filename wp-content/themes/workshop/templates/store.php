@@ -163,7 +163,10 @@ get_header();
                             <i x-show="!p.image" class="fa-solid fa-box-open"></i>
                         </div>
                         <div class="ws-product-info">
-                            <h3 x-text="p.name"></h3>
+                            <div class="ws-product-title">
+                                <h3 x-text="p.name"></h3>
+                                <span class="ws-combo-badge" x-show="p.is_combo" title="<?php esc_attr_e( 'Este producto es un combo', 'workshop' ); ?>"><i class="fa-solid fa-layer-group"></i> <?php esc_html_e( 'Combo', 'workshop' ); ?></span>
+                            </div>
                             <span class="ws-product-category" x-show="p.category" x-text="p.category"></span>
                             <div class="ws-product-row">
                                 <span class="ws-price" x-text="priceInfo(p).main"></span>
@@ -427,7 +430,10 @@ get_header();
         <div class="ws-modal-backdrop" @click="closeProduct()"></div>
         <div class="ws-modal-box">
             <div class="ws-modal-head">
-                <h3 x-text="activeProduct ? activeProduct.name : ''"></h3>
+                <div class="ws-store-modal-title">
+                    <h3 x-text="activeProduct ? activeProduct.name : ''"></h3>
+                    <span class="ws-combo-badge" x-show="activeProduct && activeProduct.is_combo" title="<?php esc_attr_e( 'Este producto es un combo', 'workshop' ); ?>"><i class="fa-solid fa-layer-group"></i> <?php esc_html_e( 'Combo', 'workshop' ); ?></span>
+                </div>
                 <button class="ws-cart-close" @click="closeProduct()"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <template x-if="activeProduct">

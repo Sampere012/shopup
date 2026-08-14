@@ -104,7 +104,10 @@ if ( ! empty( $sub_data['is_trial'] ) && $sub_data['trial_days_left'] > 0 && $su
                                 <img :src="product.image || '<?php echo WS_URL; ?>assets/images/placeholder.png'" :alt="product.name" loading="lazy">
                             </div>
                             <div class="ws-product-info">
-                                <div class="ws-product-name" x-text="product.name"></div>
+                                <div class="ws-product-name-row">
+                                    <div class="ws-product-name" x-text="product.name"></div>
+                                    <span class="ws-combo-badge" x-show="product.is_combo" title="<?php esc_attr_e( 'Este producto es un combo', 'workshop' ); ?>"><i class="fa-solid fa-layer-group"></i> <?php esc_html_e( 'Combo', 'workshop' ); ?></span>
+                                </div>
                                 <div class="ws-product-price" x-text="formatPrice(product.sale_price)"></div>
                                 <div class="ws-product-stock" :class="product.stock > 0 ? 'ws-stock-ok' : 'ws-stock-low'">
                                     <i class="fa-solid fa-box"></i>
