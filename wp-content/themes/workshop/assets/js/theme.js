@@ -1516,6 +1516,7 @@
             canManage: opts.canManage,
             locations: [],
             search: '',
+            tab: 'list',
             formOpen: false,
             form: { store_settings: { currency: '', rate: '' } },
             init() { this.restoreTableState(); this.reload(); this.initCanvas(); },

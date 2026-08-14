@@ -15,6 +15,13 @@ $rates      = ws_exchange_rates();
 ?>
 <div x-data="wsLocations(<?php echo esc_attr( wp_json_encode( array( 'currency' => $currency, 'currencies' => $currencies, 'rates' => $rates, 'canManage' => $can_manage ) ) ); ?>)">
 
+    <div class="ws-tabs">
+        <button type="button" class="ws-tab" :class="tab === 'list' && 'is-active'" @click="tab = 'list'"><i class="fa-solid fa-store"></i> <?php esc_html_e( 'Ubicaciones', 'workshop' ); ?></button>
+        <button type="button" class="ws-tab" :class="tab === 'links' && 'is-active'" @click="tab = 'links'"><i class="fa-solid fa-share-nodes"></i> <?php esc_html_e( 'Conexión', 'workshop' ); ?></button>
+    </div>
+
+    <!-- Pestaña: ubicaciones -->
+    <div x-show="tab === 'list'" x-cloak>
     <div class="ws-toolbar">
         <div class="ws-search">
             <i class="fa-solid fa-magnifying-glass"></i>
@@ -87,8 +94,11 @@ $rates      = ws_exchange_rates();
             </div>
         </div>
     </div>
+    </div>
 
+    <!-- Pestaña: conexión (stock compartido) -->
     <?php if ( $can_manage ) : ?>
+    <div x-show="tab === 'links'" x-cloak>
     <div class="ws-card ws-link-card">
         <div class="ws-card-head">
             <div>
@@ -138,6 +148,7 @@ $rates      = ws_exchange_rates();
                 <button type="button" @click="resetZoom()" title="<?php esc_attr_e( 'Restablecer zoom', 'workshop' ); ?>"><i class="fa-solid fa-arrows-to-dot"></i></button>
             </div>
         </div>
+    </div>
     </div>
     <?php endif; ?>
 
