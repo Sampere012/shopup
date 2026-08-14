@@ -302,7 +302,10 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
                     </template>
                     <label class="ws-field ws-span-2">
                         <span><?php esc_html_e( '¿Qué productos incluye?', 'workshop' ); ?></span>
-                        <small class="ws-muted ws-block" style="margin:-4px 0 6px;font-size:.76em"><?php esc_html_e( 'Elige el producto (la cantidad es opcional: vacía = 1 unidad).', 'workshop' ); ?></small>
+                        <div class="ws-form-hint">
+                            <i class="fa-solid fa-circle-info"></i>
+                            <span><?php esc_html_e( 'Elige el producto y cuánto se coge de él (opcional: vacío = 1). Cada combo consume estas cantidades; el stock del combo es el mínimo disponible de sus productos.', 'workshop' ); ?></span>
+                        </div>
                         <div class="ws-combo-items">
                             <template x-for="(row, ri) in comboForm.items" :key="ri">
                                 <div class="ws-combo-item-row">
