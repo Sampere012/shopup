@@ -1082,19 +1082,72 @@ function ws_ajax_stock_list() {
         ) );
     }
 
-    ws_send_list( 'rows', function ( $args ) use ( $loc_ids, $search ) {
-        $rows  = WS_Stock::stock_rows( array_merge( array(
-            'location_ids' => $loc_ids,
-            'search'       => $search,
-        ), $args ) );
-        $group = WS_Stock::stock_group_info( $rows );
-        return ws_stock_rows_map( $rows, $group );
-    }, function () use ( $loc_ids, $search ) {
-        return WS_Stock::count_stock_rows( array(
-            'location_ids' => $loc_ids,
-            'search'       => $search,
-        ) );
-    }, array() );
+    // Listado normal: productos + combos activos con stock DERIVADO por
+    // ubicación (el combo es un producto que contiene varios productos). Así,
+    // al dar entrada/salida a un combo, el combo aparece en la tabla de Stock
+    // con su stock calculado desde los componentes.
+    $pg   = ws_list_paging();
+    $rows = WS_Stock::stock_rows( array(
+        'location_ids' => $loc_ids,
+        'search'       => $search,
+        'orderby'      => $pg['sort'],
+        'order'        => $pg['dir'],
+    ) );
+    $group = WS_Stock::stock_group_info( $rows );
+    $out   = ws_stock_rows_map( $rows, $group );
+
+    // Añade los combos activos (stock derivado) por cada ubicación del filtro.
+    $like = '' !== $search ? mb_strtolower( $search ) : '';
+    $loc_names = array();
+    foreach ( $allowed as $l ) {
+        $loc_names[ (int) $l->id ] = $l->name;
+    }
+    foreach ( $loc_ids as $lid ) {
+        foreach ( WS_Combos::catalog_rows( $lid ) as $c ) {
+            if ( '' !== $like && false === mb_strpos( mb_strtolower( $c['name'] ), $like ) ) {
+                continue;
+            }
+            $out[] = array(
+                'product_id'    => (int) $c['id'], // id negativo = -combo_id
+                'combo_id'      => (int) $c['combo_id'],
+                'location_id'   => (int) $lid,
+                'location_name' => $loc_names[ (int) $lid ] ?? '',
+                'location_type' => '',
+                'name'          => $c['name'],
+                'barcode'       => '',
+                'image'         => $c['photo'],
+                'qty'           => (float) $c['qty'],
+                'min_stock'     => 0,
+                'sale_price'    => (float) $c['price'],
+                'currency'      => $c['currency'],
+                'group_total'   => (float) $c['qty'],
+                'group_parts'   => array(),
+                'is_combo'      => 1,
+            );
+        }
+    }
+
+    // Orden local por la misma clave que el SQL (los combos viven en otra
+    // tabla y no participan del ORDER BY de stock_rows).
+    $sort_key = $pg['sort'] ? $pg['sort'] : 'name';
+    $dir_mul  = ( 'DESC' === $pg['dir'] ) ? -1 : 1;
+    usort( $out, function ( $a, $b ) use ( $sort_key, $dir_mul ) {
+        if ( in_array( $sort_key, array( 'qty', 'min_stock', 'sale_price' ), true ) ) {
+            return $dir_mul * ( (float) ( $a[ $sort_key ] ?? 0 ) <=> (float) ( $b[ $sort_key ] ?? 0 ) );
+        }
+        return $dir_mul * strcasecmp( (string) ( $a[ $sort_key ] ?? '' ), (string) ( $b[ $sort_key ] ?? '' ) );
+    } );
+
+    $total       = count( $out );
+    $total_pages = max( 1, (int) ceil( $total / $pg['pageSize'] ) );
+    $page        = min( $pg['page'], $total_pages );
+    $slice       = array_slice( $out, ( $page - 1 ) * $pg['pageSize'], $pg['pageSize'] );
+    wp_send_json_success( array(
+        'rows'     => $slice,
+        'total'    => $total,
+        'page'     => $page,
+        'pageSize' => $pg['pageSize'],
+    ) );
 }
 
 /* ---------------- Movimientos ---------------- */

@@ -46,7 +46,6 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
     'canDelete'   => $can_delete,
     'canCreate'   => $can_create,
     'canFraction' => $can_fraction,
-    'canTransfer' => ws_can( 'stock_transfer' ),
 ) ) ); ?>)">
 
     <div class="ws-tabs">
@@ -240,9 +239,6 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
                                 <span class="ws-badge" :class="c.active ? 'ws-badge-ok' : 'ws-badge-muted'" x-text="c.active ? '<?php esc_html_e( 'Activo', 'workshop' ); ?>' : '<?php esc_html_e( 'Inactivo', 'workshop' ); ?>'" x-show="!canEdit"></span>
                             </td>
                             <td class="ws-actions">
-                                <template x-if="canTransfer">
-                                    <button class="ws-icon-btn" title="<?php esc_attr_e( 'Transferir combo', 'workshop' ); ?>" @click="openComboTransfer(c)"><i class="fa-solid fa-arrow-right-arrow-left"></i></button>
-                                </template>
                                 <template x-if="canEdit">
                                     <button class="ws-icon-btn" title="<?php esc_attr_e( 'Editar', 'workshop' ); ?>" @click="openComboForm(c)"><i class="fa-solid fa-pen"></i></button>
                                 </template>
@@ -358,45 +354,6 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
         </div>
     </div>
 
-    <!-- Modal transferir combo -->
-    <div class="ws-modal" x-show="comboTransferOpen" x-cloak @keydown.escape.window="comboTransferOpen=false">
-        <div class="ws-modal-backdrop" @click="comboTransferOpen=false"></div>
-        <div class="ws-modal-box">
-            <div class="ws-modal-head">
-                <h3><i class="fa-solid fa-arrow-right-arrow-left"></i> <?php esc_html_e( 'Transferir combo', 'workshop' ); ?> <span class="ws-muted" x-text="comboTransfer.combo ? ('«' + comboTransfer.combo.name + '»') : ''"></span></h3>
-                <button class="ws-cart-close" @click="comboTransferOpen=false"><i class="fa-solid fa-xmark"></i></button>
-            </div>
-            <form @submit.prevent="saveComboTransfer" class="ws-form">
-                <p class="ws-muted" style="font-size:.82em"><?php esc_html_e( 'Se moverán los PRODUCTOS del combo (cada componente × cantidad). El stock del origen se rebaja y el del destino aumenta.', 'workshop' ); ?></p>
-                <div class="ws-form-grid">
-                    <label class="ws-field">
-                        <span><?php esc_html_e( 'Desde *', 'workshop' ); ?></span>
-                        <select x-model="comboTransfer.from_location" required>
-                            <template x-for="l in locations" :key="l.id"><option :value="l.id" x-text="l.name"></option></template>
-                        </select>
-                    </label>
-                    <label class="ws-field">
-                        <span><?php esc_html_e( 'Hacia *', 'workshop' ); ?></span>
-                        <select x-model="comboTransfer.to_location" required>
-                            <template x-for="l in locations" :key="l.id"><option :value="l.id" x-text="l.name"></option></template>
-                        </select>
-                    </label>
-                    <label class="ws-field">
-                        <span><?php esc_html_e( 'Cantidad de combos *', 'workshop' ); ?></span>
-                        <input type="number" step="1" min="1" x-model.number="comboTransfer.count" required>
-                    </label>
-                    <label class="ws-field">
-                        <span><?php esc_html_e( 'Nota', 'workshop' ); ?></span>
-                        <input type="text" x-model="comboTransfer.note">
-                    </label>
-                </div>
-                <div class="ws-modal-foot">
-                    <button type="button" class="ws-btn ws-btn-secondary" @click="comboTransferOpen=false"><?php esc_html_e( 'Cancelar', 'workshop' ); ?></button>
-                    <button type="submit" class="ws-btn ws-btn-primary"><i class="fa-solid fa-right-left"></i> <?php esc_html_e( 'Transferir', 'workshop' ); ?></button>
-                </div>
-            </form>
-        </div>
-    </div>
 
     <!-- Pestaña: Historial de precios (trazabilidad costo/venta) -->
     <div x-show="tab === 'history'" x-cloak>

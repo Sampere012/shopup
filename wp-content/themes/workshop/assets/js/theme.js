@@ -760,7 +760,6 @@
             bulk: { field: 'min_stock', mode: 'set', value: 0 },
             // Combos: agrupar productos. Stock DERIVADO de los componentes.
             locations: opts.locations || [],
-            canTransfer: opts.canTransfer,
             combos: [],
             comboSearch: '',
             comboLocationId: (opts.locations && opts.locations.length ? opts.locations[0].id : 0),
@@ -768,9 +767,7 @@
             comboPageSize: 10,
             comboTotal: 0,
             comboFormOpen: false,
-            comboTransferOpen: false,
             comboForm: { items: [] },
-            comboTransfer: { combo: null, from_location: 0, to_location: 0, count: 1, note: '' },
             allProducts: [],
             comboProductSearch: '',
             // Pestañas: lista de productos / historial de precios.
@@ -888,17 +885,6 @@
             toggleCombo(c) {
                 $('ws_combo_toggle', { id: c.id, active: c.active ? 0 : 1 }).then(res => {
                     if (res.success) { c.active = c.active ? 0 : 1; toast('success', c.active ? 'Combo habilitado' : 'Combo deshabilitado'); } else { toast('error', 'Error', res.data && res.data.msg); }
-                });
-            },
-            openComboTransfer(c) {
-                this.comboTransfer = { combo: c, from_location: this.comboLocationId || (this.locations.length ? this.locations[0].id : 0), to_location: (this.locations[1] && this.locations[1].id) || 0, count: 1, note: '' };
-                this.comboTransferOpen = true;
-            },
-            saveComboTransfer() {
-                const t = this.comboTransfer;
-                if (!t.combo) return;
-                $('ws_combo_transfer', { combo_id: t.combo.id, from_location: t.from_location, to_location: t.to_location, count: t.count, note: t.note }).then(res => {
-                    if (res.success) { toast('success', 'Combo transferido'); this.comboTransferOpen = false; this.loadCombos(); } else { toast('error', 'Error', res.data && res.data.msg); }
                 });
             },
             loadHistory() {
