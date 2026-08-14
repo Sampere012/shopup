@@ -169,7 +169,7 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                 <tbody>
                     <template x-for="c in countFiltered" :key="c.product_id">
                         <tr>
-                            <td><strong x-text="c.name"></strong><small class="ws-muted" x-show="c.barcode" x-text="c.barcode"></small></td>
+                            <td><strong x-text="c.name"></strong></td>
                             <td x-text="c.virtual_qty"></td>
                             <td>
                                 <template x-if="c.group_parts && c.group_parts.length > 1">
