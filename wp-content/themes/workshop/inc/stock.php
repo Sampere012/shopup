@@ -569,19 +569,23 @@ class WS_Stock {
             return;
         }
         global $wpdb;
-        // El vínculo comparte SOLO los productos que ya existen en la ubicación
-        // vinculada: un movimiento en el origen se propaga únicamente a las que
-        // tienen fila de stock del producto (aunque sea 0). Así conectar
-        // ubicaciones con catálogos distintos no fusiona los catálogos ni
-        // inventa productos en las vinculadas — los que solo existen en una
-        // ubicación quedan locales.
-        $ph = implode( ',', array_fill( 0, count( $linked ), '%d' ) );
-        $existing = array_flip( array_map( 'intval', $wpdb->get_col( $wpdb->prepare(
-            "SELECT location_id FROM " . self::table( 'stock' ) . " WHERE product_id=%d AND location_id IN ({$ph})",
-            $product_id, ...$linked
-        ) ) ) );
+        // ENTRADAS ('+'): se propagan a TODAS las vinculadas de forma
+        // transitiva (A-B y B-C => A y C también). El stock es compartido, así
+        // que dar entrada en una ubicación del grupo aumenta el stock del
+        // grupo entero; se crea la fila de stock en la vinculada si no existe.
+        // SALIDAS ('-'): solo descuentan donde el producto ya tiene fila de
+        // stock (aunque sea 0), para no inventar filas en ubicaciones que
+        // nunca tuvieron el producto ni registrar 'faltantes' en vano.
+        $existing = array();
+        if ( '-' === $op ) {
+            $ph = implode( ',', array_fill( 0, count( $linked ), '%d' ) );
+            $existing = array_flip( array_map( 'intval', $wpdb->get_col( $wpdb->prepare(
+                "SELECT location_id FROM " . self::table( 'stock' ) . " WHERE product_id=%d AND location_id IN ({$ph})",
+                $product_id, ...$linked
+            ) ) ) );
+        }
         foreach ( $linked as $lid ) {
-            if ( ! isset( $existing[ $lid ] ) ) {
+            if ( '-' === $op && ! isset( $existing[ $lid ] ) ) {
                 continue;
             }
             if ( '+' === $op ) {
