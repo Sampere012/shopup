@@ -96,16 +96,12 @@ jobs:
             echo "MEOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Deploy wp-content a InfinityFree
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
-        with:
-          server: ${{ secrets.FTP_HOST }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          port: 21
-          local-dir: ./wp-content/
-          server-dir: ${{ secrets.FTP_REMOTE_DIR }}/wp-content/
-          dangerous-clean-slate: false
+      - name: Deploy wp-content a InfinityFree (curl FTP, sincronizacion completa)
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USERNAME }}
+          FTP_PASS: ${{ secrets.FTP_PASSWORD }}
+        run: bash .github/scripts/ftp-deploy-wp-content.sh
 
       - name: Deploy archivos raiz (sw.js, manifest, .htaccess, errors)
         env:
@@ -145,17 +141,13 @@ jobs:
           git checkout "$PREV" -- wp-content sw.prod.js manifest.json htaccess.prod errors
           echo "Version restaurada: $(git log -1 --format='%h %s' "$PREV")"
 
-      - name: Rollback wp-content (version anterior)
+      - name: Rollback wp-content (version anterior, curl FTP)
         if: steps.health.outcome == 'failure'
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
-        with:
-          server: ${{ secrets.FTP_HOST }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          port: 21
-          local-dir: ./wp-content/
-          server-dir: ${{ secrets.FTP_REMOTE_DIR }}/wp-content/
-          dangerous-clean-slate: false
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USERNAME }}
+          FTP_PASS: ${{ secrets.FTP_PASSWORD }}
+        run: bash .github/scripts/ftp-deploy-wp-content.sh
 
       - name: Rollback archivos raiz (version anterior)
         if: steps.health.outcome == 'failure'

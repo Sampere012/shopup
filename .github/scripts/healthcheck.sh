@@ -40,6 +40,25 @@ for check in "${checks[@]}"; do
   fi
 done
 
+# Verificación de contenido: el theme.js servido debe ser byte a byte el del
+# checkout. Detecta deploys que reportan éxito pero dejan código viejo (el bug
+# de SamKirkland) sin esperar a que el navegador recargue.
+THEME_PATH="wp-content/themes/workshop/assets/js/theme.js"
+if [ -f "$THEME_PATH" ]; then
+  THEME_URL="${BASE_URL}/wp-content/themes/workshop/assets/js/theme.js"
+  local_md5="$(md5sum < "$THEME_PATH" | cut -d' ' -f1)"
+  remote_md5="$(curl -sS --max-time 60 -A "$UA" "$THEME_URL" 2>/dev/null | md5sum | cut -d' ' -f1)"
+  echo "  health: theme.js md5 local=$local_md5 remoto=$remote_md5"
+  if [ "$local_md5" != "$remote_md5" ]; then
+    echo "::error::Contenido stale: theme.js no coincide con el commit ($local_md5 != $remote_md5)"
+    failed="${failed} ${THEME_URL} (contenido stale)"
+  else
+    echo "  health: theme.js contenido OK"
+  fi
+else
+  echo "  health: theme.js local no presente, se omite verificación de contenido"
+fi
+
 if [ -n "$failed" ]; then
   echo "::error::Health check falló para:$failed"
   echo "HEALTH_FAILED=$failed" >> "${GITHUB_ENV:-/dev/null}"
