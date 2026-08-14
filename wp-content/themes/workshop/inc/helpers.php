@@ -478,3 +478,40 @@ function ws_locations_select( $name, $selected = 0, $attr = '' ) {
     printf( '<select name="%s" %s><option value="">%s</option>%s</select>',
         esc_attr( $name ), $attr, esc_html__( '— Seleccionar —', 'workshop' ), $options );
 }
+
+/**
+ * Visibilidad EFECTIVA en la tienda pública de una ubicación.
+ *
+ * Un producto/combo puede mostrarse en la tienda de un PV y ocultarse en la
+ * de otro: los overrides viven en ws_store_visibility (entidad + ubicación).
+ * Sin override manda el flag global (products/combos.store_visible).
+ *
+ * @param string $kind        'product' | 'combo'.
+ * @param int    $id          ID del producto o combo.
+ * @param int    $location_id Ubicación (PV/almacén).
+ * @return bool
+ */
+function ws_store_visible( $kind, $id, $location_id ) {
+    global $wpdb;
+    $kind        = ( 'combo' === $kind ) ? 'combo' : 'product';
+    $id          = (int) $id;
+    $location_id = (int) $location_id;
+    if ( ! $id || ! $location_id ) {
+        return true;
+    }
+    $sv = ws_table_name( 'store_visibility' );
+    if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $sv ) ) !== $sv ) {
+        // Tabla aún sin migrar: comportamiento previo (solo flag global).
+        return true;
+    }
+    $override = $wpdb->get_var( $wpdb->prepare(
+        "SELECT visible FROM {$sv} WHERE entity_type=%s AND entity_id=%d AND location_id=%d",
+        $kind, $id, $location_id
+    ) );
+    if ( null !== $override ) {
+        return (bool) $override;
+    }
+    $main = ( 'combo' === $kind ) ? ws_table_name( 'combos' ) : ws_table_name( 'products' );
+    $g    = (int) $wpdb->get_var( $wpdb->prepare( "SELECT store_visible FROM {$main} WHERE id=%d", $id ) );
+    return 1 === $g;
+}

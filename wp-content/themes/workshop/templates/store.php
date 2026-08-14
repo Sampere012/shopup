@@ -17,7 +17,10 @@ $products = WS_Stock::stock_rows( array( 'location_id' => $location->id, 'store_
 // muestra el combo y sus productos salen sueltos como productos normales.
 $combos = array_values( array_filter(
     WS_Combos::catalog_rows( $location->id ),
-    fn( $c ) => ! empty( $c['store_visible'] ) && (float) $c['qty'] > 0
+    // Visible en ESTA tienda (global + override por ubicación) y con stock.
+    fn( $c ) => ! empty( $c['store_visible'] )
+        && ws_store_visible( 'combo', (int) $c['combo_id'], $location->id )
+        && (float) $c['qty'] > 0
 ) );
 // Los productos que componen un combo visible CON STOCK no salen sueltos en
 // esta tienda: se agrupan dentro del card del combo (el combo es un producto
@@ -117,7 +120,6 @@ get_header();
     <header class="ws-store-head<?php echo $ws_store_has_bg ? ' ws-has-bg' : ''; ?>" style="<?php echo esc_attr( $ws_store_hero_bg ); ?>">
         <div class="ws-container ws-store-head-inner">
             <div>
-                <a class="ws-store-back" href="<?php echo esc_url( ws_business_home() ); ?>"><i class="fa-solid fa-arrow-left"></i></a>
                 <h1><?php echo esc_html( $location->name ); ?></h1>
                 <?php if ( ! empty( $location->description ) ) : ?>
                     <p class="ws-store-desc"><?php echo esc_html( $location->description ); ?></p>

@@ -824,11 +824,6 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-store-head p { margin: 0; opacity: .85; }
 .ws-store-head .ws-store-desc { margin: 0 0 6px; font-size: .95em; }
 .ws-store-head-inner { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.ws-store-back {
-    display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 11px;
-    background: rgba(255, 255, 255, .14); color: #fff; font-size: 1.05rem; margin-right: 14px; transition: background .15s;
-}
-.ws-store-back:hover { background: rgba(255, 255, 255, .26); color: #fff; }
 .ws-store-head-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
 .ws-store-meta { display: inline-flex; align-items: center; gap: 8px; background: rgba(255, 255, 255, .12); border: 1px solid rgba(255, 255, 255, .16); padding: 6px 14px; border-radius: 999px; font-size: .82em; font-weight: 500; }
 .ws-store-meta i { color: #a5b4fc; }

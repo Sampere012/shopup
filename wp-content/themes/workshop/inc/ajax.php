@@ -675,22 +675,37 @@ function ws_ajax_stock_transfer() {
 add_action( 'wp_ajax_ws_store_toggle', 'ws_ajax_store_toggle' );
 function ws_ajax_store_toggle() {
     ws_guard( 'products_edit' );
-    $kind    = sanitize_key( $_POST['kind'] ?? '' );
-    $id      = (int) ( $_POST['id'] ?? 0 );
-    $visible = ! empty( $_POST['visible'] );
-    if ( ! in_array( $kind, array( 'product', 'combo' ), true ) || ! $id ) {
+    $kind        = sanitize_key( $_POST['kind'] ?? '' );
+    $id          = (int) ( $_POST['id'] ?? 0 );
+    $location_id = (int) ( $_POST['location_id'] ?? 0 );
+    $visible     = ! empty( $_POST['visible'] );
+    if ( ! in_array( $kind, array( 'product', 'combo' ), true ) || ! $id || ! $location_id ) {
         wp_send_json_error( array( 'msg' => __( 'Datos inválidos.', 'workshop' ) ) );
     }
     global $wpdb;
-    // El ítem sigue en el inventario; solo cambia si se muestra en la tienda.
-    $table = ( 'combo' === $kind ) ? ws_table_name( 'combos' ) : ws_table_name( 'products' );
-    // false = error real (p. ej. columna store_visible ausente); 0 = sin
-    // cambios (el valor ya era el pedido), que NO es un error.
-    $updated = $wpdb->update( $table, array( 'store_visible' => $visible ? 1 : 0 ), array( 'id' => $id ) );
-    if ( false === $updated ) {
-        wp_send_json_error( array( 'msg' => __( 'No se pudo guardar la visibilidad en la tienda (¿falta la columna store_visible?). Recarga la página para migrar la base de datos.', 'workshop' ) ) );
+    // La visibilidad en la tienda es POR UBICACIÓN (cada PV tiene su tienda):
+    // se guarda un override en ws_store_visibility para (entidad, ubicación)
+    // sin tocar el flag global. Mostrar/ocultar en un PV no afecta a los otros.
+    $table = ws_table_name( 'store_visibility' );
+    $exists = (int) $wpdb->get_var( $wpdb->prepare(
+        "SELECT id FROM {$table} WHERE entity_type=%s AND entity_id=%d AND location_id=%d",
+        $kind, $id, $location_id
+    ) );
+    if ( $exists ) {
+        $res = $wpdb->update( $table, array( 'visible' => $visible ? 1 : 0 ), array( 'id' => $exists ) );
+    } else {
+        $res = $wpdb->insert( $table, array(
+            'entity_type' => $kind,
+            'entity_id'   => $id,
+            'location_id' => $location_id,
+            'visible'     => $visible ? 1 : 0,
+        ) );
     }
-    ws_log_audit( 'store_visibility', $kind, $id, array( 'store_visible' => $visible ) );
+    // false = error real; 0 = sin cambios (el valor ya era el pedido), NO error.
+    if ( false === $res ) {
+        wp_send_json_error( array( 'msg' => __( 'No se pudo guardar la visibilidad en la tienda (¿falta la tabla store_visibility?). Recarga la página para migrar la base de datos.', 'workshop' ) ) );
+    }
+    ws_log_audit( 'store_visibility', $kind, $id, array( 'location_id' => $location_id, 'store_visible' => $visible ) );
     wp_send_json_success( array( 'store_visible' => $visible ) );
 }
 
@@ -1046,6 +1061,40 @@ function ws_stock_rows_map( $rows, $group = array() ) {
     return $out;
 }
 
+/**
+ * Aplica los overrides de visibilidad POR UBICACIÓN a filas ya mapeadas por
+ * ws_stock_rows_map (cada fila tiene product_id + location_id). Consulta en
+ * lote la tabla ws_store_visibility y reescribe store_visible en las filas
+ * que tengan override (las demás conservan el flag global).
+ */
+function ws_apply_store_visibility_overrides( &$rows ) {
+    global $wpdb;
+    if ( empty( $rows ) ) {
+        return;
+    }
+    $sv_t    = ws_table_name( 'store_visibility' );
+    $sv_ids  = array_values( array_unique( array_map( fn( $r ) => (int) $r['product_id'], $rows ) ) );
+    $sv_locs = array_values( array_unique( array_map( fn( $r ) => (int) $r['location_id'], $rows ) ) );
+    $sv_map  = array();
+    if ( $sv_ids && $sv_locs && $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $sv_t ) ) === $sv_t ) {
+        $id_ph   = implode( ',', array_fill( 0, count( $sv_ids ), '%d' ) );
+        $loc_ph  = implode( ',', array_fill( 0, count( $sv_locs ), '%d' ) );
+        $sv_rows = $wpdb->get_results( $wpdb->prepare(
+            "SELECT entity_id, location_id, visible FROM {$sv_t} WHERE entity_type='product' AND entity_id IN ({$id_ph}) AND location_id IN ({$loc_ph})",
+            ...array_merge( $sv_ids, $sv_locs )
+        ) );
+        foreach ( $sv_rows as $svr ) {
+            $sv_map[ (int) $svr->entity_id . ':' . (int) $svr->location_id ] = (int) $svr->visible;
+        }
+    }
+    foreach ( $rows as $i => $row ) {
+        $key = (int) $row['product_id'] . ':' . (int) $row['location_id'];
+        if ( array_key_exists( $key, $sv_map ) ) {
+            $rows[ $i ]['store_visible'] = $sv_map[ $key ] ? 1 : 0;
+        }
+    }
+}
+
 add_action( 'wp_ajax_ws_stock_list', 'ws_ajax_stock_list' );
 function ws_ajax_stock_list() {
     ws_guard( 'stock_view' );
@@ -1082,8 +1131,10 @@ function ws_ajax_stock_list() {
         $total_pages = max( 1, (int) ceil( $total / $pg['pageSize'] ) );
         $page        = min( $pg['page'], $total_pages );
         $slice       = array_slice( $rows, ( $page - 1 ) * $pg['pageSize'], $pg['pageSize'] );
+        $rows_mapped = ws_stock_rows_map( $slice, $group );
+        ws_apply_store_visibility_overrides( $rows_mapped );
         wp_send_json_success( array(
-            'rows'     => ws_stock_rows_map( $slice, $group ),
+            'rows'     => $rows_mapped,
             'total'    => $total,
             'page'     => $page,
             'pageSize' => $pg['pageSize'],
@@ -1157,6 +1208,10 @@ function ws_ajax_stock_list() {
     $page        = min( $pg['page'], $total_pages );
     $slice       = array_slice( $out, ( $page - 1 ) * $pg['pageSize'], $pg['pageSize'] );
 
+    // Visibilidad EFECTIVA POR UBICACIÓN en las filas de esta página (los
+    // overrides de ws_store_visibility mandan sobre el flag global).
+    ws_apply_store_visibility_overrides( $slice );
+
     // Combos: un card por combo con su stock DERIVADO en cada ubicación del
     // filtro (locs) y sus componentes (items), para mostrarlo como producto
     // que contiene varios productos. Sin paginar: se agrupan por combo_id.
@@ -1198,6 +1253,7 @@ function ws_ajax_stock_list() {
                 'location_id'   => (int) $lid,
                 'location_name' => $loc_names[ (int) $lid ] ?? '',
                 'qty'           => (float) $c['qty'],
+                'store_visible' => ws_store_visible( 'combo', $cid, $lid ) ? 1 : 0,
             );
         }
     }

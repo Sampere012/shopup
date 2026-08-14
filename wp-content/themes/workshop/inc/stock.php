@@ -994,7 +994,14 @@ class WS_Stock {
             $where[] = 's.qty <= p.min_stock';
         }
         if ( isset( $args['store_visible'] ) ) {
-            $where[] = $wpdb->prepare( 'p.store_visible = %d', (int) $args['store_visible'] );
+            // La visibilidad en la tienda es POR UBICACIÓN: manda el override
+            // de ws_store_visibility (entidad + ubicación) sobre el global.
+            if ( (int) $args['store_visible'] ) {
+                $where[] = 'p.store_visible = 1';
+                $where[] = 'NOT EXISTS (SELECT 1 FROM ' . self::table( 'store_visibility' ) . " sv WHERE sv.entity_type='product' AND sv.entity_id=p.id AND sv.location_id=s.location_id AND sv.visible=0)";
+            } else {
+                $where[] = '(p.store_visible = 0 OR EXISTS (SELECT 1 FROM ' . self::table( 'store_visibility' ) . " sv WHERE sv.entity_type='product' AND sv.entity_id=p.id AND sv.location_id=s.location_id AND sv.visible=0))";
+            }
         }
         return $where;
     }

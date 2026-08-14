@@ -92,6 +92,22 @@ function ws_db_tables() {
             KEY product_id (product_id)
         ) {charset};",
 
+        // Visibilidad en la tienda POR UBICACIÓN: un producto/combo puede
+        // mostrarse en la tienda de un PV y ocultarse en la de otro. Cada fila
+        // es un override (entidad + ubicación); sin fila manda el flag global
+        // (products/combos.store_visible).
+        'store_visibility' => "CREATE TABLE {prefix}ws_store_visibility (
+            id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            entity_type VARCHAR(10) NOT NULL,
+            entity_id BIGINT(20) UNSIGNED NOT NULL,
+            location_id BIGINT(20) UNSIGNED NOT NULL,
+            visible TINYINT(1) NOT NULL DEFAULT 1,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY entity_location (entity_type, entity_id, location_id),
+            KEY location_id (location_id)
+        ) {charset};",
+
         'suppliers' => "CREATE TABLE {prefix}ws_suppliers (
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
             name VARCHAR(255) NOT NULL,
@@ -1129,6 +1145,57 @@ function ws_db_migrate() {
                 $wpdb->query( "ALTER TABLE {$pt2} ADD COLUMN category_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0 AFTER category" );
                 $wpdb->query( "ALTER TABLE {$pt2} ADD KEY category_id (category_id)" );
             }
+        }
+    }
+
+    // Visibilidad en la tienda POR UBICACIÓN: tabla de overrides
+    // (entidad + ubicación). Se crea en la tabla por defecto y en la de cada
+    // negocio con slug, y se SIEMBRA una sola vez desde el flag global: lo que
+    // estaba oculto globalmente (store_visible=0) queda oculto en todas las
+    // tiendas; lo demás queda visible (sin fila = usa el global).
+    require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+    $ws_sv_suffixes = array( '' );
+    if ( class_exists( 'WS_Business' ) && $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', WS_Business::table() ) ) === WS_Business::table() ) {
+        foreach ( WS_Business::all() as $ws_sv_biz ) {
+            $sv_slug = (string) ( $ws_sv_biz->slug ?? '' );
+            if ( '' !== $sv_slug ) {
+                $ws_sv_suffixes[] = ws_biz_table_suffix( $sv_slug );
+            }
+        }
+    }
+    foreach ( $ws_sv_suffixes as $ws_sv_suffix ) {
+        $sv_t = ws_table_for( $ws_sv_suffix, 'store_visibility' );
+        if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $sv_t ) ) !== $sv_t ) {
+            $sv_prefix = '' !== $ws_sv_suffix
+                ? $wpdb->prefix . WS_TABLE_PREFIX . $ws_sv_suffix . '_'
+                : $wpdb->prefix;
+            $sv_sql = ws_db_tables()['store_visibility'];
+            $sv_sql = str_replace( '{prefix}', $sv_prefix, $sv_sql );
+            $sv_sql = str_replace( '{charset}', $wpdb->get_charset_collate(), $sv_sql );
+            dbDelta( $sv_sql );
+        }
+        // Seed solo cuando la tabla está vacía (una vez).
+        if ( (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$sv_t}" ) > 0 ) {
+            continue;
+        }
+        $prod_sv = ws_table_for( $ws_sv_suffix, 'products' );
+        $loc_sv  = ws_table_for( $ws_sv_suffix, 'locations' );
+        $comb_sv = ws_table_for( $ws_sv_suffix, 'combos' );
+        if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $prod_sv ) ) === $prod_sv
+            && $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $loc_sv ) ) === $loc_sv ) {
+            $wpdb->query(
+                "INSERT IGNORE INTO {$sv_t} (entity_type, entity_id, location_id, visible, created_at)
+                 SELECT 'product', p.id, l.id, 0, NOW()
+                 FROM {$prod_sv} p CROSS JOIN {$loc_sv} l WHERE p.store_visible = 0"
+            );
+        }
+        if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $comb_sv ) ) === $comb_sv
+            && $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $loc_sv ) ) === $loc_sv ) {
+            $wpdb->query(
+                "INSERT IGNORE INTO {$sv_t} (entity_type, entity_id, location_id, visible, created_at)
+                 SELECT 'combo', c.id, l.id, 0, NOW()
+                 FROM {$comb_sv} c CROSS JOIN {$loc_sv} l WHERE c.store_visible = 0"
+            );
         }
     }
 }

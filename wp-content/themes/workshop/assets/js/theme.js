@@ -1702,11 +1702,12 @@
             setStockTab(t) { this.stockTab = t; },
             setStockSub(t) { this.stockSub = t; },
             // Combos como FILAS de tabla (una por combo y ubicación), igual que
-            // los productos: stock derivado en cada ubicación + acciones.
+            // los productos: stock derivado en cada ubicación + acciones. La
+            // visibilidad en la tienda es POR UBICACIÓN (l.store_visible).
             get comboRows() {
                 const rows = [];
                 (this.combos || []).forEach(c => {
-                    const locs = (c.locs && c.locs.length) ? c.locs : [{ location_id: 0, location_name: '—', qty: 0 }];
+                    const locs = (c.locs && c.locs.length) ? c.locs : [{ location_id: 0, location_name: '—', qty: 0, store_visible: 1 }];
                     locs.forEach(l => {
                         rows.push({
                             product_id: c.product_id,
@@ -1715,7 +1716,7 @@
                             image: c.image,
                             barcode: '',
                             is_combo: 1,
-                            store_visible: c.store_visible,
+                            store_visible: l.store_visible !== undefined ? l.store_visible : c.store_visible,
                             sale_price: c.sale_price,
                             currency: c.currency,
                             location_id: l.location_id,
@@ -1731,13 +1732,16 @@
                     .then(r => r.json()).then(r => { if (r.success) { this.rows = r.data.rows; this.combos = r.data.combos || []; this.total = r.data.total; this.page = r.data.page; } });
             },
             get canAnyMove() { return this.canEntry || this.canExit || this.canWriteoff || this.canTransfer || this.canVenta; },
-            // Muestra/oculta un producto o combo de la TIENDA PÚBLICA: sigue en
-            // el inventario con su stock, solo deja de exponerse en la tienda.
+            // Muestra/oculta un producto o combo de la TIENDA PÚBLICA de UNA
+            // ubicación: cada PV tiene su propia tienda, así que el cambio se
+            // guarda por (entidad, ubicación) y no afecta a las otras.
             toggleStoreVisible(kind, item) {
                 if (!this.canManageStore) return;
                 const id = kind === 'combo' ? item.combo_id : item.product_id;
+                const locationId = item.location_id || 0;
+                if (!locationId) { toast('error', 'Selecciona una ubicación para mostrar/ocultar en la tienda'); return; }
                 const target = !item.store_visible;
-                $('ws_store_toggle', { kind: kind, id: id, visible: target ? 1 : 0 }).then(res => {
+                $('ws_store_toggle', { kind: kind, id: id, location_id: locationId, visible: target ? 1 : 0 }).then(res => {
                     if (res.success) {
                         item.store_visible = target ? 1 : 0;
                         toast('success', target ? 'Visible en la tienda' : 'Oculto de la tienda');
