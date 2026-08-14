@@ -588,25 +588,14 @@ class WS_Stock {
             return;
         }
         global $wpdb;
-        // ENTRADAS ('+'): se propagan a TODAS las vinculadas de forma
-        // transitiva (A-B y B-C => A y C también). El stock es compartido, así
-        // que dar entrada en una ubicación del grupo aumenta el stock del
-        // grupo entero; se crea la fila de stock en la vinculada si no existe.
-        // SALIDAS ('-'): solo descuentan donde el producto ya tiene fila de
-        // stock (aunque sea 0), para no inventar filas en ubicaciones que
-        // nunca tuvieron el producto ni registrar 'faltantes' en vano.
-        $existing = array();
-        if ( '-' === $op ) {
-            $ph = implode( ',', array_fill( 0, count( $linked ), '%d' ) );
-            $existing = array_flip( array_map( 'intval', $wpdb->get_col( $wpdb->prepare(
-                "SELECT location_id FROM " . self::table( 'stock' ) . " WHERE product_id=%d AND location_id IN ({$ph})",
-                $product_id, ...$linked
-            ) ) ) );
-        }
+        // El stock compartido propaga TODOS los movimientos a todas las
+        // vinculadas, de forma transitiva (A-B y B-C => A y C también):
+        // - ENTRADAS ('+'): aumentan el stock del grupo entero y crean la fila
+        //   de stock en la vinculada si no existe.
+        // - SALIDAS/ventas/bajas ('-'): descuentan en cada vinculada lo que
+        //   tenga disponible (0 si no hay fila), y el movimiento queda
+        //   registrado en todas con la nota del faltante cuando no alcanza.
         foreach ( $linked as $lid ) {
-            if ( '-' === $op && ! isset( $existing[ $lid ] ) ) {
-                continue;
-            }
             if ( '+' === $op ) {
                 self::_upsert_stock( $product_id, $lid, $qty, '+', null );
                 self::_apply_fraction_links( $product_id, $lid, $qty, '+' );
