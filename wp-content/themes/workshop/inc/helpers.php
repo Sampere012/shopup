@@ -93,17 +93,19 @@ function ws_email_allowed( $email ) {
  * URL del panel principal según rol.
  */
 function ws_dashboard_url() {
-    $role = ws_user_role();
-    if ( ! $role ) {
-        if ( current_user_can( 'manage_options' ) ) {
-            // Esquema de la petición (https si toca): la BD guarda http pero
-            // el sitio se sirve por https, y un admin logueado que pase por
-            // /login/ o wp-admin no debe rebotar http↔https (bucle).
-            return ws_login_scheme_url( admin_url() );
-        }
-        return ws_business_home();
+    // El admin del sistema siempre va a wp-admin, aunque tenga rol de negocio:
+    // no participa en los paneles de negocio.
+    if ( current_user_can( 'manage_options' ) ) {
+        // Esquema de la petición (https si toca): la BD guarda http pero
+        // el sitio se sirve por https, y un admin logueado que pase por
+        // /login/ o wp-admin no debe rebotar http↔https (bucle).
+        return ws_login_scheme_url( admin_url() );
     }
-    return ws_panel_url( $role );
+    $role = ws_user_role();
+    if ( $role ) {
+        return ws_panel_url( $role );
+    }
+    return ws_business_home();
 }
 
 /**

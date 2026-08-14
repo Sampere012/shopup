@@ -51,12 +51,14 @@ function ws_login_redirect( $redirect_to, $requested_redirect_to, $user ) {
     if ( is_wp_error( $user ) || ! $user ) {
         return $redirect_to;
     }
+    // El admin del sistema siempre va a wp-admin, aunque tenga un rol de
+    // negocio asignado: no participa en los paneles de negocio.
+    if ( user_can( $user->ID, 'manage_options' ) ) {
+        return ws_login_scheme_url( admin_url() );
+    }
     $role = ws_user_role( $user->ID );
     if ( $role ) {
         return ws_panel_url( $role );
-    }
-    if ( user_can( $user->ID, 'manage_options' ) ) {
-        return ws_login_scheme_url( admin_url() );
     }
     return $redirect_to;
 }
@@ -149,14 +151,17 @@ function ws_handle_login_post() {
         wp_safe_redirect( $url );
         exit;
     } else {
-        $role = ws_user_role( $user->ID );
         wp_set_current_user( $user->ID );
+        if ( user_can( $user->ID, 'manage_options' ) ) {
+            // El admin del sistema va directo a wp-admin, con el esquema de
+            // la petición (https) para no rebotar a http y buclar. Aunque
+            // tenga rol de negocio, no participa en los paneles.
+            wp_safe_redirect( ws_login_scheme_url( admin_url() ) );
+            exit;
+        }
+        $role = ws_user_role( $user->ID );
         if ( $role ) {
             wp_safe_redirect( ws_panel_url( $role ) );
-        } elseif ( user_can( $user->ID, 'manage_options' ) ) {
-            // El admin del sistema va directo a wp-admin, con el esquema de
-            // la petición (https) para no rebotar a http y buclar.
-            wp_safe_redirect( ws_login_scheme_url( admin_url() ) );
         } else {
             wp_safe_redirect( ws_business_home() );
         }

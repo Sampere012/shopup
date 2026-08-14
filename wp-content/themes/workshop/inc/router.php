@@ -142,6 +142,11 @@ function ws_router() {
             wp_safe_redirect( ws_business_url( get_query_var( 'ws_biz' ) ) . 'login/' );
             exit;
         }
+        // El admin del sistema tampoco entra por las rutas cortas: wp-admin.
+        if ( current_user_can( 'manage_options' ) ) {
+            wp_safe_redirect( ws_login_scheme_url( admin_url() ) );
+            exit;
+        }
         $role = ws_user_role();
         if ( ! $role ) {
             wp_safe_redirect( ws_business_home() );
@@ -337,37 +342,41 @@ function ws_handle_panel( $role ) {
         wp_safe_redirect( ws_business_url( get_query_var( 'ws_biz' ) ) . 'login/' );
         exit;
     }
+    // El admin del sistema NO participa en negocios: se le redirige a su panel
+    // administrativo de WordPress (igual que dueños y trabajadores van al
+    // suyo). No puede entrar a ningún panel de negocio, ni siquiera para
+    // probar: su lugar es wp-admin.
+    if ( current_user_can( 'manage_options' ) ) {
+        wp_safe_redirect( ws_login_scheme_url( admin_url() ) );
+        exit;
+    }
     $user_role = ws_user_role();
-    $is_admin  = current_user_can( 'administrator' );
-    // El administrador del sistema (esamper) puede entrar a cualquier panel.
-    if ( ! $user_role && ! $is_admin ) {
+    if ( ! $user_role ) {
         wp_safe_redirect( ws_business_home() );
         exit;
     }
-    // Solo puedes ver tu propio panel (salvo admin).
+    // Solo puedes ver tu propio panel.
     $allowed = array( 'owner', 'storekeeper', 'seller' );
-    if ( ! in_array( $user_role, $allowed, true ) && ! $is_admin ) {
+    if ( ! in_array( $user_role, $allowed, true ) ) {
         wp_safe_redirect( ws_business_home() );
         exit;
     }
-    if ( $user_role && $user_role !== $role && ! $is_admin ) {
+    if ( $user_role !== $role ) {
         wp_safe_redirect( ws_panel_url( $user_role ) );
         exit;
     }
 
     // Aislamiento por negocio: un trabajador solo accede a su propio negocio.
-    if ( ! $is_admin ) {
-        $user_biz = ws_user_business();
-        $url_biz  = ws_current_business();
-        if ( (int) $user_biz->id !== (int) $url_biz->id ) {
-            wp_safe_redirect( ws_panel_url( $user_role, '', $user_biz ) );
-            exit;
-        }
-        // Los negocios con slug deben usar su URL con prefijo.
-        if ( ! WS_Business::is_default( $user_biz ) && '' === (string) get_query_var( 'ws_biz' ) ) {
-            wp_safe_redirect( ws_panel_url( $user_role, ws_current_page(), $user_biz ) );
-            exit;
-        }
+    $user_biz = ws_user_business();
+    $url_biz  = ws_current_business();
+    if ( (int) $user_biz->id !== (int) $url_biz->id ) {
+        wp_safe_redirect( ws_panel_url( $user_role, '', $user_biz ) );
+        exit;
+    }
+    // Los negocios con slug deben usar su URL con prefijo.
+    if ( ! WS_Business::is_default( $user_biz ) && '' === (string) get_query_var( 'ws_biz' ) ) {
+        wp_safe_redirect( ws_panel_url( $user_role, ws_current_page(), $user_biz ) );
+        exit;
     }
 
     $page = ws_current_page();
@@ -415,9 +424,10 @@ function ws_handle_panel( $role ) {
 
     // Negocio bloqueado (plan vencido o límite superado): nadie (dueño ni
     // trabajadores) entra al panel. Se muestra la pantalla de pausa con el
-    // botón Upgrade (solo el admin del sistema ve el panel con normalidad).
+    // botón Upgrade. (El admin del sistema nunca llega aquí: se redirige a
+    // wp-admin al principio.)
     $biz = ws_current_business();
-    if ( $biz && ! $is_admin && WS_Subscriptions::is_locked( $biz ) ) {
+    if ( $biz && WS_Subscriptions::is_locked( $biz ) ) {
         ws_subscription_notify();
         include WS_PATH . 'templates/business-locked.php';
         exit;
