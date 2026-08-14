@@ -54,8 +54,7 @@ $currencies = ws_currencies();
                         <td x-text="l.currency"></td>
                         <td x-text="money(l.delivery_cost)"></td>
                         <td>
-                            <a x-show="l.type === 'pv'" class="ws-link" :href="storeUrl(l.slug)" target="_blank" rel="noopener"><i class="fa-solid fa-arrow-up-right-from-square"></i></a>
-                            <span x-show="l.type !== 'pv'" class="ws-muted">—</span>
+                            <a class="ws-link" :href="storeUrl(l.slug)" target="_blank" rel="noopener" :title="l.type === 'pv' ? '<?php echo esc_js( __( 'Ver tienda pública (PV)', 'workshop' ) ); ?>' : '<?php echo esc_js( __( 'Ver tienda pública (almacén)', 'workshop' ) ); ?>'"><i class="fa-solid fa-arrow-up-right-from-square"></i></a>
                         </td>
                         <td>
                             <code class="ws-slug-text" x-text="'/' + (l.slug || '')"></code>

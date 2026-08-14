@@ -95,9 +95,7 @@ if ( abs( $sales_today ) >= 1000000 ) {
                         <small><?php echo 'pv' === $loc->type ? esc_html__( 'Punto de venta', 'workshop' ) : esc_html__( 'Almacén', 'workshop' ); ?></small>
                     </div>
                 </div>
-                <?php if ( 'pv' === $loc->type ) : ?>
-                    <a class="ws-link" href="<?php echo esc_url( ws_store_url( $loc ) ); ?>" target="_blank" rel="noopener"><?php esc_html_e( 'Ver tienda pública', 'workshop' ); ?> <i class="fa-solid fa-arrow-up-right-from-square"></i></a>
-                <?php endif; ?>
+                <a class="ws-link" href="<?php echo esc_url( ws_store_url( $loc ) ); ?>" target="_blank" rel="noopener"><?php esc_html_e( 'Ver tienda pública', 'workshop' ); ?> <i class="fa-solid fa-arrow-up-right-from-square"></i></a>
             </div>
         <?php endforeach; ?>
     </div>

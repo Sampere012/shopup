@@ -7,15 +7,26 @@
 
 defined( 'ABSPATH' ) || exit;
 
-$locations = WS_CRUD::get_locations( 'pv' );
+// Tiendas públicas: puntos de venta Y almacenes activos — cada ubicación
+// activa tiene su tienda (como un PV). Primero los PV, luego los almacenes;
+// dentro de cada tipo, por nombre.
+$locations = WS_CRUD::get_locations( '' );
 $locations = array_values( array_filter( $locations, fn( $l ) => (int) $l->active === 1 ) );
+usort( $locations, function ( $a, $b ) {
+    $ta = ( 'pv' === $a->type ) ? 0 : 1;
+    $tb = ( 'pv' === $b->type ) ? 0 : 1;
+    if ( $ta !== $tb ) {
+        return $ta - $tb;
+    }
+    return strcasecmp( (string) $a->name, (string) $b->name );
+} );
 $currency  = ws_currency_symbol();
 $biz       = ws_current_business();
 
 global $wpdb;
 $store_count = count( $locations );
 $prod_count  = (int) $wpdb->get_var( "SELECT COUNT(*) FROM " . ws_table_name( 'products' ) . " WHERE active=1" );
-$loc_all     = (int) $wpdb->get_var( "SELECT COUNT(*) FROM " . ws_table_name( 'locations' ) . " WHERE active=1" );
+$loc_all     = (int) $wpdb->get_var( "SELECT COUNT(*) FROM " . ws_table_name( 'locations' ) );
 
 get_header();
 ?>
@@ -72,13 +83,13 @@ get_header();
         endif;
         ?>
         <div class="ws-store-section-head">
-            <h2><i class="fa-solid fa-store"></i> <?php esc_html_e( 'Puntos de venta', 'workshop' ); ?></h2>
+            <h2><i class="fa-solid fa-store"></i> <?php esc_html_e( 'Tiendas', 'workshop' ); ?></h2>
             <span class="ws-store-section-count"><b><?php echo esc_html( count( $locations ) ); ?></b> <?php esc_html_e( 'tiendas', 'workshop' ); ?></span>
         </div>
 
         <div class="ws-landing-grid">
             <?php if ( empty( $locations ) ) : ?>
-                <p class="ws-empty"><?php esc_html_e( 'Aún no hay puntos de venta disponibles.', 'workshop' ); ?></p>
+                <p class="ws-empty"><?php esc_html_e( 'Aún no hay tiendas disponibles.', 'workshop' ); ?></p>
             <?php endif; ?>
 
             <?php foreach ( $locations as $loc ) : ?>
@@ -86,7 +97,7 @@ get_header();
                     <?php if ( $loc->photo ) : ?>
                         <div class="ws-store-card-img" style="background-image:url('<?php echo esc_url( ws_image_url( $loc->photo ) ); ?>')"></div>
                     <?php else : ?>
-                        <div class="ws-store-card-img ws-store-card-img-empty"><i class="fa-solid fa-store"></i></div>
+                        <div class="ws-store-card-img ws-store-card-img-empty"><i class="fa-solid <?php echo 'pv' === $loc->type ? 'fa-store' : 'fa-warehouse'; ?>"></i></div>
                     <?php endif; ?>
                     <span class="ws-store-card-type"><?php echo esc_html( 'pv' === $loc->type ? __( 'Punto de venta', 'workshop' ) : __( 'Almacén', 'workshop' ) ); ?></span>
                     <div class="ws-store-card-body">

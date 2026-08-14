@@ -144,7 +144,9 @@ class WS_Business {
             $rev_table = ws_table_name( 'reviews', $b );
             $ord_table = ws_table_name( 'orders', $b );
             $products = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$pro_table} WHERE active=1" );
-            $pvs      = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$loc_table} WHERE type='pv' AND active=1" );
+            // Tiendas públicas: puntos de venta y almacenes activos (ambos
+            // tienen tienda pública, como un PV).
+            $pvs      = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$loc_table} WHERE active=1" );
             $reviews  = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$rev_table} WHERE approved=1" );
             $avg_rate = (float) $wpdb->get_var( "SELECT AVG(rating) FROM {$rev_table} WHERE approved=1" );
             // Pedidos válidos (no cancelados ni rechazados) y su facturación.
