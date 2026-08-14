@@ -28,7 +28,6 @@ $store_count = count( $locations );
 // Solo cuenta lo VISIBLE EN LA TIENDA (store_visible=1): lo que está en el
 // inventario pero oculto del catálogo público no cuenta como "producto".
 $prod_count  = (int) $wpdb->get_var( "SELECT COUNT(*) FROM " . ws_table_name( 'products' ) . " WHERE active=1 AND store_visible=1" );
-$loc_all     = (int) $wpdb->get_var( "SELECT COUNT(*) FROM " . ws_table_name( 'locations' ) );
 
 get_header();
 ?>
@@ -45,7 +44,6 @@ get_header();
             <p class="ws-hero-sub"><?php echo esc_html( ws_site_hero( 'hero_sub' ) ); ?></p>
             <div class="ws-hero-stats">
                 <div class="ws-hero-stat"><strong><?php echo esc_html( ws_compact_number( $store_count ) ); ?></strong><span><?php esc_html_e( 'Tiendas activas', 'workshop' ); ?></span></div>
-                <div class="ws-hero-stat"><strong><?php echo esc_html( ws_compact_number( $loc_all ) ); ?></strong><span><?php esc_html_e( 'Sucursales', 'workshop' ); ?></span></div>
                 <div class="ws-hero-stat"><strong><?php echo esc_html( ws_compact_number( $prod_count ) ); ?></strong><span><?php esc_html_e( 'Productos', 'workshop' ); ?></span></div>
             </div>
         </div>
