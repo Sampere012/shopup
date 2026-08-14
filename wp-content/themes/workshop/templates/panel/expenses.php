@@ -158,6 +158,7 @@ $ws_months = array(
                         <td class="ws-muted" x-text="e.date_label"></td>
                         <td class="ws-strong" x-text="money(e.amount)"></td>
                         <td class="ws-actions" x-show="can">
+                            <button class="ws-icon-btn" title="<?php esc_attr_e( 'Duplicar (repetir el gasto el mes siguiente)', 'workshop' ); ?>" @click="duplicate(e)"><i class="fa-solid fa-copy"></i></button>
                             <button class="ws-icon-btn" title="<?php esc_attr_e( 'Editar', 'workshop' ); ?>" @click="edit(e)"><i class="fa-solid fa-pen"></i></button>
                             <button class="ws-icon-btn ws-danger" title="<?php esc_attr_e( 'Eliminar', 'workshop' ); ?>" @click="remove(e)"><i class="fa-solid fa-trash-can"></i></button>
                         </td>

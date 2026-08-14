@@ -2006,6 +2006,28 @@
                     };
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                 },
+                duplicate(e) {
+                    // Carga el gasto como NUEVO con la fecha del mes siguiente
+                    // (mismo día): sirve para registrar gastos recurrentes
+                    // (alquiler, servicios…) sin volver a escribir los datos.
+                    // La persona solo ajusta lo que cambie y pulsa Guardar.
+                    const d = e.date_raw ? new Date(e.date_raw + 'T00:00:00') : new Date();
+                    const next = new Date(d.getFullYear(), d.getMonth() + 1, d.getDate());
+                    const pad = (n) => String(n).padStart(2, '0');
+                    this.editingId = 0;
+                    this.form = {
+                        concept: e.concept || '',
+                        amount: Number(e.amount) || 0,
+                        category: e.category || '',
+                        note: e.note || '',
+                        expense_date: next.getFullYear() + '-' + pad(next.getMonth() + 1) + '-' + pad(next.getDate()),
+                        location_id: e.location_id || 0
+                    };
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                    if (window.Swal) {
+                        Swal.fire({ toast: true, position: 'top-end', icon: 'info', title: 'Gasto duplicado: ajústalo y guarda', showConfirmButton: false, timer: 2200 });
+                    }
+                },
                 api(action, extra, cb) {
                     const body = new URLSearchParams();
                     body.append('action', action);
