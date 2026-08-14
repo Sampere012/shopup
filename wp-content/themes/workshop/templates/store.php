@@ -12,13 +12,17 @@ $location = get_query_var( 'ws_location' );
 // inventario y estar oculto del catálogo público (toggle en Stock).
 $products = WS_Stock::stock_rows( array( 'location_id' => $location->id, 'store_visible' => 1 ) );
 // Combos activos y visibles como ítems del catálogo (stock derivado).
+// SOLO los que esta tienda puede vender: el combo necesita stock de TODOS sus
+// productos en ESTA ubicación (qty derivado > 0). Si no los tiene, no se
+// muestra el combo y sus productos salen sueltos como productos normales.
 $combos = array_values( array_filter(
     WS_Combos::catalog_rows( $location->id ),
-    fn( $c ) => ! empty( $c['store_visible'] )
+    fn( $c ) => ! empty( $c['store_visible'] ) && (float) $c['qty'] > 0
 ) );
-// Los productos que componen un combo ACTIVO no salen sueltos en la tienda:
-// se agrupan dentro del card del combo (el combo es un producto que contiene
-// varios productos). Al deshabilitar el combo, sus productos vuelven al grid.
+// Los productos que componen un combo visible CON STOCK no salen sueltos en
+// esta tienda: se agrupan dentro del card del combo (el combo es un producto
+// que contiene varios productos). En tiendas donde el combo no tiene stock,
+// sus productos sí aparecen sueltos (es el catálogo normal de esa tienda).
 $combo_product_ids = array();
 foreach ( $combos as $c ) {
     foreach ( (array) ( $c['items'] ?? array() ) as $it ) {
