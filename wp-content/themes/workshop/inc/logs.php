@@ -350,20 +350,17 @@ function ws_log_tail( $file, $max_lines = 300 ) {
     return $out;
 }
 
-/** Página de logs. */
-function ws_admin_page_logs() {
-    if ( ! current_user_can( 'manage_options' ) ) { return; }
-    $file    = ws_log_file();
-    $level_f = isset( $_GET['level'] ) ? strtoupper( sanitize_key( $_GET['level'] ) ) : '';
-    $search  = isset( $_GET['s'] ) ? sanitize_text_field( wp_unslash( $_GET['s'] ) ) : '';
-    $day_f   = isset( $_GET['day'] ) ? sanitize_text_field( wp_unslash( $_GET['day'] ) ) : '';
-    if ( $day_f && ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $day_f ) ) {
-        $day_f = '';
-    }
+/**
+ * Lee y filtra los eventos de log según los criterios del visor (nivel, día,
+ * búsqueda). Devuelve array( $entries, $counts ). Reutilizado por la página
+ * y por el filtro AJAX (para no recargar la página al filtrar).
+ */
+function ws_log_query_entries( $level_f, $day_f, $search ) {
+    $file = ws_log_file();
+    $all  = array();
     if ( '' !== $day_f ) {
         // Con filtro de día se leen ambos archivos completos: el día puede
         // estar fuera de la ventana de 400 eventos del log activo.
-        $all = array();
         foreach ( array( $file, $file ? dirname( $file ) . '/app.1.log' : '' ) as $lf ) {
             if ( ! $lf || ! file_exists( $lf ) ) {
                 continue;
@@ -409,11 +406,55 @@ function ws_admin_page_logs() {
             return false !== stripos( (string) ( $e['m'] ?? '' ), $search ) || false !== stripos( (string) ( $e['f'] ?? '' ), $search );
         } ) );
     }
+    return array( $entries, $counts );
+}
+
+/** HTML de las filas de la tabla de logs (reutilizado por página y AJAX). */
+function ws_log_rows_html( $entries ) {
+    $badge = array( 'INFO' => 'blue', 'NOTICE' => 'gray', 'WARNING' => 'orange', 'ERROR' => 'red', 'FATAL' => 'red', 'DEBUG' => 'gray' );
+    if ( empty( $entries ) ) {
+        return '<tr><td colspan="5">Sin eventos. Cuando ocurra algo (avisos, errores, inicios de sesión…) aparecerá aquí.</td></tr>';
+    }
+    $out = '';
+    foreach ( $entries as $e ) {
+        $lvl = (string) ( $e['l'] ?? 'INFO' );
+        $src = ( (string) ( $e['f'] ?? '' ) ? basename( (string) $e['f'] ) : '' ) . ( $e['n'] ? ':' . (int) $e['n'] : '' );
+        $ctx = (array) ( $e['c'] ?? array() );
+        $ctx['user_id'] = (int) ( $e['u'] ?? 0 );
+        $ctx['ip'] = (string) ( $e['ip'] ?? '' );
+        if ( $e['b'] ) { $ctx['business_id'] = (string) $e['b']; }
+        $out .= '<tr class="ws-log-row" data-json="' . esc_attr( wp_json_encode( array( 't' => $e['t'], 'l' => $lvl, 'm' => $e['m'], 'src' => $src, 'ctx' => $ctx ), JSON_UNESCAPED_UNICODE ) ) . '">';
+        $out .= '<td>' . esc_html( (string) $e['t'] ) . '</td>';
+        $out .= '<td><span class="ws-log-badge ws-log-' . esc_attr( $badge[ $lvl ] ?? 'gray' ) . '">' . esc_html( $lvl ) . '</span></td>';
+        $out .= '<td><strong>' . esc_html( (string) $e['m'] ) . '</strong>';
+        if ( $ctx ) {
+            $out .= '<details style="margin-top:4px"><summary style="cursor:pointer;color:#2271b1;font-size:12px">contexto</summary>';
+            $out .= '<pre style="background:#f6f7f7;padding:8px;font-size:11px;overflow:auto;white-space:pre-wrap">' . esc_html( wp_json_encode( $ctx, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE ) ) . '</pre></details>';
+        }
+        $out .= '</td>';
+        $out .= '<td>' . esc_html( $src ) . '</td>';
+        $out .= '<td>' . ( (int) ( $e['u'] ?? 0 ) ? 'user#' . (int) $e['u'] : '—' ) . ( $e['ip'] ? '<br><code>' . esc_html( $e['ip'] ) . '</code>' : '' ) . '</td>';
+        $out .= '</tr>';
+    }
+    return $out;
+}
+
+/** Página de logs. */
+function ws_admin_page_logs() {
+    if ( ! current_user_can( 'manage_options' ) ) { return; }
+    $file    = ws_log_file();
+    $level_f = isset( $_GET['level'] ) ? strtoupper( sanitize_key( $_GET['level'] ) ) : '';
+    $search  = isset( $_GET['s'] ) ? sanitize_text_field( wp_unslash( $_GET['s'] ) ) : '';
+    $day_f   = isset( $_GET['day'] ) ? sanitize_text_field( wp_unslash( $_GET['day'] ) ) : '';
+    if ( $day_f && ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $day_f ) ) {
+        $day_f = '';
+    }
+    list( $entries, $counts ) = ws_log_query_entries( $level_f, $day_f, $search );
     $errors_by_day = ws_log_errors_by_day( 14 );
     $max_err_day   = max( 1, max( array_values( $errors_by_day ) ) );
     $nonce_dl   = wp_create_nonce( 'ws_logs_dl' );
     $nonce_clr  = wp_create_nonce( 'ws_logs_clr' );
-    $badge = array( 'INFO' => 'blue', 'NOTICE' => 'gray', 'WARNING' => 'orange', 'ERROR' => 'red', 'FATAL' => 'red', 'DEBUG' => 'gray' );
+    $nonce_flt  = wp_create_nonce( 'ws_logs_filter' );
     ?>
     <div class="wrap">
         <h1>📋 Logs de la aplicación
@@ -427,8 +468,9 @@ function ws_admin_page_logs() {
             <p style="color:#d63638">No se pudo crear el directorio de logs (permisos de escritura). Revisa los permisos del tema o de wp-content/uploads.</p>
         <?php endif; ?>
 
-        <form method="get" style="margin:12px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <form method="get" id="ws-logs-form" data-ajax="<?php echo esc_attr( admin_url( 'admin-ajax.php' ) ); ?>" style="margin:12px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <input type="hidden" name="page" value="ws-logs">
+            <input type="hidden" name="nonce" value="<?php echo esc_attr( $nonce_flt ); ?>">
             <label style="display:flex;align-items:center;gap:6px">Día:
                 <input type="date" name="day" value="<?php echo esc_attr( $day_f ); ?>">
             </label>
@@ -477,33 +519,8 @@ function ws_admin_page_logs() {
             <thead>
                 <tr><th style="width:150px">Fecha</th><th style="width:80px">Nivel</th><th>Mensaje</th><th style="width:180px">Origen</th><th style="width:120px">Usuario/IP</th></tr>
             </thead>
-            <tbody>
-            <?php if ( empty( $entries ) ) : ?>
-                <tr><td colspan="5">Sin eventos. Cuando ocurra algo (avisos, errores, inicios de sesión…) aparecerá aquí.</td></tr>
-            <?php endif; ?>
-            <?php foreach ( $entries as $e ) : ?>
-                <?php
-                $lvl = (string) ( $e['l'] ?? 'INFO' );
-                $src = ( (string) ( $e['f'] ?? '' ) ? basename( (string) $e['f'] ) : '' ) . ( $e['n'] ? ':' . (int) $e['n'] : '' );
-                $ctx = (array) ( $e['c'] ?? array() );
-                $ctx['user_id'] = (int) ( $e['u'] ?? 0 );
-                $ctx['ip'] = (string) ( $e['ip'] ?? '' );
-                if ( $e['b'] ) { $ctx['business_id'] = (string) $e['b']; }
-                ?>
-                <tr class="ws-log-row" data-json="<?php echo esc_attr( wp_json_encode( array( 't' => $e['t'], 'l' => $lvl, 'm' => $e['m'], 'src' => $src, 'ctx' => $ctx ), JSON_UNESCAPED_UNICODE ) ); ?>">
-                    <td><?php echo esc_html( (string) $e['t'] ); ?></td>
-                    <td><span class="ws-log-badge ws-log-<?php echo esc_attr( $badge[ $lvl ] ?? 'gray' ); ?>"><?php echo esc_html( $lvl ); ?></span></td>
-                    <td><strong><?php echo esc_html( (string) $e['m'] ); ?></strong>
-                        <?php if ( $ctx ) : ?>
-                            <details style="margin-top:4px"><summary style="cursor:pointer;color:#2271b1;font-size:12px">contexto</summary>
-                                <pre style="background:#f6f7f7;padding:8px;font-size:11px;overflow:auto;white-space:pre-wrap"><?php echo esc_html( wp_json_encode( $ctx, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE ) ); ?></pre>
-                            </details>
-                        <?php endif; ?>
-                    </td>
-                    <td><?php echo esc_html( $src ); ?></td>
-                    <td><?php echo (int) ( $e['u'] ?? 0 ) ? 'user#' . (int) $e['u'] : '—'; ?> <?php echo $e['ip'] ? '<br><code>' . esc_html( $e['ip'] ) . '</code>' : ''; ?></td>
-                </tr>
-            <?php endforeach; ?>
+            <tbody id="ws-logs-tbody">
+            <?php echo ws_log_rows_html( $entries ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
             </tbody>
         </table>
     </div>
@@ -523,6 +540,41 @@ function ws_admin_page_logs() {
     </style>
     <script>
     (function () {
+        var form = document.getElementById('ws-logs-form');
+        if (form) {
+            form.addEventListener('submit', function (e) {
+                e.preventDefault();
+                var url = form.getAttribute('data-ajax');
+                var body = new URLSearchParams();
+                body.append('action', 'ws_logs_filter');
+                body.append('nonce', (form.querySelector('input[name="nonce"]') || {}).value || '');
+                body.append('level', form.elements['level'] ? form.elements['level'].value : '');
+                body.append('s', form.elements['s'] ? form.elements['s'].value : '');
+                body.append('day', form.elements['day'] ? form.elements['day'].value : '');
+                fetch(url, { method: 'POST', credentials: 'same-origin', body: body, headers: { 'Content-Type': 'application/x-www-form-urlencoded' } })
+                    .then(function (r) { return r.json(); })
+                    .then(function (res) {
+                        if (!res || !res.success) { throw new Error('Filtro no autorizado.'); }
+                        document.getElementById('ws-logs-tbody').innerHTML = res.data.rows;
+                        var sel = form.elements['level'];
+                        if (sel && res.data.counts) {
+                            for (var i = 0; i < sel.options.length; i++) {
+                                var lv = sel.options[i].value;
+                                if (lv && Object.prototype.hasOwnProperty.call(res.data.counts, lv)) {
+                                    sel.options[i].text = lv + ' (' + res.data.counts[lv] + ')';
+                                }
+                            }
+                        }
+                        var qs = new URLSearchParams();
+                        qs.append('page', 'ws-logs');
+                        if (body.get('day')) { qs.append('day', body.get('day')); }
+                        if (body.get('level')) { qs.append('level', body.get('level')); }
+                        if (body.get('s')) { qs.append('s', body.get('s')); }
+                        history.replaceState(null, '', window.location.pathname + '?' + qs.toString());
+                    })
+                    .catch(function () { form.submit(); });
+            });
+        }
         var btn = document.getElementById('ws-logs-copy');
         if (!btn) { return; }
         btn.addEventListener('click', function () {
@@ -539,6 +591,25 @@ function ws_admin_page_logs() {
     })();
     </script>
     <?php
+}
+
+/** Filtrado AJAX del visor de logs (evita recargar y perder los filtros). */
+add_action( 'wp_ajax_ws_logs_filter', 'ws_ajax_logs_filter' );
+function ws_ajax_logs_filter() {
+    if ( ! current_user_can( 'manage_options' ) || ! check_ajax_referer( 'ws_logs_filter', false, false ) ) {
+        wp_send_json_error( array( 'msg' => 'No autorizado.' ) );
+    }
+    $level_f = isset( $_POST['level'] ) ? strtoupper( sanitize_key( $_POST['level'] ) ) : '';
+    $search  = isset( $_POST['s'] ) ? sanitize_text_field( wp_unslash( $_POST['s'] ) ) : '';
+    $day_f   = isset( $_POST['day'] ) ? sanitize_text_field( wp_unslash( $_POST['day'] ) ) : '';
+    if ( $day_f && ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $day_f ) ) {
+        $day_f = '';
+    }
+    list( $entries, $counts ) = ws_log_query_entries( $level_f, $day_f, $search );
+    wp_send_json_success( array(
+        'rows'   => ws_log_rows_html( $entries ),
+        'counts' => $counts,
+    ) );
 }
 
 /** Descarga del archivo de logs (solo admin). */
