@@ -354,7 +354,7 @@ function ws_log_tail( $file, $max_lines = 300 ) {
 function ws_admin_page_logs() {
     if ( ! current_user_can( 'manage_options' ) ) { return; }
     $file    = ws_log_file();
-    $level_f = isset( $_GET['level'] ) ? sanitize_key( $_GET['level'] ) : '';
+    $level_f = isset( $_GET['level'] ) ? strtoupper( sanitize_key( $_GET['level'] ) ) : '';
     $search  = isset( $_GET['s'] ) ? sanitize_text_field( wp_unslash( $_GET['s'] ) ) : '';
     $day_f   = isset( $_GET['day'] ) ? sanitize_text_field( wp_unslash( $_GET['day'] ) ) : '';
     if ( $day_f && ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $day_f ) ) {
