@@ -122,7 +122,7 @@ $currencies = ws_currencies();
                 </g>
             </svg>
 
-            <template x-for="l in locations" :key="l.id">
+            <template x-for="l in canvasLocations" :key="l.id">
                 <div class="ws-link-node" :class="nodeClass(l.id)" :data-node-id="l.id" :style="nodeStyle(l.id)" @pointerdown.stop="startMove(l.id, $event)">
                     <div class="ws-link-node-icon" :class="l.type === 'pv' ? 'is-pv' : 'is-wh'">
                         <i class="fa-solid" :class="l.type === 'pv' ? 'fa-store' : 'fa-warehouse'"></i>
@@ -136,7 +136,7 @@ $currencies = ws_currencies();
                 </div>
             </template>
 
-            <p class="ws-empty" x-show="!locations.length"><?php esc_html_e( 'Crea ubicaciones para poder conectarlas.', 'workshop' ); ?></p>
+            <p class="ws-empty" x-show="!canvasLocations.length"><?php esc_html_e( 'Crea ubicaciones para poder conectarlas.', 'workshop' ); ?></p>
         </div>
     </div>
     <?php endif; ?>

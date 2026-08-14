@@ -13,6 +13,8 @@ $can_exit     = ws_can( 'stock_exit' );
 $can_writeoff = ws_can( 'stock_writeoff' );
 $can_transfer = ws_can( 'stock_transfer' );
 $can_venta    = ws_can( 'pos_sell' ) || $can_exit;
+// Acceso rápido al lienzo de conexiones (stock compartido) desde Stock.
+$can_manage_links = ws_can( 'locations_manage' );
 $currency     = ws_currency_symbol();
 $sellers      = array();
 if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
@@ -32,6 +34,7 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
     'canWriteoff'  => $can_writeoff,
     'canTransfer'  => $can_transfer,
     'canVenta'     => $can_venta,
+    'canManageLinks' => $can_manage_links,
     'sellers'      => $sellers,
 ) ) ); ?>)">
 
@@ -48,6 +51,9 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                 </select>
                 <label class="ws-check"><input type="checkbox" x-model="lowOnly" @change="onFilter()"><span><?php esc_html_e( 'Solo stock bajo', 'workshop' ); ?></span></label>                                <button class="ws-btn ws-btn-secondary" @click="openCount()" title="<?php esc_attr_e( 'Compara el stock físico (lo que cuentas) con el virtual (lo que dice la app)', 'workshop' ); ?>"><i class="fa-solid fa-list-check"></i> <?php esc_html_e( 'Cuadre de inventario', 'workshop' ); ?></button>
                                 <button class="ws-btn ws-btn-icon-only ws-btn-secondary" @click="openCountsHistory()" title="<?php esc_attr_e( 'Historial de cuadres', 'workshop' ); ?>"><i class="fa-solid fa-clock-rotate-left"></i></button>
+                <template x-if="canManageLinks">
+                    <button class="ws-btn ws-btn-secondary" @click="openLinks()" title="<?php esc_attr_e( 'Conecta ubicaciones para compartir stock: al vender en una, se rebaja en todas las conectadas', 'workshop' ); ?>"><i class="fa-solid fa-share-nodes"></i> <?php esc_html_e( 'Conectar ubicaciones', 'workshop' ); ?></button>
+                </template>
                 <template x-if="canAnyMove">
                     <button class="ws-btn ws-btn-primary" @click="openWizard"><i class="fa-solid fa-plus"></i> <?php esc_html_e( 'Nuevo movimiento', 'workshop' ); ?></button>
                 </template>
@@ -471,6 +477,62 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                 <div class="ws-modal-foot">
                     <button type="button" class="ws-btn ws-btn-secondary" @click="wizBack"><i class="fa-solid fa-arrow-left"></i> <?php esc_html_e( 'Atrás', 'workshop' ); ?></button>
                     <button type="button" class="ws-btn ws-btn-primary" @click="wizSubmit"><i class="fa-solid fa-check"></i> <?php esc_html_e( 'Confirmar', 'workshop' ); ?></button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Conectar ubicaciones (acceso rápido desde Stock) -->
+    <div class="ws-modal" x-show="linkOpen" x-cloak @keydown.escape.window="closeLinks()">
+        <div class="ws-modal-backdrop" @click="closeLinks()"></div>
+        <div class="ws-modal-box ws-modal-wide ws-modal-lg">
+            <div class="ws-modal-head">
+                <h3><i class="fa-solid fa-share-nodes"></i> <?php esc_html_e( 'Conectar ubicaciones · stock compartido', 'workshop' ); ?></h3>
+                <button class="ws-cart-close" @click="closeLinks()"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="ws-modal-body">
+                <p class="ws-muted" style="margin-top:0"><?php esc_html_e( 'Arrastra desde el asa «conectar» de una ubicación hasta otra para vincularlas: al vender en una, el stock se rebaja en todas las conectadas (por transitividad). Haz clic en una línea para desconectarla.', 'workshop' ); ?>
+                    <span class="ws-link-dirty" x-show="isDirty()"><i class="fa-solid fa-circle-exclamation"></i> <?php esc_html_e( 'Cambios sin guardar', 'workshop' ); ?></span>
+                </p>
+                <div class="ws-link-tools" style="margin-bottom:12px">
+                    <button type="button" class="ws-btn ws-btn-secondary" @click="autoLayout()" title="<?php esc_attr_e( 'Ordena las ubicaciones en círculo', 'workshop' ); ?>"><i class="fa-solid fa-arrows-to-circle"></i> <?php esc_html_e( 'Ordenar', 'workshop' ); ?></button>
+                    <button type="button" class="ws-btn ws-btn-secondary" @click="clearLinks()"><i class="fa-solid fa-circle-minus"></i> <?php esc_html_e( 'Limpiar', 'workshop' ); ?></button>
+                    <button type="button" class="ws-btn ws-btn-primary" @click="saveLinks()" :disabled="savingLinks"><i class="fa-solid fa-floppy-disk"></i> <?php esc_html_e( 'Guardar', 'workshop' ); ?></button>
+                </div>
+                <div class="ws-link-canvas" x-ref="canvas">
+                    <svg class="ws-link-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
+                        <defs>
+                            <linearGradient id="wsLinkGrad" x1="0" y1="0" x2="1" y2="1">
+                                <stop offset="0%" stop-color="var(--ws-primary)"/>
+                                <stop offset="100%" stop-color="#22d3ee"/>
+                            </linearGradient>
+                        </defs>
+                        <template x-for="link in displayLinks()" :key="'l' + linkKey(link.a, link.b)">
+                            <g class="ws-link-g" @click="removeLink(link)" :title="'Desconectar: ' + locName(link.a) + ' ↔ ' + locName(link.b)">
+                                <line class="ws-link-hit" :x1="nodePos(link.a).x" :y1="nodePos(link.a).y" :x2="nodePos(link.b).x" :y2="nodePos(link.b).y"/>
+                                <line class="ws-link-line" :x1="nodePos(link.a).x" :y1="nodePos(link.a).y" :x2="nodePos(link.b).x" :y2="nodePos(link.b).y"/>
+                            </g>
+                        </template>
+                        <g x-show="linkMode === 'connect' && tempLine && linkFrom">
+                            <line class="ws-link-temp" :x1="(nodePos(linkFrom) || {x:50}).x" :y1="(nodePos(linkFrom) || {y:50}).y" :x2="tempLine.x" :y2="tempLine.y"/>
+                        </g>
+                    </svg>
+
+                    <template x-for="l in canvasLocations" :key="l.id">
+                        <div class="ws-link-node" :class="nodeClass(l.id)" :data-node-id="l.id" :style="nodeStyle(l.id)" @pointerdown.stop="startMove(l.id, $event)">
+                            <div class="ws-link-node-icon" :class="l.type === 'pv' ? 'is-pv' : 'is-wh'">
+                                <i class="fa-solid" :class="l.type === 'pv' ? 'fa-store' : 'fa-warehouse'"></i>
+                            </div>
+                            <div class="ws-link-node-body">
+                                <strong x-text="l.name"></strong>
+                                <small x-text="l.type === 'pv' ? 'PV' : 'Almacén'"></small>
+                            </div>
+                            <span class="ws-link-count" x-show="nodeLinks(l.id).length" x-text="nodeLinks(l.id).length"></span>
+                            <button class="ws-link-handle" title="Conectar con otra ubicación" @pointerdown.stop="startConnect(l.id, $event)"><i class="fa-solid fa-link"></i></button>
+                        </div>
+                    </template>
+
+                    <p class="ws-empty" x-show="!canvasLocations.length"><?php esc_html_e( 'Crea ubicaciones para poder conectarlas.', 'workshop' ); ?></p>
                 </div>
             </div>
         </div>

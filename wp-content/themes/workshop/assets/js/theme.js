@@ -920,16 +920,12 @@
         }));
 
         /* Ubicaciones */
-        Alpine.data('wsLocations', (opts) => ({
-            ...tableState('locations'),
-            currency: opts.currency,
-            currencies: opts.currencies || [],
-            canManage: opts.canManage,
-            locations: [],
-            search: '',
-            formOpen: false,
-            form: {},
-            /* Estado del lienzo de conexiones (stock compartido). */
+        /* Lienzo de conexiones entre ubicaciones (stock compartido): estado y
+           métodos compartidos entre el panel Ubicaciones y el acceso rápido
+           de Stock. Carga TODAS las ubicaciones del negocio (ws_locations_list
+           sin paginar), no solo la página visible de la tabla. */
+        const wsLinkCanvas = () => ({
+            canvasLocations: [],
             links: [],
             nodes: [],
             linkMode: null,
@@ -939,64 +935,26 @@
             hoverNode: 0,
             savingLinks: false,
             savedLinksKey: '',
-            init() { this.restoreTableState(); this.reload(); this.loadLinkState(); },
-            reload() {
-                fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ action: 'ws_locations_list', ws_nonce: WS.nonce, search: this.search, sort: this.sortKey, dir: this.sortDir, page: this.page, pageSize: this.pageSize }) })
-                    .then(r => r.json()).then(r => { if (r.success) { this.locations = r.data.locations; this.total = r.data.total; this.page = r.data.page; this.rebuildNodes(); } });
+            initCanvas() {
+                try {
+                    const saved = JSON.parse(localStorage.getItem('ws_loc_nodes_' + (WS.business || 'default')) || '[]');
+                    this.nodes = Array.isArray(saved) ? saved : [];
+                } catch (e) {
+                    this.nodes = [];
+                }
+                this.loadLinks();
+                this.loadCanvasLocations();
             },
-            money(v) { return money(v, this.currency); },
-            save() {
-                const body = new URLSearchParams({ action: 'ws_save_location', ws_nonce: WS.nonce, payment_methods: JSON.stringify(this.form.payment_methods || []) });
-                Object.keys(this.form).forEach(k => {
-                    if (k === 'payment_methods') return;
-                    body.append(k, this.form[k] === null || this.form[k] === undefined ? '' : this.form[k]);
-                });
-                fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body })
-                    .then(r => r.json())
-                    .then(res => {
-                        if (res.success) { toast('success', 'Guardado'); this.formOpen = false; this.reload(); }
-                        else { toast('error', 'Error', res.data && res.data.msg); }
-                    });
-            },
-            remove(l) {
-                if (typeof Swal !== 'undefined') {
-                    Swal.fire({ title: '¿Eliminar ubicación?', text: 'Se eliminará también su stock.', icon: 'warning', showCancelButton: true, confirmButtonText: 'Eliminar', cancelButtonText: 'Cancelar' })
-                        .then(r => { if (r.isConfirmed) this.removeReq(l); });
-                } else { this.removeReq(l); }
-            },
-            removeReq(l) {
-                $('ws_delete_location', { id: l.id }).then(res => {
-                    if (res.success) { toast('success', 'Ubicación eliminada'); this.reload(); this.loadLinks(); } else { toast('error', 'Error', res.data && res.data.msg); }
+            loadCanvasLocations() {
+                $('ws_locations_list', {}).then(r => {
+                    if (r.success && Array.isArray(r.data.locations)) {
+                        this.canvasLocations = r.data.locations;
+                        this.rebuildNodes();
+                    }
                 });
             },
-            openForm(l) {
-                if (l) {
-                    this.form = Object.assign({}, l, { payment_methods: (l.payment_methods && l.payment_methods.length ? l.payment_methods : []) });
-                } else {
-                    this.form = { type: 'pv', name: '', slug: '', address: '', photo: '', currency: this.currency, whatsapp: '', delivery_cost: 0, active: true, payment_methods: [] };
-                }
-                if (!this.form.currency) this.form.currency = this.currency;
-                if (!this.currencies.length || this.currencies.indexOf(this.form.currency) === -1) {
-                    this.currencies = this.currencies.concat([this.form.currency]);
-                }
-                this.formOpen = true;
-            },
-            onNameInput() {
-                // Autocompleta el slug solo cuando el usuario no lo ha tocado.
-                if (!this.form.slug && this.form.name) {
-                    this.form.slug = slugify(this.form.name);
-                }
-            },
-            storeUrlPreview(slug) {
-                const s = slug || this.form.slug || slugify(this.form.name) || 'mi-tienda';
-                // Muestra la URL final ya normalizada.
-                return WS.home + 'tienda/' + slugify(s) + '/';
-            },
-            storeUrl(slug) { return WS.home + 'tienda/' + slug + '/'; },
-
-            /* --- Conectar ubicaciones (stock compartido) --- */
             locName(id) {
-                const l = this.locations.find(l => l.id === id);
+                const l = this.canvasLocations.find(l => l.id === id);
                 return l ? l.name : ('#' + id);
             },
             linkKey(a, b) { return (a < b ? a + '-' + b : b + '-' + a); },
@@ -1022,7 +980,7 @@
                 const prev = {};
                 this.nodes.forEach(n => { prev[n.id] = n; });
                 let missing = false;
-                this.nodes = this.locations.map(l => {
+                this.nodes = this.canvasLocations.map(l => {
                     const old = prev[l.id];
                     if (old && old.x !== null && old.x !== undefined && old.y !== null && old.y !== undefined) return old;
                     missing = true;
@@ -1045,15 +1003,6 @@
             },
             persistNodePositions() {
                 try { localStorage.setItem('ws_loc_nodes_' + (WS.business || 'default'), JSON.stringify(this.nodes)); } catch (e) {}
-            },
-            loadLinkState() {
-                try {
-                    const saved = JSON.parse(localStorage.getItem('ws_loc_nodes_' + (WS.business || 'default')) || '[]');
-                    this.nodes = Array.isArray(saved) ? saved : [];
-                } catch (e) {
-                    this.nodes = [];
-                }
-                this.loadLinks();
             },
             loadLinks() {
                 $('ws_location_links_get', {}).then(res => {
@@ -1155,6 +1104,75 @@
                 this._pm = null;
                 this._pu = null;
             }
+        });
+
+        /* Ubicaciones */
+        Alpine.data('wsLocations', (opts) => ({
+            ...tableState('locations'),
+            ...wsLinkCanvas(),
+            currency: opts.currency,
+            currencies: opts.currencies || [],
+            canManage: opts.canManage,
+            locations: [],
+            search: '',
+            formOpen: false,
+            form: {},
+            init() { this.restoreTableState(); this.reload(); this.initCanvas(); },
+            reload() {
+                // La tabla se pagina; el lienzo de conexiones se alimenta aparte
+                // (loadCanvasLocations, con TODAS las ubicaciones del negocio).
+                fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ action: 'ws_locations_list', ws_nonce: WS.nonce, search: this.search, sort: this.sortKey, dir: this.sortDir, page: this.page, pageSize: this.pageSize }) })
+                    .then(r => r.json()).then(r => { if (r.success) { this.locations = r.data.locations; this.total = r.data.total; this.page = r.data.page; } });
+            },
+            money(v) { return money(v, this.currency); },
+            save() {
+                const body = new URLSearchParams({ action: 'ws_save_location', ws_nonce: WS.nonce, payment_methods: JSON.stringify(this.form.payment_methods || []) });
+                Object.keys(this.form).forEach(k => {
+                    if (k === 'payment_methods') return;
+                    body.append(k, this.form[k] === null || this.form[k] === undefined ? '' : this.form[k]);
+                });
+                fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body })
+                    .then(r => r.json())
+                    .then(res => {
+                        if (res.success) { toast('success', 'Guardado'); this.formOpen = false; this.reload(); }
+                        else { toast('error', 'Error', res.data && res.data.msg); }
+                    });
+            },
+            remove(l) {
+                if (typeof Swal !== 'undefined') {
+                    Swal.fire({ title: '¿Eliminar ubicación?', text: 'Se eliminará también su stock.', icon: 'warning', showCancelButton: true, confirmButtonText: 'Eliminar', cancelButtonText: 'Cancelar' })
+                        .then(r => { if (r.isConfirmed) this.removeReq(l); });
+                } else { this.removeReq(l); }
+            },
+            removeReq(l) {
+                $('ws_delete_location', { id: l.id }).then(res => {
+                    if (res.success) { toast('success', 'Ubicación eliminada'); this.reload(); this.loadLinks(); } else { toast('error', 'Error', res.data && res.data.msg); }
+                });
+            },
+            openForm(l) {
+                if (l) {
+                    this.form = Object.assign({}, l, { payment_methods: (l.payment_methods && l.payment_methods.length ? l.payment_methods : []) });
+                } else {
+                    this.form = { type: 'pv', name: '', slug: '', address: '', photo: '', currency: this.currency, whatsapp: '', delivery_cost: 0, active: true, payment_methods: [] };
+                }
+                if (!this.form.currency) this.form.currency = this.currency;
+                if (!this.currencies.length || this.currencies.indexOf(this.form.currency) === -1) {
+                    this.currencies = this.currencies.concat([this.form.currency]);
+                }
+                this.formOpen = true;
+            },
+            onNameInput() {
+                // Autocompleta el slug solo cuando el usuario no lo ha tocado.
+                if (!this.form.slug && this.form.name) {
+                    this.form.slug = slugify(this.form.name);
+                }
+            },
+            storeUrlPreview(slug) {
+                const s = slug || this.form.slug || slugify(this.form.name) || 'mi-tienda';
+                // Muestra la URL final ya normalizada.
+                return WS.home + 'tienda/' + slugify(s) + '/';
+            },
+            storeUrl(slug) { return WS.home + 'tienda/' + slug + '/'; }
         }));
 
         /* Proveedores */
@@ -1197,6 +1215,7 @@
         /* Stock */
         Alpine.data('wsStock', (opts) => ({
             ...tableState('stock'),
+            ...wsLinkCanvas(),
             locations: opts.locations || [],
             currency: opts.currency,
             canEntry: opts.canEntry,
@@ -1204,6 +1223,8 @@
             canWriteoff: opts.canWriteoff,
             canTransfer: opts.canTransfer,
             canVenta: opts.canVenta,
+            canManageLinks: opts.canManageLinks,
+            linkOpen: false,
             sellers: opts.sellers || [],
             rows: [],
             search: '',
@@ -1243,6 +1264,13 @@
             countDetailOpen: false,
             countDetail: { id: 0, items: [] },
             init() { this.restoreTableState(); this.load(); },
+            openLinks() {
+                this.linkOpen = true;
+                // El lienzo necesita el modal visible para medir su tamaño al
+                // auto-ordenar; $nextTick espera a que Alpine pinte el modal.
+                this.$nextTick(() => { this.initCanvas(); });
+            },
+            closeLinks() { this.linkOpen = false; },
             load() {
                 fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ action: 'ws_stock_list', ws_nonce: WS.nonce, location_id: this.locationId, search: this.search, low_only: this.lowOnly ? 1 : 0, sort: this.sortKey, dir: this.sortDir, page: this.page, pageSize: this.pageSize }) })
                     .then(r => r.json()).then(r => { if (r.success) { this.rows = r.data.rows; this.total = r.data.total; this.page = r.data.page; } });
