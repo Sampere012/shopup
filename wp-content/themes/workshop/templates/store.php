@@ -10,10 +10,39 @@ defined( 'ABSPATH' ) || exit;
 $location = get_query_var( 'ws_location' );
 $products = WS_Stock::stock_rows( array( 'location_id' => $location->id ) );
 $payments = ws_payment_methods( $location->id );
-$rate_badge = ws_rate_badge();
 
 // Datos de monedas/tasas/WhatsApp para la tienda.
 $store_currency = $location->currency ? $location->currency : ws_currency_symbol();
+
+// Configuración de la tienda pública por ubicación: moneda en la que se
+// muestran los precios ('' = la de la ubicación) y qué tasa mostrar
+// ('' = automática USD/CUP, 'none' = ninguna, o una moneda concreta).
+$store_settings = array();
+if ( ! empty( $location->store_settings ) ) {
+    $ss_decoded = json_decode( $location->store_settings, true );
+    if ( is_array( $ss_decoded ) ) {
+        $store_settings = $ss_decoded;
+    }
+}
+$store_display_currency = sanitize_text_field( (string) ( $store_settings['currency'] ?? '' ) );
+if ( '' === $store_display_currency ) {
+    $store_display_currency = $store_currency;
+}
+$store_rate_mode = sanitize_text_field( (string) ( $store_settings['rate'] ?? '' ) );
+
+// Badge de tasa: el elegido por la ubicación, ninguno, o el automático.
+$rate_badge = ws_rate_badge();
+if ( 'none' === $store_rate_mode ) {
+    $rate_badge = '';
+} elseif ( '' !== $store_rate_mode ) {
+    // Las tasas son respecto a la moneda BASE del negocio (p. ej. CUP).
+    $ws_rates_now = ws_exchange_rates();
+    $ws_rate_base = ws_currency_symbol();
+    $ws_rate_val  = (float) ( $ws_rates_now[ $store_rate_mode ] ?? 0 );
+    $rate_badge   = ( $ws_rate_val > 0 && $store_rate_mode !== $ws_rate_base )
+        ? sprintf( '1 %s = %s %s', $store_rate_mode, number_format_i18n( $ws_rate_val, 2 ), $ws_rate_base )
+        : '';
+}
 $ws_store_rates = ws_exchange_rates();
 $ws_store_base  = ws_currency_symbol();
 $ws_store_currs = ws_currencies();
@@ -52,7 +81,7 @@ get_header();
                         <span class="ws-store-meta"><i class="fa-solid fa-truck-fast"></i> <?php esc_html_e( 'Recogida gratis', 'workshop' ); ?></span>
                     <?php endif; ?>
                     <?php if ( $payments ) : ?>
-                        <span class="ws-store-meta"><i class="fa-solid fa-credit-card"></i> <?php echo esc_html( implode( ' · ', array_slice( $payments, 0, 3 ) ) ); ?></span>
+                        <span class="ws-store-meta"><i class="fa-solid fa-credit-card"></i> <?php echo esc_html( implode( ' · ', $payments ) ); ?></span>
                     <?php endif; ?>
                     <?php if ( $rate_badge ) : ?>
                         <span class="ws-store-meta ws-store-rate"><i class="fa-solid fa-arrow-right-arrow-left"></i> <?php echo esc_html( $rate_badge ); ?></span>
@@ -127,7 +156,7 @@ get_header();
                             <div class="ws-product-row">
                                 <span class="ws-price" x-text="priceInfo(p).main"></span>
                                 <span class="ws-price-equiv" x-show="priceInfo(p).equiv" x-text="priceInfo(p).equiv"></span>
-                                <span class="ws-price-transfer" x-show="p.transfer_pct > 0" x-text="'Transf.: ' + moneyOf(p.price * (1 + p.transfer_pct / 100), p.currency)"></span>
+                                <span class="ws-price-transfer" x-show="p.transfer_pct > 0" x-text="transferLine(p)"></span>
                                 <span class="ws-stock-badge" :class="p.qty > 0 ? 'ws-text-success' : 'ws-text-danger'" x-text="stockLabel(p)"></span>
                             </div>
                             <div class="ws-product-actions">
@@ -401,7 +430,7 @@ get_header();
                         <div class="ws-product-row">
                             <span class="ws-price ws-price-lg" x-text="priceInfo(activeProduct).main"></span>
                             <span class="ws-price-equiv" x-show="priceInfo(activeProduct).equiv" x-text="priceInfo(activeProduct).equiv"></span>
-                            <span class="ws-price-transfer" x-show="activeProduct.transfer_pct > 0" x-text="'Transf.: ' + moneyOf(activeProduct.price * (1 + activeProduct.transfer_pct / 100), activeProduct.currency)"></span>
+                            <span class="ws-price-transfer" x-show="activeProduct.transfer_pct > 0" x-text="transferLine(activeProduct)"></span>
                         </div>
                         <p class="ws-stock-badge" :class="activeProduct.qty > 0 ? 'ws-text-success' : 'ws-text-danger'" x-text="stockLabel(activeProduct)"></p>
                         <div class="ws-store-modal-qty">
@@ -435,6 +464,7 @@ window.WS_STORE_DATA = <?php echo wp_json_encode( array(
     'rates'        => $ws_store_rates,
     'baseCurrency' => $ws_store_base,
     'currencies'   => $ws_store_currs,
+    'displayCurrency' => $store_display_currency,
     'whatsappNumbers' => $ws_store_was,
     'categories' => $ws_store_categories,
     'products' => array_map( function ( $r ) {

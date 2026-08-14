@@ -155,6 +155,7 @@ function ws_ajax_locations_list() {
         $out = array();
         foreach ( $rows as $l ) {
             $methods = is_string( $l->payment_methods ) ? json_decode( $l->payment_methods, true ) : $l->payment_methods;
+            $store_settings = is_string( $l->store_settings ?? '' ) ? json_decode( $l->store_settings, true ) : $l->store_settings;
             $out[] = array(
                 'id'              => (int) $l->id,
                 'type'            => $l->type,
@@ -164,6 +165,7 @@ function ws_ajax_locations_list() {
                 'photo'           => $l->photo,
                 'currency'        => $l->currency,
                 'payment_methods' => is_array( $methods ) ? $methods : array(),
+                'store_settings'  => is_array( $store_settings ) ? $store_settings : array(),
                 'whatsapp'        => $l->whatsapp,
                 'delivery_cost'   => (float) $l->delivery_cost,
                 'active'          => (int) $l->active,

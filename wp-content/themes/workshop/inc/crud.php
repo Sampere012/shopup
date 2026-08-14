@@ -579,6 +579,15 @@ class WS_CRUD {
             ? json_encode( array_values( array_map( 'sanitize_text_field', $data['payment_methods'] ) ) )
             : '';
 
+        // Configuración de la tienda pública (JSON): moneda de visualización
+        // ('' = la de la ubicación) y qué tasa mostrar ('', 'none' o moneda).
+        $store_settings = array();
+        $raw_ss = isset( $data['store_settings'] ) ? json_decode( wp_unslash( (string) $data['store_settings'] ), true ) : null;
+        if ( is_array( $raw_ss ) ) {
+            $store_settings['currency'] = sanitize_text_field( (string) ( $raw_ss['currency'] ?? '' ) );
+            $store_settings['rate']     = sanitize_text_field( (string) ( $raw_ss['rate'] ?? '' ) );
+        }
+
         $fields = array(
             'type'            => $type,
             'name'            => $name,
@@ -587,6 +596,7 @@ class WS_CRUD {
             'photo'           => esc_url_raw( $data['photo'] ?? '' ),
             'currency'        => sanitize_text_field( $data['currency'] ?? ws_currency_symbol() ),
             'payment_methods' => $payment_methods,
+            'store_settings'  => empty( $store_settings ) ? '' : wp_json_encode( $store_settings ),
             'whatsapp'        => sanitize_text_field( $data['whatsapp'] ?? '' ),
             'delivery_cost'   => (float) ( $data['delivery_cost'] ?? 0 ),
             'active'          => isset( $data['active'] ) ? (int) filter_var( $data['active'], FILTER_VALIDATE_BOOLEAN ) : 1,

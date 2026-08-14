@@ -11,8 +11,9 @@ $locations = WS_CRUD::get_locations();
 $can_manage = ws_can( 'locations_manage' );
 $currency   = ws_currency_symbol();
 $currencies = ws_currencies();
+$rates      = ws_exchange_rates();
 ?>
-<div x-data="wsLocations(<?php echo esc_attr( wp_json_encode( array( 'currency' => $currency, 'currencies' => $currencies, 'canManage' => $can_manage ) ) ); ?>)">
+<div x-data="wsLocations(<?php echo esc_attr( wp_json_encode( array( 'currency' => $currency, 'currencies' => $currencies, 'rates' => $rates, 'canManage' => $can_manage ) ) ); ?>)">
 
     <div class="ws-toolbar">
         <div class="ws-search">
@@ -171,6 +172,38 @@ $currencies = ws_currencies();
                             <template x-for="c in currencies" :key="c"><option :value="c" x-text="c"></option></template>
                         </select>
                     </label>
+                    <label class="ws-field ws-span-2">
+                        <span><?php esc_html_e( 'Métodos de pago (tienda pública)', 'workshop' ); ?></span>
+                        <small class="ws-muted" style="display:block;margin:-4px 0 6px;font-size:.76em"><?php esc_html_e( 'Los que se anuncian en la tienda: efectivo, transferencia, tarjeta…', 'workshop' ); ?></small>
+                        <div class="ws-check-group">
+                            <template x-for="m in ['Efectivo','Tarjeta','Transferencia','Pago móvil']" :key="m">
+                                <label class="ws-check">
+                                    <input type="checkbox" :value="m" x-model="form.payment_methods">
+                                    <span x-text="m"></span>
+                                </label>
+                            </template>
+                        </div>
+                    </label>
+                    <div class="ws-field ws-span-2">
+                        <div class="ws-form-divider"><i class="fa-solid fa-store"></i> <?php esc_html_e( 'Tienda pública', 'workshop' ); ?></div>
+                    </div>
+                    <label class="ws-field">
+                        <span><?php esc_html_e( 'Moneda de la tienda', 'workshop' ); ?></span>
+                        <select x-model="form.store_settings.currency">
+                            <option value=""><?php esc_html_e( 'Automática (la de la ubicación)', 'workshop' ); ?></option>
+                            <template x-for="c in currencies" :key="c"><option :value="c" x-text="c"></option></template>
+                        </select>
+                        <small class="ws-muted" style="display:block;margin-top:4px;font-size:.76em"><?php esc_html_e( 'Los precios de los productos se muestran en esta moneda (convertidos con la tasa).', 'workshop' ); ?></small>
+                    </label>
+                    <label class="ws-field">
+                        <span><?php esc_html_e( 'Tasa de cambio a mostrar', 'workshop' ); ?></span>
+                        <select x-model="form.store_settings.rate">
+                            <option value=""><?php esc_html_e( 'Automática (USD/CUP)', 'workshop' ); ?></option>
+                            <option value="none"><?php esc_html_e( 'No mostrar', 'workshop' ); ?></option>
+                            <template x-for="c in rateCurrencies" :key="c"><option :value="c" x-text="'1 ' + c + ' = ' + rateLabel(c) + ' ' + currency"></option></template>
+                        </select>
+                        <small class="ws-muted" style="display:block;margin-top:4px;font-size:.76em"><?php esc_html_e( 'El badge de la tienda muestra la tasa que elijas, o ninguna.', 'workshop' ); ?></small>
+                    </label>
                     <label class="ws-field">
                         <span><?php esc_html_e( 'WhatsApp para pedidos', 'workshop' ); ?></span>
                         <input type="text" x-model="form.whatsapp" placeholder="+58 412 123 4567">
@@ -182,17 +215,6 @@ $currencies = ws_currencies();
                     <label class="ws-field">
                         <span><?php esc_html_e( 'Activa', 'workshop' ); ?></span>
                         <label class="ws-check"><input type="checkbox" x-model="form.active"><span><?php esc_html_e( 'Visible', 'workshop' ); ?></span></label>
-                    </label>
-                    <label class="ws-field ws-span-2">
-                        <span><?php esc_html_e( 'Métodos de pago', 'workshop' ); ?></span>
-                        <div class="ws-check-group">
-                            <template x-for="m in ['Efectivo','Tarjeta','Transferencia','Pago móvil']" :key="m">
-                                <label class="ws-check">
-                                    <input type="checkbox" :value="m" x-model="form.payment_methods">
-                                    <span x-text="m"></span>
-                                </label>
-                            </template>
-                        </div>
                     </label>
                 </div>
                 <div class="ws-modal-foot">

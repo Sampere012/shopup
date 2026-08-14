@@ -291,6 +291,10 @@
             baseCurrency: opts.baseCurrency || opts.currency,
             rates: opts.rates || {},
             currencies: opts.currencies || [],
+            // Moneda en la que se MUESTRAN los precios (config de la tienda):
+            // los productos se convierten a esta moneda con la tasa. '' = la
+            // de la ubicación.
+            displayCurrency: opts.displayCurrency || '',
             whatsappNumbers: opts.whatsappNumbers || [],
             products: [],
             search: '',
@@ -344,6 +348,7 @@
                 if (seed && seed.baseCurrency) { this.baseCurrency = seed.baseCurrency; }
                 if (seed && seed.rates) { this.rates = seed.rates; }
                 if (seed && seed.currencies) { this.currencies = seed.currencies; }
+                if (seed && seed.displayCurrency) { this.displayCurrency = seed.displayCurrency; }
                 if (seed && seed.whatsappNumbers) { this.whatsappNumbers = seed.whatsappNumbers; }
                 this.loadCart();
                 // Valoraciones de la tienda: se cargan al entrar (las estrellas
@@ -460,19 +465,36 @@
                 const qty = Number(p && p.qty) || 0;
                 return qty > 0 ? ('Stock: ' + qty) : 'Agotado';
             },
-            // Precio en la moneda del producto + equivalencia en la otra moneda
-            // configurada (p. ej. CUP ↔ USD), solo si el producto tiene activo
-            // el check 'mostrar precio equivalente'.
+            // Precio del producto ADAPTADO a la moneda de la tienda: si la
+            // tienda muestra en otra moneda (displayCurrency) y el producto
+            // usa otra, el precio principal se convierte con la tasa. La
+            // equivalencia muestra el precio nativo del producto.
             priceInfo(p) {
                 const cur = p.currency || this.currency;
-                const main = money(Number(p.price) || 0, cur);
+                const target = this.displayCurrency || this.currency;
                 const show = p.show_equiv === undefined ? 1 : Number(p.show_equiv);
+                const adapted = target && cur !== target;
+                const main = adapted
+                    ? money(this.convert(Number(p.price) || 0, cur, target), target)
+                    : money(Number(p.price) || 0, cur);
                 if (!show) return { main: main, equiv: '' };
-                // La otra moneda del par configurado (primera distinta a la del producto).
+                if (adapted) return { main: main, equiv: '≈ ' + money(Number(p.price) || 0, cur) };
+                // Sin adaptar: la otra moneda del par configurado (primera
+                // distinta a la del producto).
                 const others = (this.currencies || []).filter(c => c && c !== cur);
                 const other = others.length ? others[0] : (cur !== this.currency ? this.currency : '');
                 if (!other) return { main: main, equiv: '' };
                 return { main: main, equiv: '≈ ' + money(this.convert(p.price, cur, other), other) };
+            },
+            // Línea 'Transf.:' adaptada a la moneda de la tienda.
+            transferLine(p) {
+                const pct = Number(p && p.transfer_pct) || 0;
+                if (pct <= 0) return '';
+                const cur = (p && p.currency) || this.currency;
+                const target = this.displayCurrency || this.currency;
+                const amount = (Number(p && p.price) || 0) * (1 + pct / 100);
+                if (target && cur !== target) return 'Transf.: ' + money(this.convert(amount, cur, target), target);
+                return 'Transf.: ' + money(amount, cur);
             },
             // --- Modal de producto ---
             openProduct(p) {
@@ -1229,6 +1251,7 @@
             ...wsLinkCanvas(),
             currency: opts.currency,
             currencies: opts.currencies || [],
+            rates: opts.rates || {},
             canManage: opts.canManage,
             locations: [],
             search: '',
@@ -1242,12 +1265,21 @@
                     .then(r => r.json()).then(r => { if (r.success) { this.locations = r.data.locations; this.total = r.data.total; this.page = r.data.page; } });
             },
             money(v) { return money(v, this.currency); },
+            // Monedas con tasa configurada (para el select de la tasa a mostrar).
+            get rateCurrencies() {
+                return Object.keys(this.rates || {}).filter(c => c && Number(this.rates[c]) > 0);
+            },
+            rateLabel(c) {
+                const v = Number(this.rates[c]) || 0;
+                return v > 0 ? v.toLocaleString('es', { maximumFractionDigits: 4 }) : '';
+            },
             save() {
                 const body = new URLSearchParams({ action: 'ws_save_location', ws_nonce: WS.nonce, payment_methods: JSON.stringify(this.form.payment_methods || []) });
                 Object.keys(this.form).forEach(k => {
                     if (k === 'payment_methods') return;
                     body.append(k, this.form[k] === null || this.form[k] === undefined ? '' : this.form[k]);
                 });
+                body.set('store_settings', JSON.stringify(this.form.store_settings || { currency: '', rate: '' }));
                 fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body })
                     .then(r => r.json())
                     .then(res => {
@@ -1268,9 +1300,12 @@
             },
             openForm(l) {
                 if (l) {
-                    this.form = Object.assign({}, l, { payment_methods: (l.payment_methods && l.payment_methods.length ? l.payment_methods : []) });
+                    this.form = Object.assign({}, l, {
+                        payment_methods: (l.payment_methods && l.payment_methods.length ? l.payment_methods : []),
+                        store_settings: Object.assign({ currency: '', rate: '' }, l.store_settings || {})
+                    });
                 } else {
-                    this.form = { type: 'pv', name: '', slug: '', address: '', photo: '', currency: this.currency, whatsapp: '', delivery_cost: 0, active: true, payment_methods: [] };
+                    this.form = { type: 'pv', name: '', slug: '', address: '', photo: '', currency: this.currency, whatsapp: '', delivery_cost: 0, active: true, payment_methods: [], store_settings: { currency: '', rate: '' } };
                 }
                 if (!this.form.currency) this.form.currency = this.currency;
                 if (!this.currencies.length || this.currencies.indexOf(this.form.currency) === -1) {

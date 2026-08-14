@@ -37,6 +37,7 @@ function ws_db_tables() {
             photo VARCHAR(255) NOT NULL DEFAULT '',
             currency VARCHAR(10) NOT NULL DEFAULT '€',
             payment_methods TEXT NULL,
+            store_settings TEXT NULL,
             whatsapp VARCHAR(60) NOT NULL DEFAULT '',
             delivery_cost DECIMAL(12,2) NOT NULL DEFAULT 0,
             active TINYINT(1) NOT NULL DEFAULT 1,
@@ -575,6 +576,30 @@ function ws_db_migrate() {
     if ( ! in_array( 'category', $cols, true ) ) {
         $wpdb->query( "ALTER TABLE {$table} ADD COLUMN category VARCHAR(100) NOT NULL DEFAULT '' AFTER barcode" );
     }
+    // Configuración de la TIENDA PÚBLICA por ubicación (JSON): moneda en la
+    // que se muestran los precios y qué tasa de cambio mostrar (o ninguna).
+    // Se migra la tabla por defecto y la de cada negocio con slug (mismo
+    // patrón que las tablas de stock_counts/location_links).
+    $ws_ss_suffixes = array( '' );
+    if ( class_exists( 'WS_Business' ) && $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', WS_Business::table() ) ) === WS_Business::table() ) {
+        foreach ( WS_Business::all() as $ws_ss_biz ) {
+            $ss_slug = (string) ( $ws_ss_biz->slug ?? '' );
+            if ( '' !== $ss_slug ) {
+                $ws_ss_suffixes[] = ws_biz_table_suffix( $ss_slug );
+            }
+        }
+    }
+    foreach ( $ws_ss_suffixes as $ws_ss_suffix ) {
+        $loc_t = ws_table_for( $ws_ss_suffix, 'locations' );
+        if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $loc_t ) ) !== $loc_t ) {
+            continue;
+        }
+        $lcols = $wpdb->get_col( "SHOW COLUMNS FROM {$loc_t}", 0 );
+        if ( ! in_array( 'store_settings', $lcols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$loc_t} ADD COLUMN store_settings TEXT NULL AFTER payment_methods" );
+        }
+    }
+
     // Columna de moderación en reseñas: estado (pending/approved/rejected).
     $rt = $wpdb->prefix . WS_TABLE_PREFIX . 'reviews';
     if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $rt ) ) === $rt ) {
