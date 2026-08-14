@@ -60,6 +60,8 @@ if ( $ws_biz && ! empty( $ws_biz->slug ) ) {
     </button>
 </div>
 
+<div class="ws-reports-currency"><i class="fa-solid fa-coins"></i> <?php echo esc_html( sprintf( __( 'Moneda del reporte: %s', 'workshop' ), $currency ) ); ?></div>
+
 <div class="ws-kpis">
     <?php
         // Total de ventas convertido a la moneda del reporte (si hay varias

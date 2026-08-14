@@ -226,6 +226,7 @@ function ws_ajax_locations_list() {
                 'store_settings'  => is_array( $store_settings ) ? $store_settings : array(),
                 'whatsapp'        => $l->whatsapp,
                 'delivery_cost'   => (float) $l->delivery_cost,
+                'delivery_currency' => $l->delivery_currency ? $l->delivery_currency : ( $l->currency ? $l->currency : ws_currency_symbol() ),
                 'active'          => (int) $l->active,
             );
         }
@@ -366,6 +367,7 @@ function ws_ajax_combos_list() {
                 'price'       => round( $price, 2 ),
                 'currency'    => $c->currency,
                 'active'      => (int) $c->active,
+                'store_visible' => (int) ( $c->store_visible ?? 1 ),
                 'item_count'  => (int) $c->item_count,
                 'stock'       => $location_id ? WS_Combos::stock( (int) $c->id, $location_id ) : null,
                 'items'       => array_map( function ( $it ) {
@@ -668,6 +670,23 @@ function ws_ajax_stock_transfer() {
     }
     ws_log_audit( 'stock_transfer', $combo_id > 0 ? 'combo' : 'movement', $combo_id > 0 ? $combo_id : $product_id, array( 'from' => $from, 'to' => $to, 'qty' => $qty ) );
     wp_send_json_success();
+}
+
+add_action( 'wp_ajax_ws_store_toggle', 'ws_ajax_store_toggle' );
+function ws_ajax_store_toggle() {
+    ws_guard( 'products_edit' );
+    $kind    = sanitize_key( $_POST['kind'] ?? '' );
+    $id      = (int) ( $_POST['id'] ?? 0 );
+    $visible = ! empty( $_POST['visible'] );
+    if ( ! in_array( $kind, array( 'product', 'combo' ), true ) || ! $id ) {
+        wp_send_json_error( array( 'msg' => __( 'Datos inválidos.', 'workshop' ) ) );
+    }
+    global $wpdb;
+    // El ítem sigue en el inventario; solo cambia si se muestra en la tienda.
+    $table = ( 'combo' === $kind ) ? ws_table_name( 'combos' ) : ws_table_name( 'products' );
+    $wpdb->update( $table, array( 'store_visible' => $visible ? 1 : 0 ), array( 'id' => $id ) );
+    ws_log_audit( 'store_visibility', $kind, $id, array( 'store_visible' => $visible ) );
+    wp_send_json_success( array( 'store_visible' => $visible ) );
 }
 
 add_action( 'wp_ajax_ws_stock_batch_move', 'ws_ajax_stock_batch_move' );
@@ -1010,6 +1029,7 @@ function ws_stock_rows_map( $rows, $group = array() ) {
             'min_stock'     => (float) $r->min_stock,
             'sale_price'    => (float) $r->sale_price,
             'currency'      => $r->currency,
+            'store_visible' => (int) ( $r->store_visible ?? 1 ),
             'group_total'   => $g ? (float) $g['total'] : (float) $r->qty,
             'group_parts'   => $g ? $g['parts'] : array( array(
                 'id'   => (int) $r->location_id,
@@ -1158,6 +1178,7 @@ function ws_ajax_stock_list() {
                     'sale_price' => (float) $c['price'],
                     'currency'   => $c['currency'],
                     'is_combo'   => 1,
+                    'store_visible' => (int) ( $c['store_visible'] ?? 1 ),
                     'items'      => array_map( function ( $it ) {
                         return array(
                             'product_id' => (int) $it['product_id'],
@@ -1193,6 +1214,10 @@ function ws_ajax_movements_list() {
     $type      = sanitize_key( $_POST['type'] ?? '' );
     $location  = (int) ( $_POST['location_id'] ?? 0 );
     $search    = sanitize_text_field( $_POST['search'] ?? '' );
+    $scope     = sanitize_key( $_POST['scope'] ?? '' );
+    if ( ! in_array( $scope, array( '', 'products', 'combos' ), true ) ) {
+        $scope = '';
+    }
     $date_from = sanitize_text_field( $_POST['date_from'] ?? '' );
     $date_to   = sanitize_text_field( $_POST['date_to'] ?? '' );
     $date_from = preg_match( '/^\d{4}-\d{2}-\d{2}$/', $date_from ) ? $date_from : '';
@@ -1205,11 +1230,12 @@ function ws_ajax_movements_list() {
     $loc_ids   = array_map( fn( $l ) => (int) $l->id, ws_user_locations() );
     $loc_ids   = ( $location && in_array( $location, $loc_ids, true ) ) ? array( $location ) : $loc_ids;
 
-    ws_send_list( 'movements', function ( $args ) use ( $type, $loc_ids, $search, $date_from, $date_to ) {
+    ws_send_list( 'movements', function ( $args ) use ( $type, $loc_ids, $search, $date_from, $date_to, $scope ) {
         $rows = WS_Stock::movements( array_merge( array(
             'type'         => $type,
             'location_ids' => $loc_ids,
             'search'       => $search,
+            'scope'        => $scope,
             'from'         => $date_from,
             'to'           => $date_to,
         ), $args ) );
@@ -1219,6 +1245,8 @@ function ws_ajax_movements_list() {
                 'id'              => (int) $m->id,
                 'type'            => $m->type,
                 'product_name'    => $m->product_name,
+                'combo_name'      => (string) ( $m->combo_name ?? '' ),
+                'combo_id'        => (int) $m->combo_id,
                 'location_name'   => $m->location_name ?? '',
                 'dest_location_id'=> (int) $m->dest_location_id,
                 'dest_name'       => $m->dest_name ?? '',
@@ -1230,11 +1258,12 @@ function ws_ajax_movements_list() {
             );
         }
         return $out;
-    }, function () use ( $type, $loc_ids, $search, $date_from, $date_to ) {
+    }, function () use ( $type, $loc_ids, $search, $date_from, $date_to, $scope ) {
         return WS_Stock::count_movements( array(
             'type'         => $type,
             'location_ids' => $loc_ids,
             'search'       => $search,
+            'scope'        => $scope,
             'from'         => $date_from,
             'to'           => $date_to,
         ) );
@@ -1323,6 +1352,7 @@ function ws_ajax_order_list() {
                 'customer_address'=> $o->customer_address,
                 'subtotal'        => (float) $o->subtotal,
                 'delivery_cost'   => (float) $o->delivery_cost,
+                'delivery_currency' => $o->delivery_currency ? $o->delivery_currency : $o->currency,
                 'total'           => (float) $o->total,
                 'currency'        => $o->currency,
                 'status'          => $o->status,
@@ -1462,6 +1492,7 @@ function ws_ajax_public_order_status() {
         'currency'     => $order->currency,
         'subtotal'     => (float) $order->subtotal,
         'delivery_cost'=> (float) $order->delivery_cost,
+        'delivery_currency' => $order->delivery_currency ? $order->delivery_currency : $order->currency,
         'total'        => (float) $order->total,
         'date'         => mysql2date( 'd/m/Y H:i', $order->created_at ),
         'items'        => $items,
@@ -1473,7 +1504,9 @@ add_action( 'wp_ajax_ws_store_products', 'ws_ajax_store_products' );
 function ws_ajax_store_products() {
     $location_id = (int) ( $_POST['location_id'] ?? 0 );
     $search      = sanitize_text_field( $_POST['search'] ?? '' );
-    $rows        = WS_Stock::stock_rows( array( 'location_id' => $location_id, 'search' => $search ) );
+    // Solo productos VISIBLES en la tienda (pueden existir en el inventario
+    // y estar ocultos del catálogo público).
+    $rows        = WS_Stock::stock_rows( array( 'location_id' => $location_id, 'search' => $search, 'store_visible' => 1 ) );
     $products    = array();
     foreach ( $rows as $r ) {
         $products[] = array(

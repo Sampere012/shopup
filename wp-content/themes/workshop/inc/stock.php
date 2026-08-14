@@ -77,7 +77,7 @@ class WS_Stock {
      * Disminuye stock asumiendo que la transacción ya está abierta.
      * Devuelve true si pudo decrementar. El caller gestiona commit/rollback.
      */
-    public static function decrease_in_tx( $product_id, $location_id, $qty, $type, $ref = '', $note = '', $user_id = 0 ) {
+    public static function decrease_in_tx( $product_id, $location_id, $qty, $type, $ref = '', $note = '', $user_id = 0, $combo_id = 0 ) {
         $product_id  = (int) $product_id;
         $location_id = (int) $location_id;
         $qty         = (float) $qty;
@@ -91,8 +91,8 @@ class WS_Stock {
         if ( ! self::_apply_fraction_links( $product_id, $location_id, $qty, '-' ) ) {
             return new WP_Error( 'insufficient', __( 'Stock insuficiente para el movimiento (unidades relacionadas).', 'workshop' ) );
         }
-        self::_log( $type, $product_id, $location_id, 0, $qty, $ref, $note, $user_id );
-        self::_propagate_linked( $product_id, $location_id, $qty, '-', $type, $ref, $note, $user_id );
+        self::_log( $type, $product_id, $location_id, 0, $qty, $ref, $note, $user_id, $combo_id );
+        self::_propagate_linked( $product_id, $location_id, $qty, '-', $type, $ref, $note, $user_id, $combo_id );
         return true;
     }
 
@@ -103,7 +103,7 @@ class WS_Stock {
      * debe tumbar la venta: se anota la diferencia y se avisa al negocio.
      * Asume que la transacción ya está abierta.
      */
-    public static function decrease_partial_in_tx( $product_id, $location_id, $qty, $type = 'salida', $ref = '', $note = '', $user_id = 0 ) {
+    public static function decrease_partial_in_tx( $product_id, $location_id, $qty, $type = 'salida', $ref = '', $note = '', $user_id = 0, $combo_id = 0 ) {
         global $wpdb;
         $product_id  = (int) $product_id;
         $location_id = (int) $location_id;
@@ -127,15 +127,15 @@ class WS_Stock {
         // cantidad en NEGATIVO para que el llamador lo reporte como
         // discrepancia (el inventario quedó desbalanceado entre padre/hijo).
         $frac_ok = self::_apply_fraction_links( $product_id, $location_id, $deducted, '-' );
-        self::_log( $type, $product_id, $location_id, 0, $deducted, $ref, $note, $user_id );
-        self::_propagate_linked( $product_id, $location_id, $deducted, '-', $type, $ref, $note, $user_id );
+        self::_log( $type, $product_id, $location_id, 0, $deducted, $ref, $note, $user_id, $combo_id );
+        self::_propagate_linked( $product_id, $location_id, $deducted, '-', $type, $ref, $note, $user_id, $combo_id );
         return $frac_ok ? $deducted : ( -1 * $deducted );
     }
 
     /**
      * Aumenta stock asumiendo que la transacción ya está abierta.
      */
-    public static function increase_in_tx( $product_id, $location_id, $qty, $type, $ref = '', $note = '', $user_id = 0 ) {
+    public static function increase_in_tx( $product_id, $location_id, $qty, $type, $ref = '', $note = '', $user_id = 0, $combo_id = 0 ) {
         $product_id  = (int) $product_id;
         $location_id = (int) $location_id;
         $qty         = (float) $qty;
@@ -144,8 +144,8 @@ class WS_Stock {
         }
         self::_upsert_stock( $product_id, $location_id, $qty, '+', null );
         self::_apply_fraction_links( $product_id, $location_id, $qty, '+' );
-        self::_log( $type, $product_id, $location_id, 0, $qty, $ref, $note, $user_id );
-        self::_propagate_linked( $product_id, $location_id, $qty, '+', $type, $ref, $note, $user_id );
+        self::_log( $type, $product_id, $location_id, 0, $qty, $ref, $note, $user_id, $combo_id );
+        self::_propagate_linked( $product_id, $location_id, $qty, '+', $type, $ref, $note, $user_id, $combo_id );
         return true;
     }
 
@@ -187,7 +187,7 @@ class WS_Stock {
      * abierta (la usa la transferencia de COMBOS para mover los componentes
      * de forma atómica). Registra el movimiento tipo 'transferencia'.
      */
-    public static function transfer_in_tx( $product_id, $from_location, $to_location, $qty, $ref = '', $note = '', $user_id = 0 ) {
+    public static function transfer_in_tx( $product_id, $from_location, $to_location, $qty, $ref = '', $note = '', $user_id = 0, $combo_id = 0 ) {
         global $wpdb;
         $product_id    = (int) $product_id;
         $from_location = (int) $from_location;
@@ -208,7 +208,7 @@ class WS_Stock {
         }
         self::_upsert_stock( $product_id, $to_location, $qty, '+', null );
         self::_apply_fraction_links( $product_id, $to_location, $qty, '+' );
-        self::_log( 'transferencia', $product_id, $from_location, $to_location, $qty, $ref, $note, $user_id );
+        self::_log( 'transferencia', $product_id, $from_location, $to_location, $qty, $ref, $note, $user_id, $combo_id );
         return true;
     }
 
@@ -339,11 +339,12 @@ class WS_Stock {
         }
     }
 
-    protected static function _log( $type, $product_id, $location_id, $dest_location_id, $qty, $ref, $note, $user_id ) {
+    protected static function _log( $type, $product_id, $location_id, $dest_location_id, $qty, $ref, $note, $user_id, $combo_id = 0 ) {
         global $wpdb;
         $wpdb->insert( self::table( 'movements' ), array(
             'type'             => $type,
             'product_id'       => $product_id,
+            'combo_id'         => (int) $combo_id,
             'location_id'      => $location_id,
             'dest_location_id' => (int) $dest_location_id,
             'qty'              => $qty,
@@ -586,7 +587,7 @@ class WS_Stock {
      * Asume que la transacción ya está abierta. Nunca falla: el guard real
      * de stock lo aplica la ubicación de origen; las vinculadas son un espejo.
      */
-    protected static function _propagate_linked( $product_id, $location_id, $qty, $op, $type, $ref = '', $note = '', $user_id = 0 ) {
+    protected static function _propagate_linked( $product_id, $location_id, $qty, $op, $type, $ref = '', $note = '', $user_id = 0, $combo_id = 0 ) {
         $linked = self::linked_location_ids( $location_id );
         if ( ! $linked || $qty <= 0 ) {
             return;
@@ -603,7 +604,7 @@ class WS_Stock {
             if ( '+' === $op ) {
                 self::_upsert_stock( $product_id, $lid, $qty, '+', null );
                 self::_apply_fraction_links( $product_id, $lid, $qty, '+' );
-                self::_log( $type, $product_id, $lid, 0, $qty, $ref, self::_linked_note( $location_id, $note ), $user_id );
+                self::_log( $type, $product_id, $lid, 0, $qty, $ref, self::_linked_note( $location_id, $note ), $user_id, $combo_id );
             } else {
                 $deducted = self::_decrease_capped( $product_id, $lid, $qty );
                 if ( $deducted > 0 ) {
@@ -614,7 +615,7 @@ class WS_Stock {
                 if ( $missing > 0 ) {
                     $l_note .= ' — ' . sprintf( __( 'faltaron %s en la vinculada', 'workshop' ), number_format( $missing, 2 ) );
                 }
-                self::_log( $type, $product_id, $lid, 0, $deducted, $ref, $l_note, $user_id );
+                self::_log( $type, $product_id, $lid, 0, $deducted, $ref, $l_note, $user_id, $combo_id );
             }
         }
     }
@@ -838,9 +839,11 @@ class WS_Stock {
         $limit = isset( $args['limit'] ) ? (int) $args['limit'] : 50;
         $offset = isset( $args['offset'] ) ? (int) $args['offset'] : 0;
         $sql = "SELECT m.*, p.name AS product_name, u.display_name AS user_name,
+                c.name AS combo_name,
                 l1.name AS location_name, l2.name AS dest_name
                 FROM " . self::table( 'movements' ) . " m
                 LEFT JOIN " . self::table( 'products' ) . " p ON p.id = m.product_id
+                LEFT JOIN " . self::table( 'combos' ) . " c ON c.id = m.combo_id
                 LEFT JOIN {$wpdb->users} u ON u.ID = m.user_id
                 LEFT JOIN " . self::table( 'locations' ) . " l1 ON l1.id = m.location_id
                 LEFT JOIN " . self::table( 'locations' ) . " l2 ON l2.id = m.dest_location_id
@@ -866,6 +869,13 @@ class WS_Stock {
     protected static function movements_where( $args = array() ) {
         global $wpdb;
         $where = array( '1=1' );
+        // Pestañas del historial: solo productos (combo_id = 0), solo combos
+        // (combo_id > 0) o todo.
+        if ( isset( $args['scope'] ) && 'combos' === $args['scope'] ) {
+            $where[] = 'm.combo_id > 0';
+        } elseif ( isset( $args['scope'] ) && 'products' === $args['scope'] ) {
+            $where[] = 'm.combo_id = 0';
+        }
         if ( ! empty( $args['type'] ) ) {
             $where[] = $wpdb->prepare( 'm.type = %s', $args['type'] );
         }
@@ -982,6 +992,9 @@ class WS_Stock {
         }
         if ( ! empty( $args['low_stock'] ) ) {
             $where[] = 's.qty <= p.min_stock';
+        }
+        if ( isset( $args['store_visible'] ) ) {
+            $where[] = $wpdb->prepare( 'p.store_visible = %d', (int) $args['store_visible'] );
         }
         return $where;
     }

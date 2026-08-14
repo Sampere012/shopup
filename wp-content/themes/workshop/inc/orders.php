@@ -53,6 +53,10 @@ class WS_Orders {
 
         $currency   = ws_location_currency( $location_id );
         $delivery   = (float) $loc->delivery_cost;
+        // El domicilio tiene SU propia moneda (puede ser distinta a la de la
+        // tienda): se guarda en esa moneda y se convierte para el total.
+        $delivery_currency = $loc->delivery_currency ? $loc->delivery_currency : $currency;
+        $delivery_in_cur   = ws_convert( $delivery, $delivery_currency, $currency );
         $subtotal   = 0.0;
         $order_items = array();
 
@@ -124,7 +128,8 @@ class WS_Orders {
             'currency'         => $currency,
             'subtotal'         => $subtotal,
             'delivery_cost'    => $delivery,
-            'total'            => $subtotal + $delivery,
+            'delivery_currency'=> $delivery_currency,
+            'total'            => $subtotal + $delivery_in_cur,
             'status'           => 'pending',
         ) );
         $order_id = $wpdb->insert_id;

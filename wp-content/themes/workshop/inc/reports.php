@@ -122,17 +122,33 @@ function ws_reports_data( $filters ) {
 	$pos_sales_table   = ws_table_name( 'pos_sales' );
 	$pos_items_table   = ws_table_name( 'pos_sale_items' );
 
-	// Ventas por día.
+	// Moneda del reporte: la de la ubicación filtrada o la base del negocio.
+	$rep_currency = ws_currency_symbol( $filters['location_id'] );
+
+	// Ventas por día. Se agrupan por moneda y cada monto se convierte a la
+	// moneda del reporte antes de sumar el día (así no se mezclan CUP + USD).
 	$sales = array();
 	if ( $loc_ids ) {
-		$sales = $wpdb->get_results( $wpdb->prepare(
-			"SELECT DATE(created_at) AS d, SUM(total) AS total, COUNT(*) AS n
+		$raw_sales = $wpdb->get_results( $wpdb->prepare(
+			"SELECT DATE(created_at) AS d, currency, SUM(total) AS total, COUNT(*) AS n
 			 FROM {$orders_table}
 			 WHERE location_id IN ({$ph}) AND status IN ('accepted','completed')
 			   AND created_at >= %s AND created_at <= %s
-			 GROUP BY DATE(created_at) ORDER BY d ASC",
+			 GROUP BY DATE(created_at), currency ORDER BY d ASC",
 			...array_merge( $args, array( $since, $until ) )
 		) );
+		$sales_by_day = array();
+		foreach ( $raw_sales as $row ) {
+			$cur = $row->currency ? $row->currency : $rep_currency;
+			$d   = $row->d;
+			if ( ! isset( $sales_by_day[ $d ] ) ) {
+				$sales_by_day[ $d ] = (object) array( 'd' => $d, 'total' => 0.0, 'n' => 0 );
+			}
+			$sales_by_day[ $d ]->total += ws_convert( (float) $row->total, $cur, $rep_currency );
+			$sales_by_day[ $d ]->n     += (int) $row->n;
+		}
+		ksort( $sales_by_day );
+		$sales = array_values( $sales_by_day );
 	}
 
 	// Movimientos por tipo.
@@ -148,20 +164,45 @@ function ws_reports_data( $filters ) {
 	}
 
 	// Todos los productos vendidos en el período (ordenados por unidades).
+	// Un mismo producto puede venderse en varias monedas (ubicaciones de
+	// monedas distintas): se agrupa por moneda y se convierte a la moneda
+	// del reporte antes de sumar.
 	$top_all = array();
 	if ( $loc_ids ) {
-		$top_all = $wpdb->get_results( $wpdb->prepare(
-			"SELECT oi.product_id, oi.product_name, SUM(oi.qty) AS qty,
-			        SUM(oi.price * oi.qty) AS total, COUNT(DISTINCT o.id) AS orders,
-			        ROUND(SUM(oi.qty) / COUNT(DISTINCT o.id), 2) AS avg_per_trans
+		$raw_top = $wpdb->get_results( $wpdb->prepare(
+			"SELECT oi.product_id, oi.product_name, o.currency AS currency, SUM(oi.qty) AS qty,
+			        SUM(oi.price * oi.qty) AS total, COUNT(DISTINCT o.id) AS orders
 			 FROM {$order_items_table} oi
 			 INNER JOIN {$orders_table} o ON o.id = oi.order_id
 			 WHERE o.location_id IN ({$ph}) AND o.status IN ('accepted','completed')
 			   AND o.created_at >= %s AND o.created_at <= %s
-			 GROUP BY oi.product_id, oi.product_name
+			 GROUP BY oi.product_id, oi.product_name, o.currency
 			 ORDER BY qty DESC",
 			...array_merge( $args, array( $since, $until ) )
 		) );
+		$top_by_product = array();
+		foreach ( $raw_top as $row ) {
+			$pid = (int) $row->product_id;
+			$cur = $row->currency ? $row->currency : $rep_currency;
+			if ( ! isset( $top_by_product[ $pid ] ) ) {
+				$top_by_product[ $pid ] = (object) array(
+					'product_id'   => $pid,
+					'product_name' => $row->product_name,
+					'qty'          => 0.0,
+					'total'        => 0.0,
+					'orders'       => 0,
+				);
+			}
+			$top_by_product[ $pid ]->qty    += (float) $row->qty;
+			$top_by_product[ $pid ]->total  += ws_convert( (float) $row->total, $cur, $rep_currency );
+			$top_by_product[ $pid ]->orders += (int) $row->orders;
+		}
+		foreach ( $top_by_product as $p ) {
+			$p->total = round( $p->total, 2 );
+			$p->avg_per_trans = $p->orders ? round( $p->qty / $p->orders, 2 ) : 0.0;
+		}
+		usort( $top_by_product, fn( $a, $b ) => (float) $b->qty <=> (float) $a->qty );
+		$top_all = array_values( $top_by_product );
 	}
 
 	// Detalle de transacciones (pedidos) del período.
@@ -169,7 +210,8 @@ function ws_reports_data( $filters ) {
 	if ( $loc_ids ) {
 		$transactions = $wpdb->get_results( $wpdb->prepare(
 			"SELECT o.id, o.number, o.created_at, o.customer_name, o.customer_phone, o.customer_address,
-			        l.name AS location_name, o.subtotal, o.delivery_cost, o.total, o.status
+			        l.name AS location_name, o.subtotal, o.delivery_cost, o.total, o.status,
+			        o.currency, o.delivery_currency
 			 FROM {$orders_table} o
 			 LEFT JOIN {$locations_table} l ON l.id = o.location_id
 			 WHERE o.location_id IN ({$ph}) AND o.status IN ('accepted','completed')
@@ -194,17 +236,32 @@ function ws_reports_data( $filters ) {
 	$pos_products = array();
 	$has_pos      = (bool) $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $pos_sales_table ) ) );
 	if ( $has_pos && $loc_ids ) {
-		$pos_summary = $wpdb->get_row( $wpdb->prepare(
-			"SELECT COUNT(*) AS orders, COALESCE(SUM(total),0) AS total, COALESCE(AVG(total),0) AS average
+		// Resumen POS con la moneda de cada venta: se convierte y se suma
+		// (el AVG en SQL mezclaría monedas si hay varias ubicaciones).
+		$pos_sum = $wpdb->get_results( $wpdb->prepare(
+			"SELECT COUNT(*) AS orders, currency, SUM(total) AS total
 			 FROM {$pos_sales_table}
-			 WHERE location_id IN ({$ph}) AND status <> 'cancelled' AND created_at >= %s AND created_at <= %s",
+			 WHERE location_id IN ({$ph}) AND status <> 'cancelled' AND created_at >= %s AND created_at <= %s
+			 GROUP BY currency",
 			...array_merge( $args, array( $since, $until ) )
 		) );
+		$pos_orders = 0;
+		$pos_total  = 0.0;
+		foreach ( $pos_sum as $row ) {
+			$cur = $row->currency ? $row->currency : $rep_currency;
+			$pos_orders += (int) $row->orders;
+			$pos_total  += ws_convert( (float) $row->total, $cur, $rep_currency );
+		}
+		$pos_summary = (object) array(
+			'orders'  => $pos_orders,
+			'total'   => round( $pos_total, 2 ),
+			'average' => $pos_orders ? round( $pos_total / $pos_orders, 2 ) : 0.0,
+		);
 
 		$pos_sales = $wpdb->get_results( $wpdb->prepare(
 			"SELECT ps.id, ps.number, ps.created_at, l.name AS location_name, ps.customer_name,
 			        u.display_name AS seller_name, ps.payment_method, ps.cash_amount,
-			        ps.transfer_amount, ps.total, ps.status
+			        ps.transfer_amount, ps.total, ps.status, ps.currency
 			 FROM {$pos_sales_table} ps
 			 LEFT JOIN {$locations_table} l ON l.id = ps.location_id
 			 LEFT JOIN {$wpdb->users} u ON u.ID = ps.seller_id
@@ -345,6 +402,16 @@ function ws_reports_utilities( $filters ) {
 	$args    = $loc_ids ? $loc_ids : array( 0 );
 	$loc_set = $loc_ids ? array_flip( array_map( 'intval', $loc_ids ) ) : array();
 
+	// Moneda del reporte y moneda de cada ubicación: al sumar ingresos de
+	// varias ubicaciones no se pueden mezclar monedas, así que cada fila se
+	// convierte a la moneda del reporte.
+	$rep_cur      = ws_currency_symbol( $filters['location_id'] );
+	$base_cur     = ws_currency_symbol();
+	$loc_currency = array();
+	foreach ( $filters['locations'] as $l ) {
+		$loc_currency[ (int) $l->id ] = $l->currency ? $l->currency : $base_cur;
+	}
+
 	$orders_t = ws_table_name( 'orders' );
 	$pos_t    = ws_table_name( 'pos_sales' );
 	$exp_t    = ws_table_name( 'expenses' );
@@ -378,9 +445,11 @@ function ws_reports_utilities( $filters ) {
 		foreach ( array_merge( $order_inc, $pos_inc ) as $row ) {
 			$loc_id = (int) $row->location_id;
 			$ym     = (string) $row->ym;
-			$income_by_month[ $ym ]                      = (float) ( $income_by_month[ $ym ] ?? 0 ) + (float) $row->total;
-			$by_loc_by_month[ $ym ][ $loc_id ]           = (float) ( $by_loc_by_month[ $ym ][ $loc_id ] ?? 0 ) + (float) $row->total;
-			$by_loc_total[ $loc_id ]                     = (float) ( $by_loc_total[ $loc_id ] ?? 0 ) + (float) $row->total;
+			$cur    = isset( $loc_currency[ $loc_id ] ) ? $loc_currency[ $loc_id ] : $rep_cur;
+			$total  = ws_convert( (float) $row->total, $cur, $rep_cur );
+			$income_by_month[ $ym ]                      = (float) ( $income_by_month[ $ym ] ?? 0 ) + $total;
+			$by_loc_by_month[ $ym ][ $loc_id ]           = (float) ( $by_loc_by_month[ $ym ][ $loc_id ] ?? 0 ) + $total;
+			$by_loc_total[ $loc_id ]                     = (float) ( $by_loc_total[ $loc_id ] ?? 0 ) + $total;
 		}
 
 		// Ganancia por costo de ventas POS: items unidos a la venta completada.
@@ -400,7 +469,8 @@ function ws_reports_utilities( $filters ) {
 				foreach ( $pos_profit as $row ) {
 					$loc_id = (int) $row->location_id;
 					$ym     = (string) $row->ym;
-					$p      = (float) $row->profit;
+					$cur    = isset( $loc_currency[ $loc_id ] ) ? $loc_currency[ $loc_id ] : $rep_cur;
+					$p      = ws_convert( (float) $row->profit, $cur, $rep_cur );
 					$profit_by_month[ $ym ]            = ( $profit_by_month[ $ym ] ?? 0 ) + $p;
 					$profit_loc_by_month[ $ym ][ $loc_id ] = ( $profit_loc_by_month[ $ym ][ $loc_id ] ?? 0 ) + $p;
 					$profit_by_loc_total[ $loc_id ]    = ( $profit_by_loc_total[ $loc_id ] ?? 0 ) + $p;
@@ -427,7 +497,8 @@ function ws_reports_utilities( $filters ) {
 			foreach ( $order_profit as $row ) {
 				$loc_id = (int) $row->location_id;
 				$ym     = (string) $row->ym;
-				$p      = (float) $row->profit;
+				$cur    = isset( $loc_currency[ $loc_id ] ) ? $loc_currency[ $loc_id ] : $rep_cur;
+				$p      = ws_convert( (float) $row->profit, $cur, $rep_cur );
 				$profit_by_month[ $ym ]            = ( $profit_by_month[ $ym ] ?? 0 ) + $p;
 				$profit_loc_by_month[ $ym ][ $loc_id ] = ( $profit_loc_by_month[ $ym ][ $loc_id ] ?? 0 ) + $p;
 				$profit_by_loc_total[ $loc_id ]    = ( $profit_by_loc_total[ $loc_id ] ?? 0 ) + $p;
@@ -450,7 +521,9 @@ function ws_reports_utilities( $filters ) {
 		) );
 		foreach ( $exp_rows as $row ) {
 			$ym    = (string) $row->ym;
-			$total = (float) $row->total;
+			// Los gastos no guardan moneda: se asumen en la moneda base del
+			// negocio y se convierten a la moneda del reporte si hace falta.
+			$total = ws_convert( (float) $row->total, $base_cur, $rep_cur );
 			$lid   = (int) $row->location_id;
 			if ( 0 === $lid ) {
 				$exp_by_month[ $ym ] = ( $exp_by_month[ $ym ] ?? 0 ) + $total;
@@ -753,14 +826,22 @@ function ws_reports_build_sheets( $filters, $data ) {
 		}
 	}
 
+	// Total convertido a la MONEDA DEL REPORTE (no a la base del negocio),
+	// usando el desglose por moneda que ya no mezcla montos.
+	$total_sales_rep = array_sum( array_map(
+		static fn( $ct ) => ws_convert( (float) $ct->total, $ct->currency, $currency ),
+		(array) $data['currency_totals']
+	) );
+
 	$summary_rows = array(
 		array( __( 'REPORTE DE VENTAS', 'workshop' ), '' ),
 		array( __( 'Negocio', 'workshop' ), ws_site_name() ),
 		array( __( 'Ubicación', 'workshop' ), $loc_label ),
 		array( __( 'Período', 'workshop' ), $filters['period_label'] ),
+		array( __( 'Moneda del reporte', 'workshop' ), $currency ),
 		array( __( 'Generado', 'workshop' ), date( 'd/m/Y H:i', current_time( 'timestamp' ) ) ),
 		array(),
-		array( __( 'Ventas totales (convertidas)', 'workshop' ), $money( $data['total_sales_base'] ) ),
+		array( __( 'Ventas totales (convertidas)', 'workshop' ), $money( $total_sales_rep ) ),
 		array( __( 'Transacciones', 'workshop' ), array( (int) $data['total_orders'], 'n' ) ),
 		array( __( 'Ticket promedio', 'workshop' ), $money( $data['avg_sale'] ) ),
 		array( __( 'Unidades vendidas', 'workshop' ), array( (float) $data['total_units'], 'n' ) ),
@@ -803,8 +884,9 @@ function ws_reports_build_sheets( $filters, $data ) {
 	$trans_rows = array(
 		array(
 			__( 'Nº', 'workshop' ), __( 'Fecha', 'workshop' ), __( 'Ubicación', 'workshop' ),
-			__( 'Cliente', 'workshop' ), __( 'Teléfono', 'workshop' ), __( 'Subtotal', 'workshop' ),
-			__( 'Domicilio', 'workshop' ), __( 'Total', 'workshop' ), __( 'Estado', 'workshop' ),
+			__( 'Cliente', 'workshop' ), __( 'Teléfono', 'workshop' ), __( 'Moneda', 'workshop' ),
+			__( 'Subtotal', 'workshop' ), __( 'Domicilio', 'workshop' ), __( 'Moneda dom.', 'workshop' ),
+			__( 'Total', 'workshop' ), __( 'Estado', 'workshop' ),
 		),
 	);
 	foreach ( $data['transactions'] as $o ) {
@@ -814,8 +896,10 @@ function ws_reports_build_sheets( $filters, $data ) {
 			(string) ( $o->location_name ?? '' ),
 			$o->customer_name,
 			$o->customer_phone,
+			(string) ( $o->currency ?? '' ),
 			$money( $o->subtotal ),
 			$money( $o->delivery_cost ),
+			(string) ( $o->delivery_currency ? $o->delivery_currency : $o->currency ),
 			$money( $o->total ),
 			ucfirst( $o->status ),
 		);
@@ -911,7 +995,8 @@ function ws_reports_build_sheets( $filters, $data ) {
 			array(
 				__( 'Nº', 'workshop' ), __( 'Fecha', 'workshop' ), __( 'Ubicación', 'workshop' ),
 				__( 'Cliente', 'workshop' ), __( 'Vendedor', 'workshop' ), __( 'Método', 'workshop' ),
-				__( 'Efectivo', 'workshop' ), __( 'Transferencia', 'workshop' ), __( 'Total', 'workshop' ), __( 'Estado', 'workshop' ),
+				__( 'Moneda', 'workshop' ), __( 'Efectivo', 'workshop' ), __( 'Transferencia', 'workshop' ),
+				__( 'Total', 'workshop' ), __( 'Estado', 'workshop' ),
 			),
 		);
 		foreach ( $data['pos_sales'] as $p ) {
@@ -922,6 +1007,7 @@ function ws_reports_build_sheets( $filters, $data ) {
 				$p->customer_name,
 				(string) ( $p->seller_name ?? '' ),
 				ucfirst( $p->payment_method ),
+				(string) ( $p->currency ?? '' ),
 				$money( $p->cash_amount ),
 				$money( $p->transfer_amount ),
 				$money( $p->total ),

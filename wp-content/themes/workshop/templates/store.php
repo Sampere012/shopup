@@ -8,9 +8,14 @@
 defined( 'ABSPATH' ) || exit;
 
 $location = get_query_var( 'ws_location' );
-$products = WS_Stock::stock_rows( array( 'location_id' => $location->id ) );
-// Combos activos como ítems del catálogo (stock derivado de sus componentes).
-$combos = WS_Combos::catalog_rows( $location->id );
+// Solo lo VISIBLE EN LA TIENDA: un producto/combo puede existir en el
+// inventario y estar oculto del catálogo público (toggle en Stock).
+$products = WS_Stock::stock_rows( array( 'location_id' => $location->id, 'store_visible' => 1 ) );
+// Combos activos y visibles como ítems del catálogo (stock derivado).
+$combos = array_values( array_filter(
+    WS_Combos::catalog_rows( $location->id ),
+    fn( $c ) => ! empty( $c['store_visible'] )
+) );
 // Los productos que componen un combo ACTIVO no salen sueltos en la tienda:
 // se agrupan dentro del card del combo (el combo es un producto que contiene
 // varios productos). Al deshabilitar el combo, sus productos vuelven al grid.
@@ -86,12 +91,22 @@ $ws_store_hero_bg = $ws_store_has_bg
     ? "background-image:url('" . ws_image_url( $location->photo ) . "');background-size:cover;background-position:center;"
     : '';
 
+// Domicilio: el coste tiene SU PROPIA moneda (editable en el panel), que
+// puede ser distinta a la de la tienda (p. ej. la tienda vende en USD y el
+// domicilio se cobra en CUP). En el hero se muestra en la moneda del
+// domicilio y, si la tienda usa otra para los precios, su equivalente.
+$ws_delivery_currency = $location->delivery_currency ? $location->delivery_currency : $store_currency;
+$ws_delivery_value    = (float) $location->delivery_cost;
+$ws_delivery_show_cur = ( '' !== $store_display_currency ) ? $store_display_currency : $ws_delivery_currency;
+$ws_delivery_show_val = ws_convert( $ws_delivery_value, $ws_delivery_currency, $ws_delivery_show_cur );
+
 get_header();
 ?>
 <div class="ws-store"
      x-data="wsStore({
         locationId: <?php echo (int) $location->id; ?>,
         deliveryCost: <?php echo (float) $location->delivery_cost; ?>,
+        deliveryCurrency: '<?php echo esc_js( $ws_delivery_currency ); ?>',
         currency: '<?php echo esc_js( $store_currency ); ?>',
         slug: '<?php echo esc_js( $location->slug ); ?>'
      })">
@@ -106,7 +121,13 @@ get_header();
                 <p><i class="fa-solid fa-location-dot"></i> <?php echo esc_html( $location->address ); ?></p>
                 <div class="ws-store-head-row">
                     <?php if ( (float) $location->delivery_cost > 0 ) : ?>
-                        <span class="ws-store-meta"><i class="fa-solid fa-truck-fast"></i> <?php echo esc_html( __( 'Domicilio', 'workshop' ) . ': ' . ws_money( $location->delivery_cost, $location->currency ) ); ?></span>
+                        <?php
+                        $ws_delivery_label = __( 'Domicilio', 'workshop' ) . ': ' . ws_money( $ws_delivery_value, $ws_delivery_currency );
+                        if ( $ws_delivery_show_cur !== $ws_delivery_currency && abs( $ws_delivery_show_val - $ws_delivery_value ) > 0.001 ) {
+                            $ws_delivery_label .= ' (≈ ' . ws_money( $ws_delivery_show_val, $ws_delivery_show_cur ) . ')';
+                        }
+                        ?>
+                        <span class="ws-store-meta"><i class="fa-solid fa-truck-fast"></i> <?php echo esc_html( $ws_delivery_label ); ?></span>
                     <?php else : ?>
                         <span class="ws-store-meta"><i class="fa-solid fa-truck-fast"></i> <?php esc_html_e( 'Recogida gratis', 'workshop' ); ?></span>
                     <?php endif; ?>
@@ -173,7 +194,7 @@ get_header();
 
             <div class="ws-product-grid">
                 <template x-for="p in filtered" :key="p.id">
-                    <div class="ws-product-card" :data-pid="p.id" :class="inCart(p.id) > 0 ? 'is-in-cart' : ''" @click="openProduct(p)" role="button" :aria-label="'Ver ' + p.name">
+                    <div class="ws-product-card" :data-pid="p.id" :class="(inCart(p.id) > 0 ? 'is-in-cart ' : '') + (p.is_combo ? 'ws-is-combo' : '')" @click="openProduct(p)" role="button" :aria-label="'Ver ' + p.name">
                         <span class="ws-product-out" x-show="p.qty <= 0"><?php esc_html_e( 'Agotado', 'workshop' ); ?></span>
                         <span class="ws-product-incart" x-show="inCart(p.id) > 0"><i class="fa-solid fa-check"></i> <span x-text="'En pedido: ' + inCart(p.id)"></span></span>
                         <div class="ws-product-img">
@@ -193,9 +214,9 @@ get_header();
                                 <span class="ws-stock-badge" :class="p.qty > 0 ? 'ws-text-success' : 'ws-text-danger'" x-text="stockLabel(p)"></span>
                             </div>
                             <div class="ws-combo-items ws-store-combo-items" x-show="p.is_combo && (p.combo_items || []).length">
-                                <span class="ws-combo-items-label"><?php esc_html_e( 'Contiene:', 'workshop' ); ?></span>
+                                <span class="ws-combo-items-label"><i class="fa-solid fa-cubes"></i> <?php esc_html_e( 'Contiene', 'workshop' ); ?></span>
                                 <template x-for="it in (p.combo_items || [])" :key="it.product_id">
-                                    <span class="ws-combo-chip" x-text="it.name + ' × ' + it.qty"></span>
+                                    <span class="ws-combo-chip"><i class="fa-solid fa-box"></i><span x-text="it.name"></span><b x-text="'×' + it.qty"></b></span>
                                 </template>
                             </div>
                             <div class="ws-product-actions">
@@ -253,12 +274,12 @@ get_header();
                                     <thead><tr><th><?php esc_html_e( 'Producto', 'workshop' ); ?></th><th>Cant.</th><th><?php esc_html_e( 'Precio', 'workshop' ); ?></th></tr></thead>
                                     <tbody>
                                         <template x-for="it in trackResult.items" :key="it.product_name">
-                                            <tr><td x-text="it.product_name"></td><td x-text="it.qty"></td><td x-text="price(it.price * it.qty)"></td></tr>
+                                            <tr><td x-text="it.product_name"></td><td x-text="it.qty"></td><td x-text="moneyOf(it.price * it.qty, trackResult.currency)"></td></tr>
                                         </template>
                                     </tbody>
                                 </table>
                                 <div class="ws-summary-total">
-                                    <div class="ws-total"><span><?php esc_html_e( 'Total', 'workshop' ); ?></span><strong x-text="price(trackResult.total)"></strong></div>
+                                    <div class="ws-total"><span><?php esc_html_e( 'Total', 'workshop' ); ?></span><strong x-text="moneyOf(trackResult.total, trackResult.currency)"></strong></div>
                                 </div>
                             </div>
                         </template>
@@ -470,9 +491,9 @@ get_header();
                         <p class="ws-product-barcode" x-text="activeProduct.barcode"></p>
                         <p class="ws-product-desc" x-show="activeProduct.description" x-text="activeProduct.description"></p>
                         <div class="ws-combo-items ws-store-combo-items" x-show="activeProduct.is_combo && (activeProduct.combo_items || []).length">
-                            <span class="ws-combo-items-label"><?php esc_html_e( 'Contiene:', 'workshop' ); ?></span>
+                            <span class="ws-combo-items-label"><i class="fa-solid fa-cubes"></i> <?php esc_html_e( 'Contiene', 'workshop' ); ?></span>
                             <template x-for="it in (activeProduct.combo_items || [])" :key="it.product_id">
-                                <span class="ws-combo-chip" x-text="it.name + ' × ' + it.qty"></span>
+                                <span class="ws-combo-chip"><i class="fa-solid fa-box"></i><span x-text="it.name"></span><b x-text="'×' + it.qty"></b></span>
                             </template>
                         </div>
                         <div class="ws-product-row">

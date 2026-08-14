@@ -123,7 +123,7 @@ $statuses   = WS_Orders::statuses();
             </table>
             <div class="ws-summary-total">
                 <div><span><?php esc_html_e( 'Subtotal', 'workshop' ); ?></span><strong x-text="money(detail.subtotal, detail.currency)"></strong></div>
-                <div><span><?php esc_html_e( 'Domicilio', 'workshop' ); ?></span><strong x-text="money(detail.delivery_cost, detail.currency)"></strong></div>
+                <div><span><?php esc_html_e( 'Domicilio', 'workshop' ); ?></span><strong x-text="money(detail.delivery_cost, detail.delivery_currency || detail.currency)"></strong></div>
                 <div class="ws-total"><span><?php esc_html_e( 'Total', 'workshop' ); ?></span><strong x-text="money(detail.total, detail.currency)"></strong></div>
             </div>
             <div class="ws-modal-foot">

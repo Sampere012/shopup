@@ -240,7 +240,9 @@ class WS_Combos {
      */
     public static function decrease_in_tx( $combo_id, $location_id, $count, $type = 'salida', $ref = '', $note = '', $user_id = 0 ) {
         foreach ( self::expand( $combo_id, $count ) as $it ) {
-            $res = WS_Stock::decrease_in_tx( $it['product_id'], $location_id, $it['qty'], $type, $ref, $note, $user_id );
+            // El movimiento se registra por componente pero enlazado al combo
+            // (combo_id), para separarlo en el historial con pestañas.
+            $res = WS_Stock::decrease_in_tx( $it['product_id'], $location_id, $it['qty'], $type, $ref, $note, $user_id, (int) $combo_id );
             if ( is_wp_error( $res ) ) {
                 return $res;
             }
@@ -254,7 +256,7 @@ class WS_Combos {
      */
     public static function increase_in_tx( $combo_id, $location_id, $count, $type = 'entrada', $ref = '', $note = '', $user_id = 0 ) {
         foreach ( self::expand( $combo_id, $count ) as $it ) {
-            $res = WS_Stock::increase_in_tx( $it['product_id'], $location_id, $it['qty'], $type, $ref, $note, $user_id );
+            $res = WS_Stock::increase_in_tx( $it['product_id'], $location_id, $it['qty'], $type, $ref, $note, $user_id, (int) $combo_id );
             if ( is_wp_error( $res ) ) {
                 return $res;
             }
@@ -295,7 +297,8 @@ class WS_Combos {
             ) );
             $res = WS_Stock::transfer_in_tx(
                 $it['product_id'], $from, $to, $it['qty'], $ref,
-                $base_note . sprintf( __( 'Combo: %s', 'workshop' ), $combo->name ), $user_id
+                $base_note . sprintf( __( 'Combo: %s', 'workshop' ), $combo->name ), $user_id,
+                (int) $combo_id
             );
             if ( is_wp_error( $res ) ) {
                 $wpdb->query( 'ROLLBACK' );
@@ -335,6 +338,7 @@ class WS_Combos {
                 'currency' => $c->currency,
                 'qty'      => self::stock( (int) $c->id, $location_id ),
                 'is_combo' => 1,
+                'store_visible' => (int) ( $c->store_visible ?? 1 ),
                 'items'    => array_map( function ( $it ) {
                     return array(
                         'product_id' => (int) $it->product_id,

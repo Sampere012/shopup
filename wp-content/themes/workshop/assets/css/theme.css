@@ -104,6 +104,16 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-icon-btn:hover { background: #f3f4f6; border-color: #d1d5db; }
 .ws-icon-btn.ws-danger:hover { background: #fef2f2; color: var(--ws-danger); border-color: #fecaca; }
 .ws-icon-btn.ws-success:hover { background: #ecfdf5; color: var(--ws-success); border-color: #a7f3d0; }
+/* Toggle de visibilidad en la tienda: apagado = oculto del catálogo público. */
+.ws-icon-btn.ws-icon-btn-muted { color: var(--ws-muted); opacity: .6; background: #f9fafb; }
+.ws-icon-btn.ws-icon-btn-muted:hover { opacity: 1; color: var(--ws-primary); background: #eef2ff; border-color: #c7d2fe; }
+/* Badge 'Combo: X' en el historial de movimientos. */
+.ws-move-combo {
+    display: inline-flex; align-items: center; gap: 5px; margin-left: 8px;
+    background: #eef2ff; color: var(--ws-primary); border: 1px solid rgba(79, 70, 229, .2);
+    border-radius: 999px; padding: 2px 9px; font-size: .72em; font-weight: 700;
+}
+.ws-move-combo i { font-size: .7em; }
 
 /* ---------- Topbar publica ---------- */
 .ws-topbar {
@@ -875,6 +885,44 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-product-row .ws-stock-badge { margin-left: auto; }
 .ws-stock-badge { font-size: .75rem; font-weight: 700; }
 
+/* ---------- Combo en la tienda: tarjeta destacada ---------- */
+.ws-product-card.ws-is-combo {
+    border-color: rgba(124, 58, 237, .28);
+    background: linear-gradient(180deg, #fdfbff 0%, #fff 46%);
+}
+.ws-product-card.ws-is-combo::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px; z-index: 3;
+    background: linear-gradient(90deg, #7c3aed, #6366f1 55%, #a855f7);
+}
+.ws-product-card.ws-is-combo:hover {
+    border-color: rgba(124, 58, 237, .55);
+    box-shadow: 0 16px 34px -10px rgba(124, 58, 237, .3), var(--ws-shadow-lg);
+}
+.ws-product-card.ws-is-combo .ws-product-img {
+    background: linear-gradient(135deg, #ede9fe, #e0e7ff 55%, #fae8ff);
+}
+.ws-product-card.ws-is-combo .ws-product-img i { color: #a78bfa; }
+.ws-product-card.ws-is-combo .ws-price { color: #6d28d9; font-size: 1.22rem; }
+/* Panel "Contiene:" de los combos (tarjeta y modal de producto). */
+.ws-product-card.ws-is-combo .ws-store-combo-items,
+.ws-store-modal-info .ws-store-combo-items {
+    margin-top: 8px; padding: 9px 10px;
+    background: #faf9ff; border: 1px dashed rgba(124, 58, 237, .35); border-radius: 11px;
+}
+.ws-product-card.ws-is-combo .ws-combo-items-label,
+.ws-store-modal-info .ws-combo-items-label {
+    color: #7c3aed; display: inline-flex; align-items: center; gap: 6px;
+}
+.ws-product-card.ws-is-combo .ws-combo-chip,
+.ws-store-modal-info .ws-combo-chip {
+    background: #fff; border: 1px solid rgba(124, 58, 237, .28); color: #374151;
+    padding: 3px 9px; display: inline-flex; align-items: center; gap: 5px; font-weight: 600;
+}
+.ws-product-card.ws-is-combo .ws-combo-chip i,
+.ws-store-modal-info .ws-combo-chip i { color: #a78bfa; font-size: .72em; }
+.ws-product-card.ws-is-combo .ws-combo-chip b,
+.ws-store-modal-info .ws-combo-chip b { color: #7c3aed; font-weight: 800; }
+
 .ws-cart-overlay {
     position: fixed; inset: 0; z-index: 99985; background: rgba(10, 14, 38, .6); backdrop-filter: blur(3px);
     display: flex; align-items: center; justify-content: center; padding: 16px;
@@ -985,6 +1033,13 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 /* Línea 'Contiene:' en las cards de la tienda para combos. */
 .ws-store-combo-items { margin-top: 4px; }
 .ws-store-modal-info .ws-store-combo-items { margin: 6px 0 10px; }
+.ws-reports-currency {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: #eef2ff; color: var(--ws-primary-dark); border: 1px solid rgba(79, 70, 229, .22);
+    padding: 6px 13px; border-radius: 999px; font-size: .82em; font-weight: 600;
+    margin: 0 0 14px;
+}
+.ws-reports-currency i { color: var(--ws-primary); }
 .ws-report-date { display: inline-flex; align-items: center; gap: 6px; font-size: .85em; color: var(--ws-muted); }
 .ws-report-date input[type="date"] { padding: 8px 10px; border: 1px solid var(--ws-border); border-radius: 9px; font-size: .9em; background: #fff; font-family: inherit; color: inherit; }
 .ws-locations-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; }

@@ -604,6 +604,10 @@ class WS_CRUD {
             'store_settings'  => empty( $store_settings ) ? '' : wp_json_encode( $store_settings ),
             'whatsapp'        => sanitize_text_field( $data['whatsapp'] ?? '' ),
             'delivery_cost'   => (float) ( $data['delivery_cost'] ?? 0 ),
+            // Moneda del domicilio: por defecto la de la ubicación, pero el
+            // vendedor puede elegir otra (el domicilio se cobra en la moneda
+            // del mensajero, que puede no ser la de la tienda).
+            'delivery_currency' => sanitize_text_field( $data['delivery_currency'] ?? ( $data['currency'] ?? ws_currency_symbol() ) ),
             'active'          => isset( $data['active'] ) ? (int) filter_var( $data['active'], FILTER_VALIDATE_BOOLEAN ) : 1,
         );
         global $wpdb;

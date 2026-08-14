@@ -287,6 +287,9 @@
         Alpine.data('wsStore', (opts) => ({
             locationId: opts.locationId,
             deliveryCost: opts.deliveryCost,
+            // Moneda del coste de domicilio: puede ser distinta a la de la
+            // tienda (el mensajero cobra en otra moneda). Se guarda aparte.
+            deliveryCurrency: opts.deliveryCurrency || opts.currency,
             currency: opts.currency,
             baseCurrency: opts.baseCurrency || opts.currency,
             rates: opts.rates || {},
@@ -430,20 +433,30 @@
                 walk(this.categoryTree);
                 return set;
             },
-            get subtotal() { return this.cartItems.reduce((a, i) => a + this.convert(i.price, i.currency || this.currency, this.currency) * i.qty, 0); },
+            // Moneda en la que se calculan los totales del carrito: la de la
+            // tienda (displayCurrency) si está configurada, si no la de la
+            // ubicación. Así el domicilio y los totales no mezclan monedas.
+            get cartCurrency() { return this.displayCurrency || this.currency; },
+            get subtotal() {
+                const target = this.cartCurrency;
+                return this.cartItems.reduce((a, i) => a + this.convert(i.price, i.currency || this.currency, target) * i.qty, 0);
+            },
             // Subtotal en transferencia: aplica el % de transferencia de cada producto.
             get subtotalTransfer() {
+                const target = this.cartCurrency;
                 return this.cartItems.reduce((a, i) => {
                     const p = this.products.find(x => x.id === i.product_id);
                     const pct = p ? (Number(p.transfer_pct) || 0) : 0;
-                    const price = this.convert(i.price, i.currency || this.currency, this.currency);
+                    const price = this.convert(i.price, i.currency || this.currency, target);
                     return a + price * (1 + pct / 100) * i.qty;
                 }, 0);
             },
-            get delivery() { return this.cartItems.length ? this.deliveryCost : 0; },
+            // El coste de domicilio se guarda en SU moneda (deliveryCurrency):
+            // se convierte a la moneda del carrito para no mezclar.
+            get delivery() { return this.cartItems.length ? this.convert(this.deliveryCost, this.deliveryCurrency, this.cartCurrency) : 0; },
             get total() { return this.subtotal + this.delivery; },
             get totalTransfer() { return this.subtotalTransfer + this.delivery; },
-            price(v) { return money(v, this.currency); },
+            price(v) { return money(v, this.cartCurrency); },
             moneyOf(v, c) { return money(v, c || this.currency); },
             // Convierte un monto de una moneda a otra usando la tasa configurada.
             convert(amount, from, to) {
@@ -1527,7 +1540,7 @@
                 fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ action: 'ws_locations_list', ws_nonce: WS.nonce, search: this.search, sort: this.sortKey, dir: this.sortDir, page: this.page, pageSize: this.pageSize }) })
                     .then(r => r.json()).then(r => { if (r.success) { this.locations = r.data.locations; this.total = r.data.total; this.page = r.data.page; } });
             },
-            money(v) { return money(v, this.currency); },
+            money(v, c) { return money(v, c || this.currency); },
             // Monedas con tasa configurada (para el select de la tasa a mostrar).
             get rateCurrencies() {
                 return Object.keys(this.rates || {}).filter(c => c && Number(this.rates[c]) > 0);
@@ -1568,11 +1581,15 @@
                         store_settings: Object.assign({ currency: '', rate: '', price_source: 'location' }, l.store_settings || {})
                     });
                 } else {
-                    this.form = { type: 'pv', name: '', slug: '', address: '', description: '', photo: '', currency: this.currency, whatsapp: '', delivery_cost: 0, active: true, payment_methods: [], store_settings: { currency: '', rate: '', price_source: 'location' } };
+                    this.form = { type: 'pv', name: '', slug: '', address: '', description: '', photo: '', currency: this.currency, whatsapp: '', delivery_cost: 0, delivery_currency: this.currency, active: true, payment_methods: [], store_settings: { currency: '', rate: '', price_source: 'location' } };
                 }
                 if (!this.form.currency) this.form.currency = this.currency;
+                if (!this.form.delivery_currency) this.form.delivery_currency = this.form.currency || this.currency;
                 if (!this.currencies.length || this.currencies.indexOf(this.form.currency) === -1) {
                     this.currencies = this.currencies.concat([this.form.currency]);
+                }
+                if (this.currencies.indexOf(this.form.delivery_currency) === -1) {
+                    this.currencies = this.currencies.concat([this.form.delivery_currency]);
                 }
                 this.formOpen = true;
             },
@@ -1637,6 +1654,7 @@
             canWriteoff: opts.canWriteoff,
             canTransfer: opts.canTransfer,
             canVenta: opts.canVenta,
+            canManageStore: !!opts.canManageStore,
             sellers: opts.sellers || [],
             // Pestañas de la vista: movimientos | cuadre | historial de cuadres.
             stockTab: 'moves',
@@ -1684,6 +1702,21 @@
                     .then(r => r.json()).then(r => { if (r.success) { this.rows = r.data.rows; this.combos = r.data.combos || []; this.total = r.data.total; this.page = r.data.page; } });
             },
             get canAnyMove() { return this.canEntry || this.canExit || this.canWriteoff || this.canTransfer || this.canVenta; },
+            // Muestra/oculta un producto o combo de la TIENDA PÚBLICA: sigue en
+            // el inventario con su stock, solo deja de exponerse en la tienda.
+            toggleStoreVisible(kind, item) {
+                if (!this.canManageStore) return;
+                const id = kind === 'combo' ? item.combo_id : item.product_id;
+                const target = !item.store_visible;
+                $('ws_store_toggle', { kind: kind, id: id, visible: target ? 1 : 0 }).then(res => {
+                    if (res.success) {
+                        item.store_visible = target ? 1 : 0;
+                        toast('success', target ? 'Visible en la tienda' : 'Oculto de la tienda');
+                    } else {
+                        toast('error', 'Error', res.data && res.data.msg);
+                    }
+                });
+            },
             get wizDecreases() {
                 if (this.wizType === 'venta' || this.wizType === 'salida' || this.wizType === 'baja' || this.wizType === 'traslado') return true;
                 if (this.wizType === 'otro') return this.wizDirection === 'salida';
@@ -1939,12 +1972,16 @@
             currency: opts.currency || '€',
             movements: [],
             search: '',
+            // Pestañas: todo | productos | combos (los movimientos de combos se
+            // registran por componente pero enlazados al combo).
+            scope: '',
             typeFilter: '',
             locationFilter: '',
             dateFrom: '',
             dateTo: '',
+            setScope(s) { this.scope = s; this.page = 1; this.load(); },
             load() {
-                fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ action: 'ws_movements_list', ws_nonce: WS.nonce, type: this.typeFilter, location_id: this.locationFilter, date_from: this.dateFrom, date_to: this.dateTo, search: this.search, sort: this.sortKey, dir: this.sortDir, page: this.page, pageSize: this.pageSize }) })
+                fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ action: 'ws_movements_list', ws_nonce: WS.nonce, type: this.typeFilter, location_id: this.locationFilter, scope: this.scope, date_from: this.dateFrom, date_to: this.dateTo, search: this.search, sort: this.sortKey, dir: this.sortDir, page: this.page, pageSize: this.pageSize }) })
                     .then(r => r.json()).then(r => { if (r.success) { this.movements = r.data.movements; this.total = r.data.total; this.page = r.data.page; } });
             },
             typeLabel(t) {

@@ -41,6 +41,7 @@ function ws_db_tables() {
             store_settings TEXT NULL,
             whatsapp VARCHAR(60) NOT NULL DEFAULT '',
             delivery_cost DECIMAL(12,2) NOT NULL DEFAULT 0,
+            delivery_currency VARCHAR(10) NOT NULL DEFAULT '',
             active TINYINT(1) NOT NULL DEFAULT 1,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -74,6 +75,7 @@ function ws_db_tables() {
             price DECIMAL(12,2) NOT NULL DEFAULT 0,
             currency VARCHAR(10) NOT NULL DEFAULT '€',
             active TINYINT(1) NOT NULL DEFAULT 1,
+            store_visible TINYINT(1) NOT NULL DEFAULT 1,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -120,6 +122,7 @@ function ws_db_tables() {
             fraction_parent BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
             fraction_qty DECIMAL(12,2) NOT NULL DEFAULT 0,
             active TINYINT(1) NOT NULL DEFAULT 1,
+            store_visible TINYINT(1) NOT NULL DEFAULT 1,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -142,6 +145,7 @@ function ws_db_tables() {
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
             type VARCHAR(30) NOT NULL,
             product_id BIGINT(20) UNSIGNED NOT NULL,
+            combo_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
             location_id BIGINT(20) UNSIGNED NOT NULL,
             dest_location_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
             qty DECIMAL(12,2) NOT NULL DEFAULT 0,
@@ -165,6 +169,7 @@ function ws_db_tables() {
             currency VARCHAR(10) NOT NULL DEFAULT '€',
             subtotal DECIMAL(12,2) NOT NULL DEFAULT 0,
             delivery_cost DECIMAL(12,2) NOT NULL DEFAULT 0,
+            delivery_currency VARCHAR(10) NOT NULL DEFAULT '',
             total DECIMAL(12,2) NOT NULL DEFAULT 0,
             status VARCHAR(20) NOT NULL DEFAULT 'pending',
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -607,6 +612,11 @@ function ws_db_migrate() {
     if ( ! in_array( 'category', $cols, true ) ) {
         $wpdb->query( "ALTER TABLE {$table} ADD COLUMN category VARCHAR(100) NOT NULL DEFAULT '' AFTER barcode" );
     }
+    // Visibilidad en la TIENDA PÚBLICA: el producto existe en el inventario
+    // pero puede ocultarse del catálogo de la tienda (stock sin exponer).
+    if ( ! in_array( 'store_visible', $cols, true ) ) {
+        $wpdb->query( "ALTER TABLE {$table} ADD COLUMN store_visible TINYINT(1) NOT NULL DEFAULT 1 AFTER active" );
+    }
     // Configuración de la TIENDA PÚBLICA por ubicación (JSON): moneda en la
     // que se muestran los precios y qué tasa de cambio mostrar (o ninguna).
     // Se migra la tabla por defecto y la de cada negocio con slug (mismo
@@ -632,6 +642,43 @@ function ws_db_migrate() {
         // Descripción breve de la ubicación (se muestra en Stock y en la tienda pública).
         if ( ! in_array( 'description', $lcols, true ) ) {
             $wpdb->query( "ALTER TABLE {$loc_t} ADD COLUMN description TEXT NULL AFTER address" );
+        }
+        // Moneda del coste de domicilio: puede ser DISTINTA a la de la
+        // ubicación (la tienda vende en USD y el domicilio se cobra en CUP).
+        if ( ! in_array( 'delivery_currency', $lcols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$loc_t} ADD COLUMN delivery_currency VARCHAR(10) NOT NULL DEFAULT '' AFTER delivery_cost" );
+        }
+        // Y en pedidos: el domicilio se guarda en SU moneda y el total del
+        // pedido lo suma convertido a la moneda de la ubicación.
+        $ord_t = ws_table_for( $ws_ss_suffix, 'orders' );
+        if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $ord_t ) ) === $ord_t ) {
+            $ocols = $wpdb->get_col( "SHOW COLUMNS FROM {$ord_t}", 0 );
+            if ( ! in_array( 'delivery_currency', $ocols, true ) ) {
+                $wpdb->query( "ALTER TABLE {$ord_t} ADD COLUMN delivery_currency VARCHAR(10) NOT NULL DEFAULT '' AFTER delivery_cost" );
+            }
+        }
+    }
+
+    // Movimientos: enlace al COMBO que los originó (los movimientos de combos
+    // se registran por componente). Permite separar en el historial los
+    // movimientos de productos de los de combos con pestañas.
+    $ws_move_suffixes = array( '' );
+    if ( class_exists( 'WS_Business' ) && $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', WS_Business::table() ) ) === WS_Business::table() ) {
+        foreach ( WS_Business::all() as $ws_mv_biz ) {
+            $mv_slug = (string) ( $ws_mv_biz->slug ?? '' );
+            if ( '' !== $mv_slug ) {
+                $ws_move_suffixes[] = ws_biz_table_suffix( $mv_slug );
+            }
+        }
+    }
+    foreach ( $ws_move_suffixes as $ws_move_suffix ) {
+        $mv_t = ws_table_for( $ws_move_suffix, 'movements' );
+        if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $mv_t ) ) !== $mv_t ) {
+            continue;
+        }
+        $mv_cols = $wpdb->get_col( "SHOW COLUMNS FROM {$mv_t}", 0 );
+        if ( ! in_array( 'combo_id', $mv_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$mv_t} ADD COLUMN combo_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0 AFTER product_id" );
         }
     }
 
@@ -840,6 +887,9 @@ function ws_db_migrate() {
                     $wpdb->query( $sql );
                 }
             }
+            if ( ! in_array( 'store_visible', $p_cols, true ) ) {
+                $wpdb->query( "ALTER TABLE {$pt} ADD COLUMN store_visible TINYINT(1) NOT NULL DEFAULT 1 AFTER active" );
+            }
         }
         $stock_t = ws_table_for( $ws_suffix, 'stock' );
         if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $stock_t ) ) === $stock_t ) {
@@ -1015,6 +1065,12 @@ function ws_db_migrate() {
             $sql = str_replace( '{prefix}', $combo_prefix, $sql );
             $sql = str_replace( '{charset}', $wpdb->get_charset_collate(), $sql );
             dbDelta( $sql );
+        }
+        // Visibilidad en la tienda pública (el combo puede existir en el
+        // inventario y no mostrarse en la tienda).
+        $cb_cols = $wpdb->get_col( "SHOW COLUMNS FROM {$combo_t}", 0 );
+        if ( ! in_array( 'store_visible', $cb_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$combo_t} ADD COLUMN store_visible TINYINT(1) NOT NULL DEFAULT 1 AFTER active" );
         }
         // combo_id en los ítems de pedidos y ventas POS (para ventas de combos).
         foreach ( array( 'order_items', 'pos_sale_items' ) as $ws_ci_tbl ) {

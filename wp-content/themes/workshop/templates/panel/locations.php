@@ -60,7 +60,7 @@ $rates      = ws_exchange_rates();
                         <td x-text="l.address || '—'"></td>
                         <td x-text="l.whatsapp || '—'"></td>
                         <td x-text="l.currency"></td>
-                        <td x-text="money(l.delivery_cost)"></td>
+                        <td x-text="money(l.delivery_cost, l.delivery_currency || l.currency)"></td>
                         <td>
                             <a class="ws-link" :href="storeUrl(l.slug)" target="_blank" rel="noopener" :title="l.type === 'pv' ? '<?php echo esc_js( __( 'Ver tienda pública (PV)', 'workshop' ) ); ?>' : '<?php echo esc_js( __( 'Ver tienda pública (almacén)', 'workshop' ) ); ?>'"><i class="fa-solid fa-arrow-up-right-from-square"></i></a>
                         </td>
@@ -242,6 +242,13 @@ $rates      = ws_exchange_rates();
                     <label class="ws-field">
                         <span><?php esc_html_e( 'Coste de domicilio', 'workshop' ); ?></span>
                         <input type="number" step="0.01" min="0" x-model="form.delivery_cost">
+                    </label>
+                    <label class="ws-field">
+                        <span><?php esc_html_e( 'Moneda del domicilio', 'workshop' ); ?></span>
+                        <select x-model="form.delivery_currency">
+                            <template x-for="c in currencies" :key="c"><option :value="c" x-text="c"></option></template>
+                        </select>
+                        <small class="ws-muted" style="display:block;margin-top:4px;font-size:.76em"><i class="fa-solid fa-coins"></i> <?php esc_html_e( 'Puede ser distinta a la de la tienda (p. ej. la tienda vende en USD y el domicilio se cobra en CUP). El domicilio se registra como ingreso en esta moneda.', 'workshop' ); ?></small>
                     </label>
                     <label class="ws-field">
                         <span><?php esc_html_e( 'Activa', 'workshop' ); ?></span>

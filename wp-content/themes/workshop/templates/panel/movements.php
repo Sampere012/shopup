@@ -16,6 +16,11 @@ $currency  = ws_currency_symbol();
 ) ) ); ?>)">
 
     <div class="ws-card">
+        <div class="ws-tabs">
+            <button type="button" class="ws-tab" :class="scope === '' && 'is-active'" @click="setScope('')"><i class="fa-solid fa-list"></i> <?php esc_html_e( 'Todos', 'workshop' ); ?></button>
+            <button type="button" class="ws-tab" :class="scope === 'products' && 'is-active'" @click="setScope('products')"><i class="fa-solid fa-box"></i> <?php esc_html_e( 'Productos', 'workshop' ); ?></button>
+            <button type="button" class="ws-tab" :class="scope === 'combos' && 'is-active'" @click="setScope('combos')"><i class="fa-solid fa-layer-group"></i> <?php esc_html_e( 'Combos', 'workshop' ); ?></button>
+        </div>
         <div class="ws-stock-head">
             <div class="ws-search">
                 <i class="fa-solid fa-magnifying-glass"></i>
@@ -59,7 +64,10 @@ $currency  = ws_currency_symbol();
                     <tr>
                         <td x-text="m.date"></td>
                         <td><span class="ws-badge" :class="'ws-move-' + m.type" x-text="typeLabel(m.type)"></span></td>
-                        <td x-text="m.product_name"></td>
+                        <td>
+                            <span x-text="m.product_name"></span>
+                            <span class="ws-move-combo" x-show="m.combo_name" :title="'<?php esc_attr_e( 'Movimiento del combo', 'workshop' ); ?>'"><i class="fa-solid fa-layer-group"></i> <span x-text="m.combo_name"></span></span>
+                        </td>
                         <td x-text="m.location_name || '—'"></td>
                         <td x-text="m.dest_name || '—'"></td>
                         <td class="ws-strong" :class="['entrada','transferencia'].includes(m.type) && m.dest_location_id == 0 ? 'ws-text-success' : (['salida','baja','venta'].includes(m.type) ? 'ws-text-danger' : '')" x-text="m.qty"></td>

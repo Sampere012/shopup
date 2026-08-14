@@ -389,7 +389,9 @@ function ws_order_transfer_total( $order ) {
         $pct     = $product ? (float) $product->transfer_pct : 0.0;
         $transfer_subtotal += (float) $it->price * ( 1 + $pct / 100 ) * (float) $it->qty;
     }
-    return $transfer_subtotal + (float) $order->delivery_cost;
+    // El domicilio puede estar en otra moneda: se convierte a la del pedido.
+    $delivery_currency = $order->delivery_currency ? $order->delivery_currency : $order->currency;
+    return $transfer_subtotal + ws_convert( (float) $order->delivery_cost, $delivery_currency, $order->currency );
 }
 
 /**
@@ -414,7 +416,7 @@ function ws_whatsapp_order_url( $order, $location, $number_override = '' ) {
     $lines[] = '';
     $lines[] = sprintf( 'Subtotal: %s', ws_money( $order->subtotal, $order->currency ) );
     if ( (float) $order->delivery_cost > 0 ) {
-        $lines[] = sprintf( 'Domicilio: %s', ws_money( $order->delivery_cost, $order->currency ) );
+        $lines[] = sprintf( 'Domicilio: %s', ws_money( $order->delivery_cost, $order->delivery_currency ? $order->delivery_currency : $order->currency ) );
     }
     $lines[] = sprintf( '💵 *Total en efectivo: %s*', ws_money( $order->total, $order->currency ) );
     if ( abs( $transfer_total - (float) $order->total ) > 0.001 ) {

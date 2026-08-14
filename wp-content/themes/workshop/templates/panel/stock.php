@@ -32,6 +32,7 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
     'canWriteoff'  => $can_writeoff,
     'canTransfer'  => $can_transfer,
     'canVenta'     => $can_venta,
+    'canManageStore' => ws_can( 'products_edit' ),
     'sellers'      => $sellers,
 ) ) ); ?>)">
 
@@ -97,6 +98,11 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                                 </template>
                             </div>
                             <div class="ws-combo-actions">
+                                <template x-if="canManageStore">
+                                    <button type="button" class="ws-icon-btn" :class="!c.store_visible && 'ws-icon-btn-muted'" :title="c.store_visible ? '<?php esc_attr_e( 'Visible en la tienda', 'workshop' ); ?>' : '<?php esc_attr_e( 'Oculto de la tienda (sigue en el inventario)', 'workshop' ); ?>'" @click="toggleStoreVisible('combo', c)">
+                                        <i class="fa-solid" :class="c.store_visible ? 'fa-eye' : 'fa-eye-slash'"></i>
+                                    </button>
+                                </template>
                                 <template x-if="canEntry"><button class="ws-icon-btn" title="<?php esc_attr_e( 'Entrada', 'workshop' ); ?>" @click="openComboMove('entrada', c)"><i class="fa-solid fa-down-long"></i></button></template>
                                 <template x-if="canExit"><button class="ws-icon-btn" title="<?php esc_attr_e( 'Salida', 'workshop' ); ?>" @click="openComboMove('salida', c)"><i class="fa-solid fa-up-long"></i></button></template>
                                 <template x-if="canWriteoff"><button class="ws-icon-btn ws-danger" title="<?php esc_attr_e( 'Baja', 'workshop' ); ?>" @click="openComboMove('baja', c)"><i class="fa-solid fa-trash-can"></i></button></template>
@@ -117,6 +123,7 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                     <th title="<?php esc_attr_e( 'Suma del stock en todas las ubicaciones conectadas (stock compartido)', 'workshop' ); ?>"><?php esc_html_e( 'Stock grupo', 'workshop' ); ?> <i class="fa-solid fa-share-nodes ws-muted"></i></th>
                     <th class="ws-th-sort" @click="sort('min_stock')"><?php esc_html_e( 'Mínimo', 'workshop' ); ?> <i class="fa-solid" :class="sortIcon('min_stock')"></i></th>
                     <th class="ws-th-sort" @click="sort('sale_price')"><?php esc_html_e( 'Precio venta', 'workshop' ); ?> <i class="fa-solid" :class="sortIcon('sale_price')"></i></th>
+                    <th title="<?php esc_attr_e( 'Visible en la tienda pública (el stock sigue en el inventario)', 'workshop' ); ?>"><?php esc_html_e( 'Tienda', 'workshop' ); ?></th>
                     <th><?php esc_html_e( 'Acciones', 'workshop' ); ?></th>
                 </tr>
             </thead>
@@ -147,6 +154,13 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                         <td x-text="row.min_stock"></td>
                         <td x-text="money(row.sale_price, row.currency)"></td>
                         <td class="ws-actions">
+                            <template x-if="canManageStore">
+                                <button type="button" class="ws-icon-btn" :class="!row.store_visible && 'ws-icon-btn-muted'" :title="row.store_visible ? '<?php esc_attr_e( 'Visible en la tienda', 'workshop' ); ?>' : '<?php esc_attr_e( 'Oculto de la tienda (sigue en el inventario)', 'workshop' ); ?>'" @click="toggleStoreVisible('product', row)">
+                                    <i class="fa-solid" :class="row.store_visible ? 'fa-eye' : 'fa-eye-slash'"></i>
+                                </button>
+                            </template>
+                        </td>
+                        <td class="ws-actions">
                             <template x-if="canEntry"><button class="ws-icon-btn" title="Entrada" @click="openMove('entrada', row)"><i class="fa-solid fa-down-long"></i></button></template>
                             <template x-if="canExit"><button class="ws-icon-btn" title="Salida" @click="openMove('salida', row)"><i class="fa-solid fa-up-long"></i></button></template>
                             <template x-if="canWriteoff"><button class="ws-icon-btn ws-danger" title="Baja" @click="openMove('baja', row)"><i class="fa-solid fa-trash-can"></i></button></template>
@@ -154,7 +168,7 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                         </td>
                     </tr>
                 </template>
-                <tr x-show="total === 0 && combos.length === 0"><td colspan="7"><p class="ws-empty"><?php esc_html_e( 'Sin resultados.', 'workshop' ); ?></p></td></tr>
+                <tr x-show="total === 0 && combos.length === 0"><td colspan="8"><p class="ws-empty"><?php esc_html_e( 'Sin resultados.', 'workshop' ); ?></p></td></tr>
             </tbody>
         </table>
         <div class="ws-pagination" x-show="total > pageSize">

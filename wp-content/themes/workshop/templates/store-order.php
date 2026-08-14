@@ -58,7 +58,7 @@ get_header();
             <?php $transfer_total = ws_order_transfer_total( $order ); ?>
             <div class="ws-summary-total">
                 <div><span><?php esc_html_e( 'Subtotal', 'workshop' ); ?></span><strong><?php echo ws_money( $order->subtotal, $order->currency ); ?></strong></div>
-                <div><span><?php esc_html_e( 'Domicilio', 'workshop' ); ?></span><strong><?php echo ws_money( $order->delivery_cost, $order->currency ); ?></strong></div>
+                <div><span><?php esc_html_e( 'Domicilio', 'workshop' ); ?></span><strong><?php echo ws_money( $order->delivery_cost, $order->delivery_currency ? $order->delivery_currency : $order->currency ); ?></strong></div>
                 <div class="ws-total"><span><?php esc_html_e( 'Total en efectivo', 'workshop' ); ?></span><strong><?php echo ws_money( $order->total, $order->currency ); ?></strong></div>
                 <?php if ( abs( $transfer_total - (float) $order->total ) > 0.001 ) : ?>
                     <div class="ws-total ws-total-transfer"><span><?php esc_html_e( 'Total en transferencia', 'workshop' ); ?></span><strong><?php echo ws_money( $transfer_total, $order->currency ); ?></strong></div>
