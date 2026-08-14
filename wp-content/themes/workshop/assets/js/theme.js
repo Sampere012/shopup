@@ -725,6 +725,11 @@
             importModal: false,
             dragOver: false,
             form: {},
+            /* Edición masiva: ids seleccionados + modal de campo único. */
+            selected: [],
+            bulkOpen: false,
+            bulkSaving: false,
+            bulk: { field: 'min_stock', mode: 'set', value: 0 },
             // Pestañas: lista de productos / historial de precios.
             tab: 'products',
             historyLoaded: false,
@@ -873,6 +878,60 @@
             removeReq(p) {
                 $('ws_delete_product', { id: p.id }).then(res => {
                     if (res.success) { toast('success', 'Eliminado'); this.reload(); } else { toast('error', 'Error', res.data && res.data.msg); }
+                });
+            },
+            /* --- Edición masiva (mínimo, fechas, costo, venta) --- */
+            get allPageSelected() {
+                return this.products.length > 0 && this.products.every(p => this.selected.indexOf(p.id) !== -1);
+            },
+            get bulkIsNumeric() { return ['min_stock', 'cost_price', 'sale_price'].indexOf(this.bulk.field) !== -1; },
+            get bulkIsDate() { return ['production_date', 'expiry_date'].indexOf(this.bulk.field) !== -1; },
+            toggleRow(id) {
+                const i = this.selected.indexOf(id);
+                if (i === -1) { this.selected.push(id); } else { this.selected.splice(i, 1); }
+            },
+            togglePage(checked) {
+                if (checked) {
+                    this.products.forEach(p => { if (this.selected.indexOf(p.id) === -1) this.selected.push(p.id); });
+                } else {
+                    const pageIds = this.products.map(p => p.id);
+                    this.selected = this.selected.filter(id => pageIds.indexOf(id) === -1);
+                }
+            },
+            toggleAllResults() {
+                // Selecciona TODOS los que coinciden con la búsqueda actual,
+                // no solo la página visible (ws_products_list sin paginar).
+                $('ws_products_list', { search: this.search }).then(r => {
+                    if (r.success) {
+                        this.selected = (r.data.products || []).map(p => p.id);
+                        toast('success', this.selected.length + ' producto(s) seleccionado(s)');
+                    } else { toast('error', 'Error', r.data && r.data.msg); }
+                });
+            },
+            clearSelection() { this.selected = []; },
+            openBulkEdit() {
+                if (!this.selected.length) { toast('warning', 'Selecciona productos primero'); return; }
+                this.bulk = { field: 'min_stock', mode: 'set', value: 0 };
+                this.bulkOpen = true;
+            },
+            applyBulk() {
+                if (this.bulkSaving) return;
+                if (this.bulkIsNumeric && this.bulk.value === '') { toast('error', 'Escribe un valor'); return; }
+                this.bulkSaving = true;
+                $('ws_products_bulk_edit', {
+                    ids: JSON.stringify(this.selected),
+                    field: this.bulk.field,
+                    mode: this.bulkIsNumeric ? this.bulk.mode : 'set',
+                    value: this.bulkIsNumeric ? (Number(this.bulk.value) || 0) : (this.bulk.value || '')
+                }).then(r => {
+                    this.bulkSaving = false;
+                    if (r.success) {
+                        toast('success', 'Actualizados', r.data.updated + ' producto(s) actualizado(s)');
+                        this.bulkOpen = false;
+                        this.selected = [];
+                        this.reload();
+                        if (this.historyLoaded) this.loadHistory();
+                    } else { toast('error', 'Error', r.data && r.data.msg); }
                 });
             },
             handleDrop(e) {

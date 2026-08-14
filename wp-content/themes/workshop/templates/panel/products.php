@@ -105,9 +105,19 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
         </div>
 
         <div class="ws-card">
+            <div class="ws-bulk-bar" x-show="canEdit && selected.length > 0" x-cloak>
+                <span class="ws-bulk-count"><i class="fa-solid fa-check-double"></i> <b x-text="selected.length"></b> <?php esc_html_e( 'seleccionados', 'workshop' ); ?></span>
+                <button type="button" class="ws-btn ws-btn-secondary" @click="toggleAllResults()" x-show="selected.length < total" title="<?php esc_attr_e( 'Selecciona todos los productos que coinciden con la búsqueda actual, en todas las páginas', 'workshop' ); ?>"><i class="fa-solid fa-list-check"></i> <?php esc_html_e( 'Seleccionar todos los resultados', 'workshop' ); ?></button>
+                <span class="ws-bulk-spacer"></span>
+                <button type="button" class="ws-btn ws-btn-secondary" @click="clearSelection()"><i class="fa-solid fa-xmark"></i> <?php esc_html_e( 'Limpiar', 'workshop' ); ?></button>
+                <button type="button" class="ws-btn ws-btn-primary" @click="openBulkEdit()"><i class="fa-solid fa-wand-magic-sparkles"></i> <?php esc_html_e( 'Editar en lote', 'workshop' ); ?></button>
+            </div>
             <table class="ws-table">
                 <thead>
                     <tr>
+                        <template x-if="canEdit">
+                            <th class="ws-th-check"><input type="checkbox" :checked="allPageSelected" @change="togglePage($event.target.checked)" title="<?php esc_attr_e( 'Seleccionar los de esta página', 'workshop' ); ?>"></th>
+                        </template>
                         <th class="ws-th-sort" @click="sort('name')"><?php esc_html_e( 'Producto', 'workshop' ); ?> <i class="fa-solid" :class="sortIcon('name')"></i></th>
                         <th class="ws-th-sort" @click="sort('supplier_name')"><?php esc_html_e( 'Proveedor', 'workshop' ); ?> <i class="fa-solid" :class="sortIcon('supplier_name')"></i></th>
                         <th class="ws-th-sort" @click="sort('cost_price')"><?php esc_html_e( 'Costo', 'workshop' ); ?> <i class="fa-solid" :class="sortIcon('cost_price')"></i></th>
@@ -122,6 +132,9 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
                 <tbody>
                     <template x-for="p in products" :key="p.id">
                         <tr>
+                            <template x-if="canEdit">
+                                <td class="ws-th-check"><input type="checkbox" :checked="selected.indexOf(p.id) !== -1" @change="toggleRow(p.id)"></td>
+                            </template>
                             <td>
                                 <div class="ws-cell-product">
                                     <div class="ws-thumb"><img x-show="p.image" :src="p.image" :alt="p.name" loading="lazy"><i x-show="!p.image" class="fa-solid fa-box"></i></div>
@@ -157,7 +170,7 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
                             </td>
                         </tr>
                     </template>
-                    <tr x-show="total === 0"><td colspan="9"><p class="ws-empty"><?php esc_html_e( 'Sin resultados.', 'workshop' ); ?></p></td></tr>
+                    <tr x-show="total === 0"><td :colspan="canEdit ? 10 : 9"><p class="ws-empty"><?php esc_html_e( 'Sin resultados.', 'workshop' ); ?></p></td></tr>
                 </tbody>
             </table>
             <div class="ws-pagination" x-show="total > pageSize">
@@ -368,6 +381,52 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
                 <div class="ws-modal-foot">
                     <button type="button" class="ws-btn ws-btn-secondary" @click="formOpen=false"><?php esc_html_e( 'Cancelar', 'workshop' ); ?></button>
                     <button type="submit" class="ws-btn ws-btn-primary"><i class="fa-solid fa-floppy-disk"></i> <?php esc_html_e( 'Guardar', 'workshop' ); ?></button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal edición en lote (campo único aplicado a los seleccionados) -->
+    <div class="ws-modal" x-show="bulkOpen" x-cloak @keydown.escape.window="bulkOpen=false">
+        <div class="ws-modal-backdrop" @click="bulkOpen=false"></div>
+        <div class="ws-modal-box">
+            <div class="ws-modal-head">
+                <h3><i class="fa-solid fa-wand-magic-sparkles"></i> <?php esc_html_e( 'Editar en lote', 'workshop' ); ?> <span class="ws-muted" x-text="'(' + selected.length + ')'"></span></h3>
+                <button class="ws-cart-close" @click="bulkOpen=false"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form @submit.prevent="applyBulk" class="ws-form">
+                <p class="ws-muted"><?php esc_html_e( 'El valor se aplicará a los', 'workshop' ); ?> <b x-text="selected.length"></b> <?php esc_html_e( 'productos seleccionados.', 'workshop' ); ?></p>
+                <div class="ws-form-grid">
+                    <label class="ws-field">
+                        <span><?php esc_html_e( 'Campo *', 'workshop' ); ?></span>
+                        <select x-model="bulk.field">
+                            <option value="min_stock"><?php esc_html_e( 'Stock mínimo', 'workshop' ); ?></option>
+                            <option value="cost_price"><?php esc_html_e( 'Precio costo', 'workshop' ); ?></option>
+                            <option value="sale_price"><?php esc_html_e( 'Precio venta', 'workshop' ); ?></option>
+                            <option value="production_date"><?php esc_html_e( 'Fecha de producción', 'workshop' ); ?></option>
+                            <option value="expiry_date"><?php esc_html_e( 'Fecha de vencimiento', 'workshop' ); ?></option>
+                        </select>
+                    </label>
+                    <label class="ws-field" x-show="bulkIsNumeric">
+                        <span><?php esc_html_e( 'Modo *', 'workshop' ); ?></span>
+                        <select x-model="bulk.mode">
+                            <option value="set"><?php esc_html_e( 'Fijar a (mismo valor en todos)', 'workshop' ); ?></option>
+                            <option value="add"><?php esc_html_e( 'Ajustar (+ / − al valor actual)', 'workshop' ); ?></option>
+                        </select>
+                    </label>
+                    <label class="ws-field" :class="!bulkIsNumeric ? 'ws-span-2' : ''">
+                        <span x-text="bulkIsNumeric ? (bulk.mode === 'add' ? '<?php esc_attr_e( 'Cantidad a sumar (+ / −)', 'workshop' ); ?>' : '<?php esc_attr_e( 'Valor *', 'workshop' ); ?>') : '<?php esc_attr_e( 'Fecha', 'workshop' ); ?>'"></span>
+                        <input x-show="bulkIsNumeric" type="number" step="0.01" :min="bulk.mode === 'set' ? 0 : null" x-model.number="bulk.value" required>
+                        <input x-show="bulkIsDate" type="date" x-model="bulk.value">
+                        <button x-show="bulkIsDate" type="button" class="ws-btn ws-btn-secondary" style="margin-top:6px" @click="bulk.value=''"><i class="fa-solid fa-eraser"></i> <?php esc_html_e( 'Limpiar fecha (dejar sin fecha)', 'workshop' ); ?></button>
+                    </label>
+                </div>
+                <div class="ws-modal-foot">
+                    <button type="button" class="ws-btn ws-btn-secondary" @click="bulkOpen=false"><?php esc_html_e( 'Cancelar', 'workshop' ); ?></button>
+                    <button type="submit" class="ws-btn ws-btn-primary" :disabled="bulkSaving">
+                        <i class="fa-solid" :class="bulkSaving ? 'fa-spinner fa-spin' : 'fa-check'"></i>
+                        <?php esc_html_e( 'Aplicar a', 'workshop' ); ?> <span x-text="selected.length"></span>
+                    </button>
                 </div>
             </form>
         </div>

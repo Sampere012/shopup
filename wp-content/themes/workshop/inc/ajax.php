@@ -267,6 +267,24 @@ function ws_ajax_delete_product() {
     wp_send_json_success();
 }
 
+add_action( 'wp_ajax_ws_products_bulk_edit', 'ws_ajax_products_bulk_edit' );
+function ws_ajax_products_bulk_edit() {
+    ws_guard( 'products_edit', 'products_bulk' );
+    $ids   = isset( $_POST['ids'] ) ? json_decode( wp_unslash( (string) $_POST['ids'] ), true ) : array();
+    $field = sanitize_key( $_POST['field'] ?? '' );
+    $mode  = ( 'add' === ( $_POST['mode'] ?? '' ) ) ? 'add' : 'set';
+    $value = isset( $_POST['value'] ) ? wp_unslash( (string) $_POST['value'] ) : '';
+
+    $updated = WS_CRUD::bulk_update_products( is_array( $ids ) ? $ids : array(), $field, $value, $mode );
+    if ( is_wp_error( $updated ) ) {
+        wp_send_json_error( array( 'msg' => $updated->get_error_message() ) );
+    }
+    ws_log_audit( 'product_bulk_edit', 'product', 0, array(
+        'field' => $field, 'mode' => $mode, 'value' => $value, 'updated' => $updated,
+    ) );
+    wp_send_json_success( array( 'updated' => $updated ) );
+}
+
 add_action( 'wp_ajax_ws_import_products', 'ws_ajax_import_products' );
 function ws_ajax_import_products() {
     ws_guard( 'products_bulk' );

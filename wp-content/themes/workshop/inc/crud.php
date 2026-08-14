@@ -337,6 +337,82 @@ class WS_CRUD {
         $wpdb->delete( self::table( 'stock' ), array( 'product_id' => $id ) );
     }
 
+    /**
+     * Edición MASIVA de un campo en varios productos: stock mínimo, fechas de
+     * producción/vencimiento, precio costo y precio venta (el valor aplica a
+     * todos los seleccionados). En modo 'add' (solo numéricos) el valor se
+     * SUMA al actual de cada producto (puede ser negativo: -2 baja el mínimo
+     * de todos 2 unidades); en modo 'set' se fija el mismo valor.
+     *
+     * @param int[]  $ids   IDs de productos.
+     * @param string $field min_stock | production_date | expiry_date | cost_price | sale_price.
+     * @param mixed  $value Valor a fijar o delta a sumar.
+     * @param string $mode  'set' o 'add'.
+     * @return int|WP_Error Nº de productos actualizados (o error).
+     */
+    public static function bulk_update_products( $ids, $field, $value, $mode = 'set' ) {
+        $numeric = array( 'min_stock', 'cost_price', 'sale_price' );
+        $dates   = array( 'production_date', 'expiry_date' );
+        $allowed = array_merge( $numeric, $dates );
+        $field   = sanitize_key( (string) $field );
+        if ( ! in_array( $field, $allowed, true ) ) {
+            return new WP_Error( 'field', __( 'Campo no válido para edición masiva.', 'workshop' ) );
+        }
+        $mode = ( 'add' === $mode ) ? 'add' : 'set';
+        if ( 'add' === $mode && ! in_array( $field, $numeric, true ) ) {
+            return new WP_Error( 'field', __( 'El ajuste +/− solo aplica a campos numéricos.', 'workshop' ) );
+        }
+        $ids = array_values( array_unique( array_filter( array_map( 'intval', (array) $ids ) ) ) );
+        if ( empty( $ids ) ) {
+            return new WP_Error( 'ids', __( 'Selecciona al menos un producto.', 'workshop' ) );
+        }
+
+        // Normaliza el valor según el tipo de campo.
+        if ( 'add' === $mode ) {
+            $delta = (float) $value;
+        } elseif ( in_array( $field, $numeric, true ) ) {
+            $value = (float) $value;
+            if ( $value < 0 ) {
+                return new WP_Error( 'value', __( 'El valor no puede ser negativo.', 'workshop' ) );
+            }
+        } else {
+            $value = self::clean_product_date( (string) $value );
+        }
+
+        global $wpdb;
+        $count = 0;
+        foreach ( $ids as $id ) {
+            $old = self::get_product( $id );
+            if ( ! $old ) {
+                continue;
+            }
+            if ( 'add' === $mode ) {
+                $new_val = round( (float) $old->{$field} + $delta, 4 );
+                if ( $new_val < 0 ) {
+                    $new_val = 0;
+                }
+            } else {
+                $new_val = $value;
+            }
+            // Fechas: nunca permitir vencimiento antes que producción (por producto).
+            if ( 'expiry_date' === $field && '' !== $new_val && ! empty( $old->production_date ) && $new_val < $old->production_date ) {
+                continue;
+            }
+            if ( 'production_date' === $field && '' !== $new_val && ! empty( $old->expiry_date ) && $old->expiry_date < $new_val ) {
+                continue;
+            }
+            // Columna DATE NULL cuando se limpia la fecha.
+            $col = ( '' === $new_val && in_array( $field, $dates, true ) ) ? null : $new_val;
+            $wpdb->update( self::table( 'products' ), array( $field => $col ), array( 'id' => $id ) );
+            // Trazabilidad de precios al cambiar costo o venta en lote.
+            if ( in_array( $field, array( 'cost_price', 'sale_price' ), true ) ) {
+                self::record_price_change( $old, array_merge( (array) $old, array( $field => (float) $new_val ) ) );
+            }
+            $count++;
+        }
+        return $count;
+    }
+
     /* ---------------- Proveedores ---------------- */
 
     public static function get_suppliers( $args = array() ) {
