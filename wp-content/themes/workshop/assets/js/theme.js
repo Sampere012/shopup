@@ -234,6 +234,55 @@
         }
     });
 
+    /* Paginación CLIENT-SIDE reutilizable para los módulos que cargan TODA la
+       lista por AJAX (customers, reviews, loyalty, pos-sales…): se pagina en
+       memoria (sin volver al servidor), así funciona igual con la caché
+       offline. listKey es el nombre de la propiedad del array completo y
+       prefix (opcional) renombra las propiedades/métodos (p. ej. 'cash' →
+       cashPage, cashPagedRows…) para paginar DOS listas en un mismo
+       componente. El array se referencia como this[listKey], nunca se muta. */
+    const clientTableState = (listKey, prefix) => {
+        const P = prefix || '';
+        // Sin prefijo: nombres planos (page, total…). Con prefijo, el prefijo
+        // queda en minúsculas y el resto en camelCase: 'cash' + 'page' →
+        // cashPage, 'cash' + 'totalPages' → cashTotalPages.
+        const k = (name) => P + (P ? name.charAt(0).toUpperCase() + name.slice(1) : name);
+        const state = {};
+        state[k('page')] = 1;
+        state[k('pageSize')] = 10;
+        state[k('total')] = 0;
+        state[k('totalPages')] = function () {
+            return Math.max(1, Math.ceil((this[k('total')] || 0) / this[k('pageSize')]));
+        };
+        state[k('pages')] = function () {
+            const t = this[k('totalPages')]();
+            const out = [];
+            for (let i = Math.max(1, this[k('page')] - 2); i <= Math.min(t, this[k('page')] + 2); i++) out.push(i);
+            return out;
+        };
+        // La fila actual: porción del array completo según página/página de tamaño.
+        state[k('pagedRows')] = function () {
+            const list = this[listKey] || [];
+            this[k('total')] = list.length;
+            const totalPages = this[k('totalPages')]();
+            if (this[k('page')] > totalPages) this[k('page')] = totalPages;
+            if (this[k('page')] < 1) this[k('page')] = 1;
+            const start = (this[k('page')] - 1) * this[k('pageSize')];
+            return list.slice(start, start + this[k('pageSize')]);
+        };
+        state[k('goPage')] = function (n) { this[k('page')] = n; };
+        state[k('prevPage')] = function () { this[k('goPage')](this[k('page')] - 1); };
+        state[k('nextPage')] = function () { this[k('goPage')](this[k('page')] + 1); };
+        state[k('changePageSize')] = function () { this[k('page')] = 1; };
+        state[k('onPageFilter')] = function () { this[k('page')] = 1; };
+        return state;
+    };
+
+    // Expuesto globalmente para los módulos que definen su componente Alpine
+    // en un <script> dentro del template (customers, reviews, loyalty, pos-
+    // sales): pueden extender su estado con ...WSClientPager('lista').
+    window.WSClientPager = clientTableState;
+
     const registerAlpine = () => {
         Alpine.data('wsStore', (opts) => ({
             locationId: opts.locationId,
@@ -1347,14 +1396,23 @@
 
         /* Trabajadores */
         Alpine.data('wsWorkers', (opts) => ({
+            ...tableState('workers'),
             roleOptions: opts.roleOptions || {},
             locations: opts.locations || [],
+            isAdmin: !!opts.isAdmin,
+            workers: [],
+            search: '',
             newOpen: false,
             workerOpen: false,
             editOpen: false,
             newUser: {},
             workerUser: {},
             editUser: {},
+            init() { this.restoreTableState(); this.reload(); },
+            reload() {
+                fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ action: 'ws_workers_list', ws_nonce: WS.nonce, search: this.search, sort: this.sortKey, dir: this.sortDir, page: this.page, pageSize: this.pageSize }) })
+                    .then(r => r.json()).then(r => { if (r.success) { this.workers = r.data.workers; this.total = r.data.total; this.page = r.data.page; } });
+            },
             openNew() {
                 this.newUser = { display_name: '', username: '', email: '', password: '', role: '', locations: [] };
                 this.newOpen = true;
@@ -1365,10 +1423,10 @@
                 (this.newUser.locations || []).forEach(id => body.append('locations[]', id));
                 fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body })
                     .then(r => r.json())
-                    .then(res => { if (res.success) { toast('success', 'Trabajador creado'); this.newOpen = false; setTimeout(() => location.reload(), 600); } else { toast('error', 'Error', res.data && res.data.msg); } });
+                    .then(res => { if (res.success) { toast('success', 'Trabajador creado'); this.newOpen = false; this.refresh(); } else { toast('error', 'Error', res.data && res.data.msg); } });
             },
-            showWorker(id, wlocs) {
-                this.workerUser = { user_id: id, name: '', locations: (wlocs || []).map(l => l.id) };
+            showWorker(w) {
+                this.workerUser = { user_id: w.id, name: w.display_name, role: w.role, locations: (w.locations || []).map(l => l.id) };
                 this.workerOpen = true;
             },
             saveWorkerLocations() {
@@ -1376,23 +1434,24 @@
                 (this.workerUser.locations || []).forEach(id => body.append('locations[]', id));
                 fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body })
                     .then(r => r.json())
-                    .then(res => { if (res.success) { toast('success', 'Guardado'); this.workerOpen = false; setTimeout(() => location.reload(), 600); } else { toast('error', 'Error', res.data && res.data.msg); } });
+                    .then(res => { if (res.success) { toast('success', 'Guardado'); this.workerOpen = false; this.refresh(); } else { toast('error', 'Error', res.data && res.data.msg); } });
             },
-            saveWorker(id, role, wlocs) {
-                const body = new URLSearchParams({ action: 'ws_save_worker', ws_nonce: WS.nonce, user_id: id, role: role });
-                (wlocs || []).forEach(l => body.append('locations[]', l));
+            // Cambio de rol desde la fila: conserva las ubicaciones actuales del trabajador.
+            saveWorker(w) {
+                const body = new URLSearchParams({ action: 'ws_save_worker', ws_nonce: WS.nonce, user_id: w.id, role: w.role });
+                (w.locations || []).forEach(l => body.append('locations[]', l.id));
                 return fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body })
                     .then(r => r.json())
-                    .then(res => { if (res.success) toast('success', 'Rol actualizado'); else toast('error', 'Error', res.data && res.data.msg); });
+                    .then(res => { if (res.success) { toast('success', 'Rol actualizado'); } else { toast('error', 'Error', res.data && res.data.msg); } this.reload(); });
             },
-            editWorker(id, name, email, role, wlocs) {
+            editWorker(w) {
                 this.editUser = {
-                    user_id: id,
-                    display_name: name || '',
-                    email: email || '',
-                    role: role || '',
+                    user_id: w.id,
+                    display_name: w.display_name || '',
+                    email: w.user_email || '',
+                    role: w.role || '',
                     password: '',
-                    locations: (wlocs || []).map(l => Number(l.id) || l.id)
+                    locations: (w.locations || []).map(l => Number(l.id) || l.id)
                 };
                 this.editOpen = true;
             },
@@ -1402,7 +1461,7 @@
                 (this.editUser.locations || []).forEach(id => body.append('locations[]', id));
                 fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body })
                     .then(r => r.json())
-                    .then(res => { if (res.success) { toast('success', 'Trabajador actualizado'); this.editOpen = false; setTimeout(() => location.reload(), 600); } else { toast('error', 'Error', res.data && res.data.msg); } });
+                    .then(res => { if (res.success) { toast('success', 'Trabajador actualizado'); this.editOpen = false; this.refresh(); } else { toast('error', 'Error', res.data && res.data.msg); } });
             },
             deleteWorker(id, name) {
                 if (typeof Swal !== 'undefined') {
@@ -1412,7 +1471,7 @@
             },
             deleteWorkerReq(id) {
                 $('ws_delete_worker', { user_id: id }).then(res => {
-                    if (res.success) { toast('success', 'Trabajador eliminado'); setTimeout(() => location.reload(), 600); } else { toast('error', 'Error', res.data && res.data.msg); }
+                    if (res.success) { toast('success', 'Trabajador eliminado'); this.refresh(); } else { toast('error', 'Error', res.data && res.data.msg); }
                 });
             },
             closeSession(id) {
@@ -1424,13 +1483,13 @@
             },
             closeSessionReq(id) {
                 $('ws_session_close', { session_id: id }).then(res => {
-                    if (res.success) { toast('success', 'Sesión cerrada'); setTimeout(() => location.reload(), 600); } else { toast('error', 'Error', res.data && res.data.msg); }
+                    if (res.success) { toast('success', 'Sesión cerrada'); this.refresh(); } else { toast('error', 'Error', res.data && res.data.msg); }
                 });
             },
             setDisabled(id, name, disabled) {
                 const confirm = () => {
                     $('ws_worker_set_disabled', { user_id: id, disabled: disabled ? 1 : 0 }).then(res => {
-                        if (res.success) { toast('success', disabled ? 'Trabajador deshabilitado' : 'Trabajador habilitado'); setTimeout(() => location.reload(), 600); } else { toast('error', 'Error', res.data && res.data.msg); }
+                        if (res.success) { toast('success', disabled ? 'Trabajador deshabilitado' : 'Trabajador habilitado'); this.refresh(); } else { toast('error', 'Error', res.data && res.data.msg); }
                     });
                 };
                 if (typeof Swal !== 'undefined') {
@@ -2013,6 +2072,7 @@
         /* Control de gastos: registro mensual + utilidad (ingresos - gastos). */
         Alpine.data('wsExpenses', (data) => {
             return {
+                ...clientTableState('list'),
                 can: !!data.can,
                 currency: data.currency || '',
                 months: data.months || {},
@@ -2038,7 +2098,7 @@
                     });
                     return out;
                 },
-                total() {
+                monthTotal() {
                     return (this.list || []).reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
                 },
                 locName(e) {
@@ -2134,6 +2194,7 @@
                     return (this.currency ? this.currency + ' ' : '') + s;
                 },
                 load() {
+                    this.onPageFilter();
                     this.api('ws_expenses_list', { year: this.year, month: this.month }, (json) => {
                         if (json && json.success) {
                             this.list = (json.data && json.data.expenses) || [];

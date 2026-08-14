@@ -87,7 +87,7 @@ $ws_months = array(
         </div>
         <div class="ws-exp-total">
             <span><?php esc_html_e( 'Gastos del mes', 'workshop' ); ?></span>
-            <strong x-text="money(total())"></strong>
+            <strong x-text="money(monthTotal())"></strong>
         </div>
     </div>
 
@@ -155,7 +155,7 @@ $ws_months = array(
         <table class="ws-table" x-show="list.length > 0">
             <thead><tr><th><?php esc_html_e( 'Concepto', 'workshop' ); ?></th><th><?php esc_html_e( 'Categoría', 'workshop' ); ?></th><th><?php esc_html_e( 'Ubicación', 'workshop' ); ?></th><th><?php esc_html_e( 'Fecha', 'workshop' ); ?></th><th><?php esc_html_e( 'Monto', 'workshop' ); ?></th><th></th></tr></thead>
             <tbody>
-                <template x-for="e in list" :key="e.id">
+                <template x-for="e in pagedRows()" :key="e.id">
                     <tr>
                         <td><strong x-text="e.concept"></strong><small class="ws-muted" x-show="e.note" x-text="e.note"></small></td>
                         <td x-text="e.category || '—'"></td>
@@ -174,6 +174,19 @@ $ws_months = array(
                 </template>
             </tbody>
         </table>
+        <div class="ws-pagination" x-show="total > pageSize">
+            <span class="ws-pagination-info" x-text="(total ? (page - 1) * pageSize + 1 : 0) + '–' + Math.min(page * pageSize, total) + ' de ' + total"></span>
+            <div class="ws-pagination-controls">
+                <button class="ws-page-btn" @click="prevPage()" :disabled="page <= 1"><i class="fa-solid fa-chevron-left"></i></button>
+                <template x-for="n in pages()" :key="n">
+                    <button class="ws-page-btn" :class="n === page ? 'is-active' : ''" @click="goPage(n)" x-text="n"></button>
+                </template>
+                <button class="ws-page-btn" @click="nextPage()" :disabled="page >= totalPages()"><i class="fa-solid fa-chevron-right"></i></button>
+                <select class="ws-page-size" x-model.number="pageSize" @change="changePageSize()">
+                    <option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option>
+                </select>
+            </div>
+        </div>
     </div>
 
 </div>

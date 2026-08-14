@@ -122,7 +122,7 @@ $locations = ws_user_locations();
                         </td>
                     </tr>
                 </template>
-                <template x-for="sale in sales" :key="sale.id">
+                <template x-for="sale in pagedRows()" :key="sale.id">
                     <tr>
                         <td>#<span x-text="sale.id"></span></td>
                         <td x-text="formatDate(sale.created_at)"></td>
@@ -155,6 +155,19 @@ $locations = ws_user_locations();
                 </template>
             </tbody>
         </table>
+        <div class="ws-pagination" x-show="total > pageSize">
+            <span class="ws-pagination-info" x-text="(total ? (page - 1) * pageSize + 1 : 0) + '–' + Math.min(page * pageSize, total) + ' de ' + total"></span>
+            <div class="ws-pagination-controls">
+                <button class="ws-page-btn" @click="prevPage()" :disabled="page <= 1"><i class="fa-solid fa-chevron-left"></i></button>
+                <template x-for="n in pages()" :key="n">
+                    <button class="ws-page-btn" :class="n === page ? 'is-active' : ''" @click="goPage(n)" x-text="n"></button>
+                </template>
+                <button class="ws-page-btn" @click="nextPage()" :disabled="page >= totalPages()"><i class="fa-solid fa-chevron-right"></i></button>
+                <select class="ws-page-size" x-model.number="pageSize" @change="changePageSize()">
+                    <option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option>
+                </select>
+            </div>
+        </div>
     </div>
 
     <!-- Modal de detalles de venta -->
@@ -296,7 +309,7 @@ $locations = ws_user_locations();
                         </td>
                     </tr>
                 </template>
-                <template x-for="cash in cashHistory" :key="cash.id">
+                <template x-for="cash in cashPagedRows()" :key="cash.id">
                     <tr>
                         <td>#<span x-text="cash.id"></span></td>
                         <td x-text="cash.location_name || '-'"></td>
@@ -323,6 +336,19 @@ $locations = ws_user_locations();
                 </template>
             </tbody>
         </table>
+        <div class="ws-pagination" x-show="cashTotal > cashPageSize">
+            <span class="ws-pagination-info" x-text="(cashTotal ? (cashPage - 1) * cashPageSize + 1 : 0) + '–' + Math.min(cashPage * cashPageSize, cashTotal) + ' de ' + cashTotal"></span>
+            <div class="ws-pagination-controls">
+                <button class="ws-page-btn" @click="cashPrevPage()" :disabled="cashPage <= 1"><i class="fa-solid fa-chevron-left"></i></button>
+                <template x-for="n in cashPages()" :key="n">
+                    <button class="ws-page-btn" :class="n === cashPage ? 'is-active' : ''" @click="cashGoPage(n)" x-text="n"></button>
+                </template>
+                <button class="ws-page-btn" @click="cashNextPage()" :disabled="cashPage >= cashTotalPages()"><i class="fa-solid fa-chevron-right"></i></button>
+                <select class="ws-page-size" x-model.number="cashPageSize" @change="cashChangePageSize()">
+                    <option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option>
+                </select>
+            </div>
+        </div>
     </div>
 
     <!-- Modal: cuadre de inventario de un cierre (físico vs virtual) -->
@@ -387,6 +413,8 @@ const $ = (path, data) => fetch(WS.ajaxUrl, {
 
 document.addEventListener('alpine:init', () => {
     Alpine.data('wsPOSSales', (opts) => ({
+        ...WSClientPager('sales'),
+        ...WSClientPager('cashHistory', 'cash'),
         sales: [],
         selectedSale: null,
         selectedSaleItems: [],
@@ -436,12 +464,15 @@ document.addEventListener('alpine:init', () => {
 
         async loadCashHistory() {
             this.cashLoading = true;
+            this.cashOnPageFilter();
             try {
                 const response = await $('ws_pos_cash_history', {
                     location_id: this.locationFilter,
                     date_from: this.cashDateFrom,
                     date_to: this.cashDateTo,
-                    status: this.cashStatusFilter
+                    status: this.cashStatusFilter,
+                    limit: 500,
+                    offset: 0
                 });
                 if (response.success) {
                     this.cashHistory = response.data.data || [];
@@ -485,13 +516,16 @@ document.addEventListener('alpine:init', () => {
 
         async loadSales() {
             this.loading = true;
+            this.onPageFilter();
             try {
                 const response = await $('ws_pos_sales_get', {
                     location_id: this.locationFilter,
                     search: this.search,
                     date_from: this.dateFrom,
                     date_to: this.dateTo,
-                    status: this.statusFilter
+                    status: this.statusFilter,
+                    limit: 500,
+                    offset: 0
                 });
                 if (response.success) {
                     this.sales = response.data.data || [];

@@ -177,12 +177,39 @@
         }
     }
 
+    // Construye el body form-urlencoded reenviando los ARRAYS como campos
+    // repetidos (locations[]=1&locations[]=2, payment_methods[]=…). El helper
+    // $ une los arrays con comas (URLSearchParams), lo que corrompería estos
+    // campos al sincronizar, así que aquí se construye a mano. Adjunta el
+    // ws_biz del negocio actual (como el wrapper de theme.js) para que la
+    // petición reenviada apunte a las tablas/opciones del negocio correcto.
+    function buildFormBody(action, payload) {
+        const body = new URLSearchParams();
+        body.append('action', action);
+        if (window.WS && WS.nonce) body.append('ws_nonce', WS.nonce);
+        if (window.WS && WS.business) body.append('ws_biz', WS.business);
+        Object.keys(payload || {}).forEach((key) => {
+            const value = payload[key];
+            if (Array.isArray(value)) {
+                value.forEach((v) => body.append(key, v));
+            } else if (value !== undefined && value !== null) {
+                body.append(key, value);
+            }
+        });
+        return body;
+    }
+
     // Procesador genérico: reenvía el endpoint AJAX original con sus datos.
     async function processGeneric(data) {
         const action = data && data.action;
         const payload = data && data.payload ? data.payload : data;
         if (!action) throw new Error('Acción genérica sin action');
-        const response = await $(action, payload);
+        const response = await fetch(WS.ajaxUrl, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: buildFormBody(action, payload)
+        }).then(r => r.json());
         if (!response.success) throw new Error(response.data?.msg || 'Error al sincronizar');
         return response;
     }

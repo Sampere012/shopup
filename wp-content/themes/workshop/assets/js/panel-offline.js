@@ -19,25 +19,32 @@
     var READ_ACTIONS = [
         'cache_customers', 'cache_locations', 'cache_products',
         'cart_count', 'cart_get', 'cart_total',
+        'customers_get',
+        'expenses_list',
         'get_location_by_slug', 'locations_list',
         'loyalty_customers', 'loyalty_settings', 'loyalty_stats', 'loyalty_transactions',
         'movements_list', 'my_locations',
         'notifications_list',
         'order_detail', 'order_list',
-        'pos_cash_history', 'pos_cash_status', 'pos_sale_items_get', 'pos_sales_get', 'pos_stats',
+        'pos_cash_counts_get', 'pos_cash_history', 'pos_cash_status', 'pos_cash_stock',
+        'pos_sale_items_get', 'pos_sales_get', 'pos_stats',
         'price_history_list',
         'products_get', 'products_list', 'public_order_status',
         'reviews_get', 'reviews_stats',
-        'shifts_list', 'stock_list', 'store_products', 'suppliers_list',
+        'shifts_list', 'stock_counts_list', 'stock_count_virtual',
+        'stock_list', 'store_products', 'suppliers_list', 'workers_list',
         // Consultas del asistente (chatbot) en el panel: son lecturas.
         'ws_chatbot_search', 'ws_chatbot_summary', 'ws_chatbot_filters',
         'ws_chatbot_meta', 'ws_chatbot_top', 'ws_chatbot_llm', 'ws_notifications_list'
     ];
 
-    // Acciones con manejo offline propio (POS y carrito): pasan tal cual.
+    // Acciones con manejo offline propio (POS y carrito) o que no tienen
+    // sentido encolar sin conexión (exportar reportes descarga un archivo):
+    // pasan tal cual y su error natural se muestra al usuario.
     var SKIP_ACTIONS = [
         'pos_sale_save',
-        'cart_add', 'cart_update', 'cart_remove', 'cart_clear', 'cart_merge'
+        'cart_add', 'cart_update', 'cart_remove', 'cart_clear', 'cart_merge',
+        'reports_export'
     ];
 
     // Acciones de LISTA con respaldo de instantánea: si offline no hay
@@ -46,11 +53,12 @@
     // Las lecturas de DETALLE (order_detail, get_location_by_slug…) quedan
     // fuera: devolver el último registro cacheado mostraría un dato equivocado.
     var SNAPSHOT_ACTIONS = [
-        'cache_customers', 'locations_list', 'movements_list', 'my_locations',
+        'cache_customers', 'customers_get', 'expenses_list', 'locations_list',
+        'movements_list', 'my_locations',
         'notifications_list', 'order_list', 'pos_cash_history', 'pos_sales_get',
         'price_history_list', 'products_get', 'products_list', 'reviews_get',
-        'shifts_list', 'stock_list', 'suppliers_list', 'loyalty_customers',
-        'loyalty_transactions', 'store_products',
+        'shifts_list', 'stock_counts_list', 'stock_list', 'suppliers_list', 'workers_list',
+        'loyalty_customers', 'loyalty_transactions', 'store_products',
         'ws_chatbot_search', 'ws_chatbot_summary', 'ws_chatbot_meta',
         'ws_chatbot_top', 'ws_notifications_list'
     ];
@@ -216,10 +224,22 @@
         }
 
         // Escritura: encolar para sincronizar cuando vuelva la conexión.
+        // Los parámetros repetidos (p. ej. locations[]=1&locations[]=2 o
+        // payment_methods[]=…) se agrupan en arrays para no perder valores:
+        // al sincronizar se reenvían como campos repetidos, igual que el
+        // formulario original.
         var payload = {};
         params.forEach(function(value, keyName) {
             if (keyName === 'action' || keyName === 'ws_nonce' || keyName === 'ws_biz') return;
-            payload[keyName] = value;
+            if (Object.prototype.hasOwnProperty.call(payload, keyName)) {
+                if (Array.isArray(payload[keyName])) {
+                    payload[keyName].push(value);
+                } else {
+                    payload[keyName] = [payload[keyName], value];
+                }
+            } else {
+                payload[keyName] = value;
+            }
         });
 
         try {
@@ -278,12 +298,20 @@
         }
 
         var action = params.get('action');
-        if (!action || isSkip(action)) {
+        if (!action) {
+            return _fetch(input, init);
+        }
+        // Normaliza el nombre de la acción: el parámetro llega como
+        // 'ws_suppliers_list' pero las listas de acciones (lectura, omisión,
+        // instantánea) usan el nombre sin el prefijo 'ws_'. El action completo
+        // se conserva para el reenvío y la cola offline.
+        var normAction = action.indexOf('ws_') === 0 ? action.slice(3) : action;
+        if (isSkip(normAction)) {
             return _fetch(input, init);
         }
 
-        var isReadAction = isRead(action);
-        var key = cacheKeyFor(action, params);
+        var isReadAction = isRead(normAction);
+        var key = cacheKeyFor(normAction, params);
 
         try {
             var response = await resend(action, params);

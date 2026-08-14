@@ -100,7 +100,7 @@ $can_manage = ws_can( 'loyalty_manage' );
                         </td>
                     </tr>
                 </template>
-                <template x-for="customer in customers" :key="customer.id">
+                <template x-for="customer in pagedRows()" :key="customer.id">
                     <tr>
                         <td>
                             <div class="ws-customer-name" x-text="customer.name"></div>
@@ -130,6 +130,19 @@ $can_manage = ws_can( 'loyalty_manage' );
                 </template>
             </tbody>
         </table>
+        <div class="ws-pagination" x-show="total > pageSize">
+            <span class="ws-pagination-info" x-text="(total ? (page - 1) * pageSize + 1 : 0) + '–' + Math.min(page * pageSize, total) + ' de ' + total"></span>
+            <div class="ws-pagination-controls">
+                <button class="ws-page-btn" @click="prevPage()" :disabled="page <= 1"><i class="fa-solid fa-chevron-left"></i></button>
+                <template x-for="n in pages()" :key="n">
+                    <button class="ws-page-btn" :class="n === page ? 'is-active' : ''" @click="goPage(n)" x-text="n"></button>
+                </template>
+                <button class="ws-page-btn" @click="nextPage()" :disabled="page >= totalPages()"><i class="fa-solid fa-chevron-right"></i></button>
+                <select class="ws-page-size" x-model.number="pageSize" @change="changePageSize()">
+                    <option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option>
+                </select>
+            </div>
+        </div>
     </div>
 
     <!-- Modal de ajuste de puntos -->
@@ -261,6 +274,7 @@ const $ = (path, data) => fetch(WS.ajaxUrl, {
 
 document.addEventListener('alpine:init', () => {
     Alpine.data('wsLoyalty', () => ({
+        ...WSClientPager('customers'),
         customers: [],
         loading: false,
         search: '',
@@ -290,10 +304,13 @@ document.addEventListener('alpine:init', () => {
 
         async loadCustomers() {
             this.loading = true;
+            this.onPageFilter();
             try {
                 const response = await $('ws_loyalty_customers', {
                     search: this.search,
-                    sort_by: this.sortBy
+                    sort_by: this.sortBy,
+                    limit: 500,
+                    offset: 0
                 });
                 if (response.success) {
                     this.customers = response.data.data || [];

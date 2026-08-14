@@ -1395,6 +1395,57 @@ function ws_ajax_worker_set_disabled() {
     wp_send_json_success();
 }
 
+// Listado de trabajadores con paginación/orden server-side.
+add_action( 'wp_ajax_ws_workers_list', 'ws_ajax_workers_list' );
+function ws_ajax_workers_list() {
+    ws_guard( 'workers_manage' );
+    $search = sanitize_text_field( $_POST['search'] ?? '' );
+    ws_send_list( 'workers', function ( $args ) use ( $search ) {
+        $all = WS_CRUD::get_workers_matching( $search );
+        // Orden: display_name o user_email (el resto cae a display_name).
+        $dir = ( ( $args['order'] ?? 'ASC' ) === 'DESC' ) ? -1 : 1;
+        usort( $all, function ( $a, $b ) use ( $args, $dir ) {
+            $va = (string) $a->display_name;
+            $vb = (string) $b->display_name;
+            if ( 'user_email' === ( $args['orderby'] ?? '' ) ) {
+                $va = (string) $a->user_email;
+                $vb = (string) $b->user_email;
+            }
+            return $dir * strcasecmp( $va, $vb );
+        } );
+        if ( ! empty( $args['limit'] ) ) {
+            $all = array_slice( $all, (int) ( $args['offset'] ?? 0 ), (int) $args['limit'] );
+        }
+        $threshold = strtotime( '-30 days' );
+        $out = array();
+        foreach ( $all as $w ) {
+            $last    = get_user_meta( $w->ID, 'ws_last_login', true );
+            $last_ts = $last ? strtotime( $last ) : 0;
+            $role    = '';
+            foreach ( array( 'ws_owner', 'ws_storekeeper', 'ws_seller' ) as $r ) {
+                if ( in_array( $r, (array) $w->roles, true ) ) {
+                    $role = $r;
+                    break;
+                }
+            }
+            $wlocs = WS_CRUD::get_user_locations( $w->ID );
+            $out[] = array(
+                'id'              => (int) $w->ID,
+                'display_name'    => $w->display_name,
+                'user_email'      => $w->user_email,
+                'role'            => $role,
+                'locations'       => array_map( fn( $l ) => array( 'id' => (int) $l->id, 'name' => $l->name ), $wlocs ),
+                'is_disabled'     => ws_worker_disabled( $w->ID ) ? 1 : 0,
+                'is_active'       => ( $last_ts && $last_ts >= $threshold ) ? 1 : 0,
+                'last_login_text' => $last_ts ? wp_date( 'd/m/Y H:i', $last_ts ) : '',
+            );
+        }
+        return $out;
+    }, function () use ( $search ) {
+        return count( WS_CRUD::get_workers_matching( $search ) );
+    }, array( 'search' => $search ) );
+}
+
 /* ---------------- Permisos y configuración ---------------- */
 
 add_action( 'wp_ajax_ws_save_permissions', 'ws_ajax_save_permissions' );

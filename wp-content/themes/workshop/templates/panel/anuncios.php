@@ -124,7 +124,7 @@ $ws_ann_types    = array(
         </template>
 
         <div class="ws-ann-list">
-            <template x-for="a in list" :key="a.id">
+            <template x-for="a in pagedRows()" :key="a.id">
                 <div class="ws-ann-item" :class="'ws-ann-' + a.type + (a.active ? '' : ' is-inactive')">
                     <span class="ws-ann-item-ico" :class="'ws-ann-ico-' + a.type"><i class="fa-solid" :class="(types[a.type] || {}).icon || 'fa-bullhorn'"></i></span>
                     <div class="ws-ann-item-body">
@@ -155,6 +155,19 @@ $ws_ann_types    = array(
                 </div>
             </template>
         </div>
+        <div class="ws-pagination" x-show="total > pageSize">
+            <span class="ws-pagination-info" x-text="(total ? (page - 1) * pageSize + 1 : 0) + '–' + Math.min(page * pageSize, total) + ' de ' + total"></span>
+            <div class="ws-pagination-controls">
+                <button class="ws-page-btn" @click="prevPage()" :disabled="page <= 1"><i class="fa-solid fa-chevron-left"></i></button>
+                <template x-for="n in pages()" :key="n">
+                    <button class="ws-page-btn" :class="n === page ? 'is-active' : ''" @click="goPage(n)" x-text="n"></button>
+                </template>
+                <button class="ws-page-btn" @click="nextPage()" :disabled="page >= totalPages()"><i class="fa-solid fa-chevron-right"></i></button>
+                <select class="ws-page-size" x-model.number="pageSize" @change="changePageSize()">
+                    <option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option>
+                </select>
+            </div>
+        </div>
     </div>
 
 </div>
@@ -165,6 +178,7 @@ $ws_ann_types    = array(
 document.addEventListener('alpine:init', function () {
     Alpine.data('wsAnuncios', function (data) {
         return {
+            ...WSClientPager('list'),
             can: !!data.can,
             canSite: !!data.canSite,
             list: data.list || [],

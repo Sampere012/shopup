@@ -86,7 +86,7 @@ $can_moderate = ws_can( 'reviews_moderate' );
                 <?php esc_html_e( 'No hay reseñas registradas', 'workshop' ); ?>
             </div>
         </template>
-        <template x-for="review in reviews" :key="review.id">
+        <template x-for="review in pagedRows()" :key="review.id">
             <div class="ws-review-card">
                 <div class="ws-review-header">
                     <div class="ws-review-product">
@@ -140,6 +140,19 @@ $can_moderate = ws_can( 'reviews_moderate' );
             </div>
         </template>
     </div>
+    <div class="ws-pagination" x-show="total > pageSize">
+        <span class="ws-pagination-info" x-text="(total ? (page - 1) * pageSize + 1 : 0) + '–' + Math.min(page * pageSize, total) + ' de ' + total"></span>
+        <div class="ws-pagination-controls">
+            <button class="ws-page-btn" @click="prevPage()" :disabled="page <= 1"><i class="fa-solid fa-chevron-left"></i></button>
+            <template x-for="n in pages()" :key="n">
+                <button class="ws-page-btn" :class="n === page ? 'is-active' : ''" @click="goPage(n)" x-text="n"></button>
+            </template>
+            <button class="ws-page-btn" @click="nextPage()" :disabled="page >= totalPages()"><i class="fa-solid fa-chevron-right"></i></button>
+            <select class="ws-page-size" x-model.number="pageSize" @change="changePageSize()">
+                <option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option>
+            </select>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -153,6 +166,7 @@ const $ = (path, data) => fetch(WS.ajaxUrl, {
 
 document.addEventListener('alpine:init', () => {
     Alpine.data('wsReviews', () => ({
+        ...WSClientPager('reviews'),
         reviews: [],
         loading: false,
         search: '',
@@ -168,11 +182,14 @@ document.addEventListener('alpine:init', () => {
 
         async loadReviews() {
             this.loading = true;
+            this.onPageFilter();
             try {
                 const response = await $('ws_reviews_get', {
                     search: this.search,
                     status: this.statusFilter,
-                    rating: this.ratingFilter
+                    rating: this.ratingFilter,
+                    limit: 500,
+                    offset: 0
                 });
                 if (response.success) {
                     this.reviews = response.data.data || [];

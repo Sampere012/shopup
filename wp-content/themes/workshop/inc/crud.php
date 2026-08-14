@@ -606,4 +606,63 @@ class WS_CRUD {
             }
         }
     }
+
+    /**
+     * Trabajadores del negocio actual con filtro de búsqueda (misma lógica de
+     * get_workers, pero aplicando search en PHP para poder paginar server-side
+     * con ws_send_list). Devuelve el array completo; la paginación/orden se
+     * hace en el endpoint AJAX.
+     *
+     * @param string $search Texto a buscar en nombre, email o login.
+     * @return WP_User[]
+     */
+    public static function get_workers_matching( $search = '' ) {
+        $roles = array( 'ws_storekeeper', 'ws_seller' );
+        $biz   = ws_current_business_id();
+        $out   = array();
+
+        if ( WS_Business::is_default_id( $biz ) ) {
+            $legacy = new WP_User_Query( array(
+                'role__in'     => $roles,
+                'orderby'      => 'display_name',
+                'order'        => 'ASC',
+                'meta_key'     => 'ws_business_id',
+                'meta_compare' => 'NOT EXISTS',
+            ) );
+            foreach ( $legacy->get_results() as $u ) {
+                $out[] = $u;
+            }
+        }
+
+        $q = new WP_User_Query( array(
+            'role__in'   => $roles,
+            'orderby'    => 'display_name',
+            'order'      => 'ASC',
+            'meta_key'   => 'ws_business_id',
+            'meta_value' => $biz,
+        ) );
+        foreach ( $q->get_results() as $u ) {
+            $out[] = $u;
+        }
+
+        $seen = array();
+        $out  = array_values( array_filter( $out, function ( $u ) use ( &$seen ) {
+            if ( isset( $seen[ $u->ID ] ) ) {
+                return false;
+            }
+            $seen[ $u->ID ] = true;
+            return true;
+        } ) );
+
+        if ( '' !== trim( (string) $search ) ) {
+            $needle = mb_strtolower( trim( (string) $search ) );
+            $out    = array_values( array_filter( $out, function ( $u ) use ( $needle ) {
+                return false !== mb_strpos( mb_strtolower( (string) $u->display_name ), $needle )
+                    || false !== mb_strpos( mb_strtolower( (string) $u->user_email ), $needle )
+                    || false !== mb_strpos( mb_strtolower( (string) $u->user_login ), $needle );
+            } ) );
+        }
+
+        return $out;
+    }
 }

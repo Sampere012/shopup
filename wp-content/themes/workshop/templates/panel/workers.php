@@ -7,7 +7,6 @@
 
 defined( 'ABSPATH' ) || exit;
 
-$workers   = WS_CRUD::get_workers();
 $locations = WS_CRUD::get_locations();
 $role_opts = array(
     'ws_storekeeper' => __( 'Almacenero', 'workshop' ),
@@ -16,13 +15,6 @@ $role_opts = array(
 // Solo el administrador del sistema puede crear/asignar el rol de dueño.
 if ( current_user_can( 'manage_options' ) ) {
     $role_opts = array_merge( array( 'ws_owner' => __( 'Dueño del negocio', 'workshop' ) ), $role_opts );
-}
-$ws_active_threshold = strtotime( '-30 days' );
-foreach ( $workers as $w ) {
-    $last = get_user_meta( $w->ID, 'ws_last_login', true );
-    $w->last_login = $last ? strtotime( $last ) : 0;
-    $w->is_active  = $w->last_login && $w->last_login >= $ws_active_threshold;
-    $w->is_disabled = ws_worker_disabled( $w->ID );
 }
 // Sesiones de trabajo: activas (abiertas) y el registro del día.
 $sessions_active = array();
@@ -35,10 +27,14 @@ if ( class_exists( 'WS_Sessions' ) ) {
 <div x-data="wsWorkers(<?php echo esc_attr( wp_json_encode( array(
     'roleOptions' => $role_opts,
     'locations'   => array_map( fn( $l ) => array( 'id' => (int) $l->id, 'name' => $l->name ), $locations ),
+    'isAdmin'     => current_user_can( 'manage_options' ),
 ) ) ); ?>)">
 
     <div class="ws-toolbar">
-        <div></div>
+        <div class="ws-search">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input type="search" placeholder="<?php esc_attr_e( 'Buscar…', 'workshop' ); ?>" x-model="search" @input="onSearch()">
+        </div>
         <button class="ws-btn ws-btn-primary" @click="openNew()"><i class="fa-solid fa-user-plus"></i> <?php esc_html_e( 'Nuevo trabajador', 'workshop' ); ?></button>
     </div>
 
@@ -117,11 +113,11 @@ if ( class_exists( 'WS_Sessions' ) ) {
     <?php endif; ?>
 
     <div class="ws-card">
-        <table class="ws-table" data-sortable data-ts="workers">
+        <table class="ws-table">
             <thead>
                 <tr>
-                    <th><?php esc_html_e( 'Trabajador', 'workshop' ); ?></th>
-                    <th><?php esc_html_e( 'Email', 'workshop' ); ?></th>
+                    <th class="ws-th-sort" @click="sort('display_name')"><?php esc_html_e( 'Trabajador', 'workshop' ); ?> <i class="fa-solid" :class="sortIcon('display_name')"></i></th>
+                    <th class="ws-th-sort" @click="sort('user_email')"><?php esc_html_e( 'Email', 'workshop' ); ?> <i class="fa-solid" :class="sortIcon('user_email')"></i></th>
                     <th><?php esc_html_e( 'Estado', 'workshop' ); ?></th>
                     <th><?php esc_html_e( 'Rol', 'workshop' ); ?></th>
                     <th><?php esc_html_e( 'Ubicaciones', 'workshop' ); ?></th>
@@ -129,66 +125,64 @@ if ( class_exists( 'WS_Sessions' ) ) {
                 </tr>
             </thead>
             <tbody>
-                <?php foreach ( $workers as $w ) : ?>
-                    <?php
-                    $wloc = WS_CRUD::get_user_locations( $w->ID );
-                    // El rol de la fila se deriva de los roles REALES del usuario
-                    // (no de role_opts, que oculta ws_owner a los no-admins): así
-                    // las filas de dueños muestran la insignia y nunca un select.
-                    $role = '';
-                    foreach ( array( 'ws_owner', 'ws_storekeeper', 'ws_seller' ) as $r ) {
-                        if ( in_array( $r, (array) $w->roles, true ) ) {
-                            $role = $r;
-                            break;
-                        }
-                    }
-                    ?>
+                <template x-for="w in workers" :key="w.id">
                     <tr>
                         <td>
                             <div class="ws-cell-product">
-                                <div class="ws-avatar ws-avatar-sm"><?php echo esc_html( strtoupper( substr( $w->display_name, 0, 1 ) ) ); ?></div>
-                                <strong><?php echo esc_html( $w->display_name ); ?></strong>
+                                <div class="ws-avatar ws-avatar-sm" x-text="(w.display_name || '?').charAt(0).toUpperCase()"></div>
+                                <strong x-text="w.display_name"></strong>
                             </div>
                         </td>
-                        <td x-text="'<?php echo esc_js( $w->user_email ); ?>'"></td>
+                        <td x-text="w.user_email"></td>
                         <td>
-                            <?php if ( $w->is_disabled ) : ?>
-                                <span class="ws-badge ws-badge-danger"><span class="ws-dot ws-dot-inactive"></span><?php esc_html_e( 'Deshabilitado', 'workshop' ); ?></span>
-                            <?php elseif ( $w->is_active ) : ?>
-                                <span class="ws-badge ws-badge-accepted"><span class="ws-dot ws-dot-active"></span><?php esc_html_e( 'Activo', 'workshop' ); ?></span>
-                            <?php else : ?>
-                                <span class="ws-badge"><span class="ws-dot ws-dot-inactive"></span><?php esc_html_e( 'Inactivo', 'workshop' ); ?></span>
-                            <?php endif; ?>
-                            <span class="ws-last-login"><?php echo $w->last_login ? esc_html( mysql2date( 'd/m/Y H:i', gmdate( 'Y-m-d H:i:s', $w->last_login ) ) ) : esc_html__( 'Nunca', 'workshop' ); ?></span>
+                            <span class="ws-badge" :class="w.is_disabled ? 'ws-badge-danger' : (w.is_active ? 'ws-badge-accepted' : '')">
+                                <span class="ws-dot" :class="(w.is_disabled || !w.is_active) ? 'ws-dot-inactive' : 'ws-dot-active'"></span>
+                                <span x-text="w.is_disabled ? 'Deshabilitado' : (w.is_active ? 'Activo' : 'Inactivo')"></span>
+                            </span>
+                            <span class="ws-last-login" x-text="w.last_login_text || 'Nunca'"></span>
                         </td>
                         <td>
-                            <?php if ( 'ws_owner' === $role && ! current_user_can( 'manage_options' ) ) : ?>
+                            <template x-if="w.role === 'ws_owner' && !isAdmin">
                                 <span class="ws-badge ws-badge-accepted"><i class="fa-solid fa-crown"></i> <?php esc_html_e( 'Dueño del negocio', 'workshop' ); ?></span>
-                            <?php else : ?>
-                                <select class="ws-inline-select" @change="saveWorker(<?php echo (int) $w->ID; ?>, $event.target.value, []); showWorker(<?php echo (int) $w->ID; ?>, <?php echo esc_attr( wp_json_encode( $wloc ) ); ?>)">
-                                    <?php foreach ( $role_opts as $key => $label ) : ?>
-                                        <option value="<?php echo esc_attr( $key ); ?>" <?php selected( $key, $role ); ?>><?php echo esc_html( $label ); ?></option>
-                                    <?php endforeach; ?>
+                            </template>
+                            <template x-if="!(w.role === 'ws_owner' && !isAdmin)">
+                                <select class="ws-inline-select" x-model="w.role" @change="saveWorker(w)">
+                                    <template x-for="(label, key) in roleOptions" :key="key"><option :value="key" x-text="label"></option></template>
                                 </select>
-                            <?php endif; ?>
+                            </template>
                         </td>
                         <td>
-                            <span class="ws-muted" x-data @click="showWorker(<?php echo (int) $w->ID; ?>, <?php echo esc_attr( wp_json_encode( $wloc ) ); ?>)"><?php echo esc_html( implode( ', ', array_map( fn( $l ) => $l->name, $wloc ) ) ?: '—' ); ?></span>
+                            <span class="ws-muted" @click="showWorker(w)" x-text="(w.locations || []).map(l => l.name).join(', ') || '—'"></span>
                         </td>
                         <td class="ws-actions">
-                            <button class="ws-icon-btn" title="Editar" @click="editWorker(<?php echo (int) $w->ID; ?>, <?php echo esc_attr( wp_json_encode( $w->display_name ) ); ?>, <?php echo esc_attr( wp_json_encode( $w->user_email ) ); ?>, <?php echo esc_attr( wp_json_encode( $role ) ); ?>, <?php echo esc_attr( wp_json_encode( $wloc ) ); ?>)"><i class="fa-solid fa-pen"></i></button>
-                            <button class="ws-icon-btn" title="Asignar ubicaciones" @click="showWorker(<?php echo (int) $w->ID; ?>, <?php echo esc_attr( wp_json_encode( $wloc ) ); ?>)"><i class="fa-solid fa-location-dot"></i></button>
-                            <?php if ( $w->is_disabled ) : ?>
-                                <button class="ws-icon-btn" title="Habilitar" @click="setDisabled(<?php echo (int) $w->ID; ?>, <?php echo esc_attr( wp_json_encode( $w->display_name ) ); ?>, false)"><i class="fa-solid fa-user-check"></i></button>
-                            <?php else : ?>
-                                <button class="ws-icon-btn ws-danger" title="Deshabilitar (bloquea su acceso)" @click="setDisabled(<?php echo (int) $w->ID; ?>, <?php echo esc_attr( wp_json_encode( $w->display_name ) ); ?>, true)"><i class="fa-solid fa-ban"></i></button>
-                            <?php endif; ?>
-                            <button class="ws-icon-btn ws-danger" title="Eliminar" @click="deleteWorker(<?php echo (int) $w->ID; ?>, <?php echo esc_attr( wp_json_encode( $w->display_name ) ); ?>)"><i class="fa-solid fa-trash-can"></i></button>
+                            <button class="ws-icon-btn" title="Editar" @click="editWorker(w)"><i class="fa-solid fa-pen"></i></button>
+                            <button class="ws-icon-btn" title="Asignar ubicaciones" @click="showWorker(w)"><i class="fa-solid fa-location-dot"></i></button>
+                            <template x-if="w.is_disabled">
+                                <button class="ws-icon-btn" title="Habilitar" @click="setDisabled(w.id, w.display_name, false)"><i class="fa-solid fa-user-check"></i></button>
+                            </template>
+                            <template x-if="!w.is_disabled">
+                                <button class="ws-icon-btn ws-danger" title="Deshabilitar (bloquea su acceso)" @click="setDisabled(w.id, w.display_name, true)"><i class="fa-solid fa-ban"></i></button>
+                            </template>
+                            <button class="ws-icon-btn ws-danger" title="Eliminar" @click="deleteWorker(w.id, w.display_name)"><i class="fa-solid fa-trash-can"></i></button>
                         </td>
                     </tr>
-                <?php endforeach; ?>
+                </template>
+                <tr x-show="total === 0"><td colspan="6"><p class="ws-empty"><?php esc_html_e( 'Sin resultados.', 'workshop' ); ?></p></td></tr>
             </tbody>
         </table>
+        <div class="ws-pagination" x-show="total > pageSize">
+            <span class="ws-pagination-info" x-text="(total ? (page - 1) * pageSize + 1 : 0) + '–' + Math.min(page * pageSize, total) + ' de ' + total"></span>
+            <div class="ws-pagination-controls">
+                <button class="ws-page-btn" @click="prevPage()" :disabled="page <= 1"><i class="fa-solid fa-chevron-left"></i></button>
+                <template x-for="n in pages()" :key="n">
+                    <button class="ws-page-btn" :class="n === page ? 'is-active' : ''" @click="goPage(n)" x-text="n"></button>
+                </template>
+                <button class="ws-page-btn" @click="nextPage()" :disabled="page >= totalPages()"><i class="fa-solid fa-chevron-right"></i></button>
+                <select class="ws-page-size" x-model.number="pageSize" @change="changePageSize()">
+                    <option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option>
+                </select>
+            </div>
+        </div>
     </div>
 
     <!-- Modal nuevo trabajador -->
