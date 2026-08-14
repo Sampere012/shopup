@@ -942,6 +942,10 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-check-pill { display: inline-flex; align-items: center; gap: 8px; background: #fff; border: 1px solid var(--ws-border); border-radius: 9px; padding: 8px 12px; font-size: .88em; cursor: pointer; }
 .ws-check-pill input { width: 15px; height: 15px; accent-color: var(--ws-primary); }
 .ws-stock-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ws-stock-count-foot {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--ws-border);
+}
 @media (max-width: 640px) {
     .ws-stock-actions { flex-wrap: nowrap; overflow-x: auto; padding: 2px 2px 6px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
     .ws-stock-actions::-webkit-scrollbar { display: none; }

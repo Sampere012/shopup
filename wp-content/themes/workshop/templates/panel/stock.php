@@ -13,8 +13,6 @@ $can_exit     = ws_can( 'stock_exit' );
 $can_writeoff = ws_can( 'stock_writeoff' );
 $can_transfer = ws_can( 'stock_transfer' );
 $can_venta    = ws_can( 'pos_sell' ) || $can_exit;
-// Acceso rápido al lienzo de conexiones (stock compartido) desde Stock.
-$can_manage_links = ws_can( 'locations_manage' );
 $currency     = ws_currency_symbol();
 $sellers      = array();
 if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
@@ -34,11 +32,18 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
     'canWriteoff'  => $can_writeoff,
     'canTransfer'  => $can_transfer,
     'canVenta'     => $can_venta,
-    'canManageLinks' => $can_manage_links,
     'sellers'      => $sellers,
 ) ) ); ?>)">
 
     <div class="ws-card">
+        <div class="ws-tabs">
+            <button type="button" class="ws-tab" :class="stockTab === 'moves' && 'is-active'" @click="setStockTab('moves')"><i class="fa-solid fa-boxes-stacked"></i> <?php esc_html_e( 'Movimientos', 'workshop' ); ?></button>
+            <button type="button" class="ws-tab" :class="stockTab === 'count' && 'is-active'" @click="goCount()"><i class="fa-solid fa-list-check"></i> <?php esc_html_e( 'Cuadre', 'workshop' ); ?></button>
+            <button type="button" class="ws-tab" :class="stockTab === 'hist' && 'is-active'" @click="goHistory()"><i class="fa-solid fa-clock-rotate-left"></i> <?php esc_html_e( 'Historial cuadre', 'workshop' ); ?></button>
+        </div>
+
+        <!-- Pestaña: Movimientos (stock por ubicación + crear movimientos) -->
+        <div x-show="stockTab === 'moves'" x-cloak>
         <div class="ws-stock-head">
             <div class="ws-stock-filters">
                 <div class="ws-search">
@@ -52,11 +57,6 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                 <label class="ws-check ws-check-pill"><input type="checkbox" x-model="lowOnly" @change="onFilter()"><span><?php esc_html_e( 'Solo stock bajo', 'workshop' ); ?></span></label>
             </div>
             <div class="ws-stock-actions">
-                <button class="ws-btn ws-btn-secondary" @click="openCount()" title="<?php esc_attr_e( 'Compara el stock físico (lo que cuentas) con el virtual (lo que dice la app)', 'workshop' ); ?>"><i class="fa-solid fa-list-check"></i> <?php esc_html_e( 'Cuadre de inventario', 'workshop' ); ?></button>
-                <button class="ws-btn ws-btn-icon-only ws-btn-secondary" @click="openCountsHistory()" title="<?php esc_attr_e( 'Historial de cuadres', 'workshop' ); ?>"><i class="fa-solid fa-clock-rotate-left"></i></button>
-                <template x-if="canManageLinks">
-                    <button class="ws-btn ws-btn-secondary" @click="openLinks()" title="<?php esc_attr_e( 'Conecta ubicaciones para compartir stock: al vender en una, se rebaja en todas las conectadas', 'workshop' ); ?>"><i class="fa-solid fa-share-nodes"></i> <?php esc_html_e( 'Conectar ubicaciones', 'workshop' ); ?></button>
-                </template>
                 <template x-if="canAnyMove">
                     <button class="ws-btn ws-btn-primary" @click="openWizard"><i class="fa-solid fa-plus"></i> <?php esc_html_e( 'Nuevo movimiento', 'workshop' ); ?></button>
                 </template>
@@ -121,6 +121,108 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                     <option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option>
                 </select>
             </div>
+        </div>
+        </div>
+
+        <!-- Pestaña: Cuadre de inventario (físico vs virtual) -->
+        <div x-show="stockTab === 'count'" x-cloak>
+            <p class="ws-muted" style="margin-top:0"><?php esc_html_e( 'Escribe el stock FÍSICO (lo que contaste) de cada producto; la app lo compara con el VIRTUAL (lo que dice la app) y te marca sobrantes y faltantes. Puedes corregir el stock automáticamente para que quede al 100%.', 'workshop' ); ?></p>
+            <div class="ws-form-grid" style="margin-bottom:12px">
+                <label class="ws-field">
+                    <span><?php esc_html_e( 'Ubicación *', 'workshop' ); ?></span>
+                    <select x-model="count.location_id" @change="loadCountVirtual()" required>
+                        <option value="">— <?php esc_html_e( 'Seleccionar', 'workshop' ); ?> —</option>
+                        <template x-for="l in locations" :key="l.id"><option :value="l.id" x-text="l.name + (l.type === 'pv' ? ' (PV)' : '')"></option></template>
+                    </select>
+                </label>
+                <label class="ws-field">
+                    <span><?php esc_html_e( 'Nota (opcional)', 'workshop' ); ?></span>
+                    <input type="text" x-model="count.note" placeholder="<?php esc_attr_e( 'Ej.: conteo semanal', 'workshop' ); ?>">
+                </label>
+            </div>
+
+            <div class="ws-cash-cuadre-summary" style="margin-bottom:12px">
+                <span><i class="fa-solid fa-circle-check ws-text-success"></i> <?php esc_html_e( 'Cuadrados', 'workshop' ); ?>: <b x-text="countStats.cuadrados"></b></span>
+                <span><i class="fa-solid fa-plus-circle ws-text-success"></i> <?php esc_html_e( 'Sobrantes', 'workshop' ); ?>: <b x-text="countStats.sobrante"></b></span>
+                <span><i class="fa-solid fa-minus-circle ws-text-danger"></i> <?php esc_html_e( 'Faltantes', 'workshop' ); ?>: <b x-text="countStats.faltante"></b></span>
+            </div>
+
+            <div x-show="countLoading" class="ws-empty"><i class="fa-solid fa-spinner fa-spin"></i> <?php esc_html_e( 'Cargando stock virtual…', 'workshop' ); ?></div>
+            <div class="ws-search ws-mb" x-show="!countLoading">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input type="search" placeholder="<?php esc_attr_e( 'Buscar producto…', 'workshop' ); ?>" x-model="countSearch">
+            </div>
+            <div x-show="!countLoading && countFiltered.length === 0">
+                <p class="ws-empty"><?php esc_html_e( 'No hay productos en esta ubicación.', 'workshop' ); ?></p>
+                <button type="button" class="ws-btn ws-btn-secondary" @click="loadCountVirtual()"><i class="fa-solid fa-rotate"></i> <?php esc_html_e( 'Recargar', 'workshop' ); ?></button>
+            </div>
+            <table class="ws-items-table" x-show="!countLoading && countFiltered.length > 0">
+                <thead>
+                    <tr>
+                        <th><?php esc_html_e( 'Producto', 'workshop' ); ?></th>
+                        <th><?php esc_html_e( 'Virtual (app)', 'workshop' ); ?></th>
+                        <th title="<?php esc_attr_e( 'Suma del stock en todas las ubicaciones conectadas (stock compartido)', 'workshop' ); ?>"><?php esc_html_e( 'Stock grupo', 'workshop' ); ?> <i class="fa-solid fa-share-nodes ws-muted"></i></th>
+                        <th><?php esc_html_e( 'Físico (contado)', 'workshop' ); ?></th>
+                        <th><?php esc_html_e( 'Dif.', 'workshop' ); ?></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <template x-for="c in countFiltered" :key="c.product_id">
+                        <tr>
+                            <td><strong x-text="c.name"></strong><small class="ws-muted" x-show="c.barcode" x-text="c.barcode"></small></td>
+                            <td x-text="c.virtual_qty"></td>
+                            <td>
+                                <template x-if="c.group_parts && c.group_parts.length > 1">
+                                    <span class="ws-group-badge" :title="groupTitle(c)">
+                                        <i class="fa-solid fa-share-nodes"></i>
+                                        <b x-text="c.group_total"></b>
+                                        <small x-text="'· ' + c.group_parts.length + ' ubs.'"></small>
+                                    </span>
+                                </template>
+                                <span x-show="!(c.group_parts && c.group_parts.length > 1)" class="ws-muted" x-text="c.group_total"></span>
+                            </td>
+                            <td><input type="number" step="0.01" min="0" x-model.number="c.physical" class="ws-count-input"></td>
+                            <td>
+                                <span class="ws-badge" :class="countDiff(c) > 0.004 ? 'ws-badge-completed' : (countDiff(c) < -0.004 ? 'ws-badge-cancelled' : 'ws-badge-pending')" x-text="countDiffText(c)"></span>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+            <div class="ws-stock-count-foot">
+                <label class="ws-check">
+                    <input type="checkbox" x-model="count.adjust">
+                    <span><strong><?php esc_html_e( 'Corregir stock automáticamente', 'workshop' ); ?></strong> — <?php esc_html_e( 'la app ajusta el inventario a lo físico (entrada/salida de ajuste por producto con diferencia).', 'workshop' ); ?></span>
+                </label>
+                <button type="button" class="ws-btn ws-btn-primary" @click="saveCount()" :disabled="countSaving || countItems.length === 0">
+                    <i class="fa-solid" :class="countSaving ? 'fa-spinner fa-spin' : 'fa-floppy-disk'"></i>
+                    <span x-text="countSaving ? '<?php esc_attr_e( 'Guardando…', 'workshop' ); ?>' : '<?php esc_attr_e( 'Guardar cuadre', 'workshop' ); ?>'"></span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Pestaña: Historial de cuadres -->
+        <div x-show="stockTab === 'hist'" x-cloak>
+            <template x-if="countsHistLoading">
+                <p class="ws-empty"><i class="fa-solid fa-spinner fa-spin"></i> <?php esc_html_e( 'Cargando…', 'workshop' ); ?></p>
+            </template>
+            <template x-if="!countsHistLoading && countsHist.length === 0">
+                <p class="ws-empty"><?php esc_html_e( 'Aún no hay cuadres guardados.', 'workshop' ); ?></p>
+            </template>
+            <template x-for="h in countsHist" :key="h.id">
+                <div class="ws-card" style="margin-bottom:10px;padding:12px">
+                    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+                        <strong>#<span x-text="h.id"></span> · <span x-text="h.location_name"></span></strong>
+                        <span class="ws-muted" x-text="h.created_at"></span>
+                    </div>
+                    <div class="ws-muted" x-text="h.summary"></div>
+                    <div x-show="h.note" class="ws-muted" x-text="'✎ ' + h.note"></div>
+                    <div style="margin-top:8px">
+                        <span class="ws-badge ws-badge-completed" x-show="h.adjusted"><i class="fa-solid fa-wand-magic-sparkles"></i> <?php esc_html_e( 'Stock corregido', 'workshop' ); ?></span>
+                        <button type="button" class="ws-btn ws-btn-secondary" style="margin-left:6px" @click="viewCountDetail(h)"><i class="fa-solid fa-eye"></i> <?php esc_html_e( 'Ver detalle', 'workshop' ); ?></button>
+                    </div>
+                </div>
+            </template>
         </div>
     </div>
 
@@ -199,126 +301,6 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                     <button type="submit" class="ws-btn ws-btn-primary"><i class="fa-solid fa-arrow-right-arrow-left"></i> <?php esc_html_e( 'Transferir', 'workshop' ); ?></button>
                 </div>
             </form>
-        </div>
-    </div>
-
-    <!-- Modal Cuadre de inventario (físico vs virtual, sin caja) -->
-    <div class="ws-modal" x-show="countOpen" x-cloak @keydown.escape.window="countOpen=false">
-        <div class="ws-modal-backdrop" @click="countOpen=false"></div>
-        <div class="ws-modal-box ws-modal-wide">
-            <div class="ws-modal-head">
-                <h3><i class="fa-solid fa-list-check"></i> <?php esc_html_e( 'Cuadre de inventario', 'workshop' ); ?></h3>
-                <button class="ws-cart-close" @click="countOpen=false"><i class="fa-solid fa-xmark"></i></button>
-            </div>
-            <div class="ws-modal-body">
-                <p class="ws-muted" style="margin-top:0"><?php esc_html_e( 'Escribe el stock FÍSICO (lo que contaste) de cada producto; la app lo compara con el VIRTUAL (lo que dice la app) y te marca sobrantes y faltantes. Puedes corregir el stock automáticamente para que quede al 100%.', 'workshop' ); ?></p>
-                <div class="ws-form-grid" style="margin-bottom:12px">
-                    <label class="ws-field">
-                        <span><?php esc_html_e( 'Ubicación *', 'workshop' ); ?></span>
-                        <select x-model="count.location_id" @change="loadCountVirtual()" required>
-                            <option value="">— <?php esc_html_e( 'Seleccionar', 'workshop' ); ?> —</option>
-                            <template x-for="l in locations" :key="l.id"><option :value="l.id" x-text="l.name + (l.type === 'pv' ? ' (PV)' : '')"></option></template>
-                        </select>
-                    </label>
-                    <label class="ws-field">
-                        <span><?php esc_html_e( 'Nota (opcional)', 'workshop' ); ?></span>
-                        <input type="text" x-model="count.note" placeholder="<?php esc_attr_e( 'Ej.: conteo semanal', 'workshop' ); ?>">
-                    </label>
-                </div>
-
-                <div class="ws-cash-cuadre-summary" style="margin-bottom:12px">
-                    <span><i class="fa-solid fa-circle-check ws-text-success"></i> <?php esc_html_e( 'Cuadrados', 'workshop' ); ?>: <b x-text="countStats.cuadrados"></b></span>
-                    <span><i class="fa-solid fa-plus-circle ws-text-success"></i> <?php esc_html_e( 'Sobrantes', 'workshop' ); ?>: <b x-text="countStats.sobrante"></b></span>
-                    <span><i class="fa-solid fa-minus-circle ws-text-danger"></i> <?php esc_html_e( 'Faltantes', 'workshop' ); ?>: <b x-text="countStats.faltante"></b></span>
-                </div>
-
-                <div x-show="countLoading" class="ws-empty"><i class="fa-solid fa-spinner fa-spin"></i> <?php esc_html_e( 'Cargando stock virtual…', 'workshop' ); ?></div>
-                <div class="ws-search ws-mb" x-show="!countLoading">
-                    <i class="fa-solid fa-magnifying-glass"></i>
-                    <input type="search" placeholder="<?php esc_attr_e( 'Buscar producto…', 'workshop' ); ?>" x-model="countSearch">
-                </div>
-                <div x-show="!countLoading && countFiltered.length === 0">
-                    <p class="ws-empty"><?php esc_html_e( 'No hay productos en esta ubicación.', 'workshop' ); ?></p>
-                    <button type="button" class="ws-btn ws-btn-secondary" @click="loadCountVirtual()"><i class="fa-solid fa-rotate"></i> <?php esc_html_e( 'Recargar', 'workshop' ); ?></button>
-                </div>
-                <table class="ws-items-table" x-show="!countLoading && countFiltered.length > 0">
-                    <thead>
-                        <tr>
-                            <th><?php esc_html_e( 'Producto', 'workshop' ); ?></th>
-                            <th><?php esc_html_e( 'Virtual (app)', 'workshop' ); ?></th>
-                            <th title="<?php esc_attr_e( 'Suma del stock en todas las ubicaciones conectadas (stock compartido)', 'workshop' ); ?>"><?php esc_html_e( 'Stock grupo', 'workshop' ); ?> <i class="fa-solid fa-share-nodes ws-muted"></i></th>
-                            <th><?php esc_html_e( 'Físico (contado)', 'workshop' ); ?></th>
-                            <th><?php esc_html_e( 'Dif.', 'workshop' ); ?></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <template x-for="c in countFiltered" :key="c.product_id">
-                            <tr>
-                                <td><strong x-text="c.name"></strong><small class="ws-muted" x-show="c.barcode" x-text="c.barcode"></small></td>
-                                <td x-text="c.virtual_qty"></td>
-                                <td>
-                                    <template x-if="c.group_parts && c.group_parts.length > 1">
-                                        <span class="ws-group-badge" :title="groupTitle(c)">
-                                            <i class="fa-solid fa-share-nodes"></i>
-                                            <b x-text="c.group_total"></b>
-                                            <small x-text="'· ' + c.group_parts.length + ' ubs.'"></small>
-                                        </span>
-                                    </template>
-                                    <span x-show="!(c.group_parts && c.group_parts.length > 1)" class="ws-muted" x-text="c.group_total"></span>
-                                </td>
-                                <td><input type="number" step="0.01" min="0" x-model.number="c.physical" class="ws-count-input"></td>
-                                <td>
-                                    <span class="ws-badge" :class="countDiff(c) > 0.004 ? 'ws-badge-completed' : (countDiff(c) < -0.004 ? 'ws-badge-cancelled' : 'ws-badge-pending')" x-text="countDiffText(c)"></span>
-                                </td>
-                            </tr>
-                        </template>
-                    </tbody>
-                </table>
-                <label class="ws-check" style="margin-top:12px">
-                    <input type="checkbox" x-model="count.adjust">
-                    <span><strong><?php esc_html_e( 'Corregir stock automáticamente', 'workshop' ); ?></strong> — <?php esc_html_e( 'la app ajusta el inventario a lo físico (entrada/salida de ajuste por producto con diferencia).', 'workshop' ); ?></span>
-                </label>
-            </div>
-            <div class="ws-modal-foot">
-                <button type="button" class="ws-btn ws-btn-secondary" @click="countOpen=false"><?php esc_html_e( 'Cancelar', 'workshop' ); ?></button>
-                <button type="button" class="ws-btn ws-btn-primary" @click="saveCount()" :disabled="countSaving || countItems.length === 0">
-                    <i class="fa-solid" :class="countSaving ? 'fa-spinner fa-spin' : 'fa-floppy-disk'"></i>
-                    <span x-text="countSaving ? '<?php esc_attr_e( 'Guardando…', 'workshop' ); ?>' : '<?php esc_attr_e( 'Guardar cuadre', 'workshop' ); ?>'"></span>
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Modal Historial de cuadres -->
-    <div class="ws-modal" x-show="countsHistOpen" x-cloak @keydown.escape.window="countsHistOpen=false">
-        <div class="ws-modal-backdrop" @click="countsHistOpen=false"></div>
-        <div class="ws-modal-box ws-modal-wide">
-            <div class="ws-modal-head">
-                <h3><i class="fa-solid fa-clock-rotate-left"></i> <?php esc_html_e( 'Historial de cuadres', 'workshop' ); ?></h3>
-                <button class="ws-cart-close" @click="countsHistOpen=false"><i class="fa-solid fa-xmark"></i></button>
-            </div>
-            <div class="ws-modal-body">
-                <template x-if="countsHistLoading">
-                    <p class="ws-empty"><i class="fa-solid fa-spinner fa-spin"></i> <?php esc_html_e( 'Cargando…', 'workshop' ); ?></p>
-                </template>
-                <template x-if="!countsHistLoading && countsHist.length === 0">
-                    <p class="ws-empty"><?php esc_html_e( 'Aún no hay cuadres guardados.', 'workshop' ); ?></p>
-                </template>
-                <template x-for="h in countsHist" :key="h.id">
-                    <div class="ws-card" style="margin-bottom:10px;padding:12px">
-                        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-                            <strong>#<span x-text="h.id"></span> · <span x-text="h.location_name"></span></strong>
-                            <span class="ws-muted" x-text="h.created_at"></span>
-                        </div>
-                        <div class="ws-muted" x-text="h.summary"></div>
-                        <div x-show="h.note" class="ws-muted" x-text="'✎ ' + h.note"></div>
-                        <div style="margin-top:8px">
-                            <span class="ws-badge ws-badge-completed" x-show="h.adjusted"><i class="fa-solid fa-wand-magic-sparkles"></i> <?php esc_html_e( 'Stock corregido', 'workshop' ); ?></span>
-                            <button type="button" class="ws-btn ws-btn-secondary" style="margin-left:6px" @click="viewCountDetail(h)"><i class="fa-solid fa-eye"></i> <?php esc_html_e( 'Ver detalle', 'workshop' ); ?></button>
-                        </div>
-                    </div>
-                </template>
-            </div>
         </div>
     </div>
 
@@ -520,59 +502,4 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
         </div>
     </div>
 
-    <!-- Modal Conectar ubicaciones (acceso rápido desde Stock) -->
-    <div class="ws-modal" x-show="linkOpen" x-cloak @keydown.escape.window="closeLinks()">
-        <div class="ws-modal-backdrop" @click="closeLinks()"></div>
-        <div class="ws-modal-box ws-modal-wide ws-modal-lg">
-            <div class="ws-modal-head">
-                <h3><i class="fa-solid fa-share-nodes"></i> <?php esc_html_e( 'Conectar ubicaciones · stock compartido', 'workshop' ); ?></h3>
-                <button class="ws-cart-close" @click="closeLinks()"><i class="fa-solid fa-xmark"></i></button>
-            </div>
-            <div class="ws-modal-body">
-                <p class="ws-muted" style="margin-top:0"><?php esc_html_e( 'Arrastra desde el asa «conectar» de una ubicación hasta otra para vincularlas: al vender en una, el stock se rebaja en todas las conectadas (por transitividad). Haz clic en una línea para desconectarla.', 'workshop' ); ?>
-                    <span class="ws-link-dirty" x-show="isDirty()"><i class="fa-solid fa-circle-exclamation"></i> <?php esc_html_e( 'Cambios sin guardar', 'workshop' ); ?></span>
-                </p>
-                <div class="ws-link-tools" style="margin-bottom:12px">
-                    <button type="button" class="ws-btn ws-btn-secondary" @click="autoLayout()" title="<?php esc_attr_e( 'Ordena las ubicaciones en círculo', 'workshop' ); ?>"><i class="fa-solid fa-arrows-to-circle"></i> <?php esc_html_e( 'Ordenar', 'workshop' ); ?></button>
-                    <button type="button" class="ws-btn ws-btn-secondary" @click="clearLinks()"><i class="fa-solid fa-circle-minus"></i> <?php esc_html_e( 'Limpiar', 'workshop' ); ?></button>
-                    <button type="button" class="ws-btn ws-btn-primary" @click="saveLinks()" :disabled="savingLinks"><i class="fa-solid fa-floppy-disk"></i> <?php esc_html_e( 'Guardar', 'workshop' ); ?></button>
-                </div>
-                <div class="ws-link-canvas" x-ref="canvas" @pointerdown="startPan($event)" @wheel.prevent="onCanvasWheel($event)" :class="panning ? 'is-panning' : ''">
-                    <div class="ws-link-layer" :style="canvasLayerStyle()">
-                        <template x-for="link in displayLinks()" :key="'l' + linkKey(link.a, link.b)">
-                            <div class="ws-link-line" :style="lineStyle(link)" :title="'Desconectar: ' + locName(link.a) + ' ↔ ' + locName(link.b)" @click="removeLink(link)"></div>
-                        </template>
-                        <template x-for="link in displayLinks()" :key="'m' + linkKey(link.a, link.b)">
-                            <span class="ws-link-mid" :style="midStyle(link)" :title="'Desconectar: ' + locName(link.a) + ' ↔ ' + locName(link.b)" @click="removeLink(link)"><i class="fa-solid fa-link"></i></span>
-                        </template>
-                        <template x-if="linkMode === 'connect' && tempLine && linkFrom">
-                            <div class="ws-link-temp" :style="tempLineStyle()"></div>
-                        </template>
-
-                        <template x-for="l in canvasLocations" :key="l.id">
-                            <div class="ws-link-node" :class="nodeClass(l.id)" :data-node-id="l.id" :style="nodeStyle(l.id)" @pointerdown.stop="startMove(l.id, $event)">
-                                <div class="ws-link-node-icon" :class="l.type === 'pv' ? 'is-pv' : 'is-wh'">
-                                    <i class="fa-solid" :class="l.type === 'pv' ? 'fa-store' : 'fa-warehouse'"></i>
-                                </div>
-                                <div class="ws-link-node-body">
-                                    <strong x-text="l.name"></strong>
-                                    <small x-text="l.type === 'pv' ? 'PV' : 'Almacén'"></small>
-                                </div>
-                                <span class="ws-link-count" x-show="nodeLinks(l.id).length" x-text="nodeLinks(l.id).length"></span>
-                                <button class="ws-link-handle" title="Conectar con otra ubicación" @pointerdown.stop="startConnect(l.id, $event)"><i class="fa-solid fa-link"></i></button>
-                            </div>
-                        </template>
-
-                        <p class="ws-empty" x-show="!canvasLocations.length"><?php esc_html_e( 'Crea ubicaciones para poder conectarlas.', 'workshop' ); ?></p>
-                    </div>
-                    <div class="ws-canvas-zoom" title="<?php esc_attr_e( 'Zoom del lienzo (rueda del ratón + arrastra el fondo para moverte)', 'workshop' ); ?>">
-                        <button type="button" @click="zoomOut()" title="<?php esc_attr_e( 'Alejar', 'workshop' ); ?>"><i class="fa-solid fa-minus"></i></button>
-                        <span x-text="zoomPct()"></span>
-                        <button type="button" @click="zoomIn()" title="<?php esc_attr_e( 'Acercar', 'workshop' ); ?>"><i class="fa-solid fa-plus"></i></button>
-                        <button type="button" @click="resetZoom()" title="<?php esc_attr_e( 'Restablecer zoom', 'workshop' ); ?>"><i class="fa-solid fa-arrows-to-dot"></i></button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
 </div>

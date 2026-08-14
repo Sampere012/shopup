@@ -1527,7 +1527,6 @@
         /* Stock */
         Alpine.data('wsStock', (opts) => ({
             ...tableState('stock'),
-            ...wsLinkCanvas(),
             locations: opts.locations || [],
             currency: opts.currency,
             canEntry: opts.canEntry,
@@ -1535,9 +1534,9 @@
             canWriteoff: opts.canWriteoff,
             canTransfer: opts.canTransfer,
             canVenta: opts.canVenta,
-            canManageLinks: opts.canManageLinks,
-            linkOpen: false,
             sellers: opts.sellers || [],
+            // Pestañas de la vista: movimientos | cuadre | historial de cuadres.
+            stockTab: 'moves',
             rows: [],
             search: '',
             locationId: '',
@@ -1565,25 +1564,17 @@
             wizNote: '',
             wizLoading: false,
             // Cuadre de inventario independiente (físico vs virtual, sin caja)
-            countOpen: false,
             countLoading: false,
             countSaving: false,
             countSearch: '',
             countItems: [],
             count: { location_id: '', note: '', adjust: false },
-            countsHistOpen: false,
             countsHistLoading: false,
             countsHist: [],
             countDetailOpen: false,
             countDetail: { id: 0, items: [] },
             init() { this.restoreTableState(); this.load(); },
-            openLinks() {
-                this.linkOpen = true;
-                // El lienzo necesita el modal visible para medir su tamaño al
-                // auto-ordenar; $nextTick espera a que Alpine pinte el modal.
-                this.$nextTick(() => { this.initCanvas(); });
-            },
-            closeLinks() { this.linkOpen = false; },
+            setStockTab(t) { this.stockTab = t; },
             load() {
                 fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ action: 'ws_stock_list', ws_nonce: WS.nonce, location_id: this.locationId, search: this.search, low_only: this.lowOnly ? 1 : 0, sort: this.sortKey, dir: this.sortDir, page: this.page, pageSize: this.pageSize }) })
                     .then(r => r.json()).then(r => { if (r.success) { this.rows = r.data.rows; this.total = r.data.total; this.page = r.data.page; } });
@@ -1758,11 +1749,11 @@
                 const d = this.countDiff(c);
                 return d > 0 ? '+' + d : d;
             },
-            openCount() {
+            goCount() {
+                this.stockTab = 'count';
                 this.count = { location_id: this.locationId || '', note: '', adjust: false };
                 this.countItems = [];
                 this.countSearch = '';
-                this.countOpen = true;
                 if (this.count.location_id) this.loadCountVirtual();
             },
             loadCountVirtual() {
@@ -1790,15 +1781,19 @@
                         const d = r.data.data || {};
                         const msg = d.summary + (d.adjusted ? ' · stock corregido (' + d.ajustados + ' ajustes)' : '');
                         toast('success', 'Cuadre guardado', msg);
-                        this.countOpen = false;
                         this.load();
+                        this.loadCountVirtual();
                     } else {
                         toast('error', 'Error', r.data && r.data.msg);
                     }
                 }).catch(() => { this.countSaving = false; toast('error', 'Error', 'Sin conexión.'); });
             },
-            openCountsHistory() {
-                this.countsHistOpen = true;
+            goHistory() {
+                this.stockTab = 'hist';
+                this.loadCountsHistory();
+            },
+            loadCountsHistory() {
+                if (this.countsHistLoading) return;
                 this.countsHistLoading = true;
                 this.countsHist = [];
                 $('ws_stock_counts_list', {}).then(r => {
