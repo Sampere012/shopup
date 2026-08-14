@@ -36,6 +36,7 @@ class WS_Stock {
         self::_upsert_stock( $product_id, $location_id, $qty, '+', null );
         self::_apply_fraction_links( $product_id, $location_id, $qty, '+' );
         self::_log( $type, $product_id, $location_id, 0, $qty, $ref, $note, $user_id );
+        self::_propagate_linked( $product_id, $location_id, $qty, '+', $type, $ref, $note, $user_id );
         $wpdb->query( 'COMMIT' );
         return true;
     }
@@ -63,6 +64,7 @@ class WS_Stock {
             return new WP_Error( 'insufficient', __( 'Stock insuficiente para el movimiento (unidades relacionadas).', 'workshop' ) );
         }
         self::_log( $type, $product_id, $location_id, 0, $qty, $ref, $note, $user_id );
+        self::_propagate_linked( $product_id, $location_id, $qty, '-', $type, $ref, $note, $user_id );
         $wpdb->query( 'COMMIT' );
         return true;
     }
@@ -86,6 +88,7 @@ class WS_Stock {
             return new WP_Error( 'insufficient', __( 'Stock insuficiente para el movimiento (unidades relacionadas).', 'workshop' ) );
         }
         self::_log( $type, $product_id, $location_id, 0, $qty, $ref, $note, $user_id );
+        self::_propagate_linked( $product_id, $location_id, $qty, '-', $type, $ref, $note, $user_id );
         return true;
     }
 
@@ -121,6 +124,7 @@ class WS_Stock {
         // discrepancia (el inventario quedó desbalanceado entre padre/hijo).
         $frac_ok = self::_apply_fraction_links( $product_id, $location_id, $deducted, '-' );
         self::_log( $type, $product_id, $location_id, 0, $deducted, $ref, $note, $user_id );
+        self::_propagate_linked( $product_id, $location_id, $deducted, '-', $type, $ref, $note, $user_id );
         return $frac_ok ? $deducted : ( -1 * $deducted );
     }
 
@@ -137,6 +141,7 @@ class WS_Stock {
         self::_upsert_stock( $product_id, $location_id, $qty, '+', null );
         self::_apply_fraction_links( $product_id, $location_id, $qty, '+' );
         self::_log( $type, $product_id, $location_id, 0, $qty, $ref, $note, $user_id );
+        self::_propagate_linked( $product_id, $location_id, $qty, '+', $type, $ref, $note, $user_id );
         return true;
     }
 
@@ -293,6 +298,132 @@ class WS_Stock {
             'note'             => sanitize_text_field( $note ),
             'user_id'          => $user_id ? $user_id : get_current_user_id(),
         ) );
+    }
+
+    /* ---------------- Stock compartido entre ubicaciones ---------------- */
+
+    /**
+     * IDs de las ubicaciones conectadas por stock compartido, de forma
+     * TRANSITIVA (A-B y B-C implica que A y C también están conectadas), sin
+     * incluir la propia $location_id. Se recorre el grafo con BFS sobre la
+     * tabla de enlaces para cubrir cadenas de cualquier longitud.
+     */
+    public static function linked_location_ids( $location_id ) {
+        global $wpdb;
+        static $cache = array();
+        $location_id = (int) $location_id;
+        if ( ! $location_id ) {
+            return array();
+        }
+        if ( array_key_exists( $location_id, $cache ) ) {
+            return $cache[ $location_id ];
+        }
+        $adj = array();
+        foreach ( $wpdb->get_results( "SELECT location_a, location_b FROM " . self::table( 'location_links' ) ) as $r ) {
+            $a = (int) $r->location_a;
+            $b = (int) $r->location_b;
+            $adj[ $a ][] = $b;
+            $adj[ $b ][] = $a;
+        }
+        $out   = array();
+        $seen  = array( $location_id => true );
+        $queue = array( $location_id );
+        while ( $queue ) {
+            $cur = array_shift( $queue );
+            foreach ( (array) ( $adj[ $cur ] ?? array() ) as $n ) {
+                if ( isset( $seen[ $n ] ) ) {
+                    continue;
+                }
+                $seen[ $n ] = true;
+                $out[]      = $n;
+                $queue[]    = $n;
+            }
+        }
+        $cache[ $location_id ] = $out;
+        return $out;
+    }
+
+    /**
+     * Disminuye stock sin fallar si no alcanza: descuenta solo lo disponible
+     * (nunca negativo) y devuelve la cantidad descontada. Lo usan las
+     * ubicaciones CONECTADAS en el stock compartido: la venta no debe fallar
+     * porque una ubicación vinculada esté agotada.
+     */
+    protected static function _decrease_capped( $product_id, $location_id, $qty ) {
+        global $wpdb;
+        $product_id  = (int) $product_id;
+        $location_id = (int) $location_id;
+        $qty         = (float) $qty;
+        if ( ! $product_id || ! $location_id || $qty <= 0 ) {
+            return 0;
+        }
+        $current = (float) $wpdb->get_var( $wpdb->prepare(
+            "SELECT qty FROM " . self::table( 'stock' ) . " WHERE product_id=%d AND location_id=%d",
+            $product_id, $location_id
+        ) );
+        if ( $current <= 0 ) {
+            return 0;
+        }
+        $deduct     = min( $qty, $current );
+        $deduct_sql = number_format( $deduct, 2, '.', '' );
+        $wpdb->query( $wpdb->prepare(
+            "UPDATE " . self::table( 'stock' ) . " SET qty = qty - %s WHERE product_id=%d AND location_id=%d AND qty >= %s",
+            $deduct_sql, $product_id, $location_id, $deduct_sql
+        ) );
+        return $deduct;
+    }
+
+    /**
+     * Propaga un movimiento (entrada '+') o salida '-') a las ubicaciones
+     * CONECTADAS por stock compartido: lo que entra/sale en una ubicación se
+     * aplica a todas las demás del componente (transitividad).
+     *
+     * - Entrada: aumenta el stock completo en cada vinculada.
+     * - Salida:  descuenta lo disponible en cada vinculada (nunca negativo)
+     *            y anota en el movimiento cuánto faltó si no alcanzó.
+     *
+     * Asume que la transacción ya está abierta. Nunca falla: el guard real
+     * de stock lo aplica la ubicación de origen; las vinculadas son un espejo.
+     */
+    protected static function _propagate_linked( $product_id, $location_id, $qty, $op, $type, $ref = '', $note = '', $user_id = 0 ) {
+        $linked = self::linked_location_ids( $location_id );
+        if ( ! $linked || $qty <= 0 ) {
+            return;
+        }
+        foreach ( $linked as $lid ) {
+            if ( '+' === $op ) {
+                self::_upsert_stock( $product_id, $lid, $qty, '+', null );
+                self::_apply_fraction_links( $product_id, $lid, $qty, '+' );
+                self::_log( $type, $product_id, $lid, 0, $qty, $ref, self::_linked_note( $location_id, $note ), $user_id );
+            } else {
+                $deducted = self::_decrease_capped( $product_id, $lid, $qty );
+                if ( $deducted > 0 ) {
+                    self::_apply_fraction_links( $product_id, $lid, $deducted, '-' );
+                }
+                $l_note = self::_linked_note( $location_id, $note );
+                $missing = round( $qty - $deducted, 2 );
+                if ( $missing > 0 ) {
+                    $l_note .= ' — ' . sprintf( __( 'faltaron %s en la vinculada', 'workshop' ), number_format( $missing, 2 ) );
+                }
+                self::_log( $type, $product_id, $lid, 0, $deducted, $ref, $l_note, $user_id );
+            }
+        }
+    }
+
+    /**
+     * Nota de un movimiento propagado por stock compartido: indica que se
+     * registró por estar conectada a la ubicación de origen.
+     */
+    protected static function _linked_note( $origin_location_id, $note = '' ) {
+        $loc  = WS_CRUD::get_location( $origin_location_id );
+        $base = __( 'Stock compartido (vinculada)', 'workshop' );
+        if ( $loc && ! empty( $loc->name ) ) {
+            $base .= ' — ' . $loc->name;
+        }
+        if ( '' !== trim( (string) $note ) ) {
+            $base .= ' | ' . $note;
+        }
+        return mb_substr( $base, 0, 255 );
     }
 
     /* ---------------- Fraccionamiento de productos ---------------- */

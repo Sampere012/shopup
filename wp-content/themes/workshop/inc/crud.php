@@ -543,6 +543,74 @@ class WS_CRUD {
         $wpdb->delete( self::table( 'locations' ), array( 'id' => $id ) );
         $wpdb->delete( self::table( 'stock' ), array( 'location_id' => $id ) );
         $wpdb->delete( self::table( 'user_locations' ), array( 'location_id' => $id ) );
+        // Las conexiones de stock compartido que la involucraban se eliminan.
+        $wpdb->query( $wpdb->prepare(
+            "DELETE FROM " . self::table( 'location_links' ) . " WHERE location_a = %d OR location_b = %d",
+            $id, $id
+        ) );
+    }
+
+    /* ---------------- Conexiones entre ubicaciones (stock compartido) ---------------- */
+
+    /**
+     * Enlaces de stock compartido entre ubicaciones (grafo no dirigido).
+     * Devuelve pares canónicos: array de array( 'a' => int, 'b' => int )
+     * con a < b. Cuando se vende en una ubicación, el stock se rebaja en
+     * todas las conectadas (transitividad).
+     */
+    public static function get_location_links() {
+        global $wpdb;
+        $rows = $wpdb->get_results( "SELECT location_a, location_b FROM " . self::table( 'location_links' ) . " ORDER BY location_a, location_b" );
+        $out  = array();
+        foreach ( $rows as $r ) {
+            $out[] = array( 'a' => (int) $r->location_a, 'b' => (int) $r->location_b );
+        }
+        return $out;
+    }
+
+    /**
+     * Reemplaza todos los enlaces de stock compartido del negocio.
+     *
+     * @param array $pairs Lista de pares: array de array( 'a' => int, 'b' => int )
+     *                     o array de array( 0 => int, 1 => int ).
+     * @return int Número de enlaces guardados (0 si no había ninguno).
+     */
+    public static function set_location_links( $pairs ) {
+        global $wpdb;
+        $table = self::table( 'location_links' );
+        $wpdb->query( "DELETE FROM {$table}" );
+
+        $seen = array();
+        $count = 0;
+        foreach ( (array) $pairs as $pair ) {
+            if ( is_array( $pair ) && isset( $pair['a'] ) && isset( $pair['b'] ) ) {
+                $a = (int) $pair['a'];
+                $b = (int) $pair['b'];
+            } elseif ( is_array( $pair ) && count( $pair ) >= 2 ) {
+                $a = (int) $pair[0];
+                $b = (int) $pair[1];
+            } else {
+                continue;
+            }
+            if ( ! $a || ! $b || $a === $b ) {
+                continue;
+            }
+            if ( $a > $b ) {
+                list( $a, $b ) = array( $b, $a );
+            }
+            $key = $a . ':' . $b;
+            if ( isset( $seen[ $key ] ) ) {
+                continue;
+            }
+            // Ambos extremos deben ser ubicaciones reales del negocio.
+            if ( ! self::get_location( $a ) || ! self::get_location( $b ) ) {
+                continue;
+            }
+            $seen[ $key ] = true;
+            $wpdb->insert( $table, array( 'location_a' => $a, 'location_b' => $b ) );
+            $count++;
+        }
+        return $count;
     }
 
     /* ---------------- Trabajadores ---------------- */

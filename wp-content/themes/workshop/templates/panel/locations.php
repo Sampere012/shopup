@@ -88,6 +88,59 @@ $currencies = ws_currencies();
         </div>
     </div>
 
+    <?php if ( $can_manage ) : ?>
+    <div class="ws-card ws-link-card">
+        <div class="ws-card-head">
+            <div>
+                <h3><i class="fa-solid fa-share-nodes"></i> <?php esc_html_e( 'Conectar ubicaciones · stock compartido', 'workshop' ); ?></h3>
+                <p class="ws-muted"><?php esc_html_e( 'Arrastra desde el asa «conectar» de una ubicación hasta otra para vincularlas: al vender en una, el stock se rebaja en todas las conectadas (por transitividad). Haz clic en una línea para desconectarla.', 'workshop' ); ?></p>
+                <span class="ws-link-dirty" x-show="isDirty()"><i class="fa-solid fa-circle-exclamation"></i> <?php esc_html_e( 'Cambios sin guardar', 'workshop' ); ?></span>
+            </div>
+            <div class="ws-link-tools">
+                <button class="ws-btn ws-btn-secondary" @click="autoLayout()" title="<?php esc_attr_e( 'Ordena las ubicaciones en círculo', 'workshop' ); ?>"><i class="fa-solid fa-arrows-to-circle"></i> <?php esc_html_e( 'Ordenar', 'workshop' ); ?></button>
+                <button class="ws-btn ws-btn-secondary" @click="clearLinks()"><i class="fa-solid fa-circle-minus"></i> <?php esc_html_e( 'Limpiar', 'workshop' ); ?></button>
+                <button class="ws-btn ws-btn-primary" @click="saveLinks()" :disabled="savingLinks"><i class="fa-solid fa-floppy-disk"></i> <?php esc_html_e( 'Guardar', 'workshop' ); ?></button>
+            </div>
+        </div>
+
+        <div class="ws-link-canvas" x-ref="canvas">
+            <svg class="ws-link-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
+                <defs>
+                    <linearGradient id="wsLinkGrad" x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0%" stop-color="var(--ws-primary)"/>
+                        <stop offset="100%" stop-color="#22d3ee"/>
+                    </linearGradient>
+                </defs>
+                <template x-for="link in displayLinks()" :key="'l' + linkKey(link.a, link.b)">
+                    <g class="ws-link-g" @click="removeLink(link)" :title="'Desconectar: ' + locName(link.a) + ' ↔ ' + locName(link.b)">
+                        <line class="ws-link-hit" :x1="nodePos(link.a).x" :y1="nodePos(link.a).y" :x2="nodePos(link.b).x" :y2="nodePos(link.b).y"/>
+                        <line class="ws-link-line" :x1="nodePos(link.a).x" :y1="nodePos(link.a).y" :x2="nodePos(link.b).x" :y2="nodePos(link.b).y"/>
+                    </g>
+                </template>
+                <g x-show="linkMode === 'connect' && tempLine && linkFrom">
+                    <line class="ws-link-temp" :x1="(nodePos(linkFrom) || {x:50}).x" :y1="(nodePos(linkFrom) || {y:50}).y" :x2="tempLine.x" :y2="tempLine.y"/>
+                </g>
+            </svg>
+
+            <template x-for="l in locations" :key="l.id">
+                <div class="ws-link-node" :class="nodeClass(l.id)" :data-node-id="l.id" :style="nodeStyle(l.id)" @pointerdown.stop="startMove(l.id, $event)">
+                    <div class="ws-link-node-icon" :class="l.type === 'pv' ? 'is-pv' : 'is-wh'">
+                        <i class="fa-solid" :class="l.type === 'pv' ? 'fa-store' : 'fa-warehouse'"></i>
+                    </div>
+                    <div class="ws-link-node-body">
+                        <strong x-text="l.name"></strong>
+                        <small x-text="l.type === 'pv' ? 'PV' : 'Almacén'"></small>
+                    </div>
+                    <span class="ws-link-count" x-show="nodeLinks(l.id).length" x-text="nodeLinks(l.id).length"></span>
+                    <button class="ws-link-handle" title="Conectar con otra ubicación" @pointerdown.stop="startConnect(l.id, $event)"><i class="fa-solid fa-link"></i></button>
+                </div>
+            </template>
+
+            <p class="ws-empty" x-show="!locations.length"><?php esc_html_e( 'Crea ubicaciones para poder conectarlas.', 'workshop' ); ?></p>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <div class="ws-modal" x-show="formOpen" x-cloak @keydown.escape.window="formOpen=false">
         <div class="ws-modal-backdrop" @click="formOpen=false"></div>
         <div class="ws-modal-box">

@@ -409,6 +409,21 @@ function ws_ajax_delete_location() {
     wp_send_json_success();
 }
 
+add_action( 'wp_ajax_ws_location_links_get', 'ws_ajax_location_links_get' );
+function ws_ajax_location_links_get() {
+    ws_guard( 'locations_view' );
+    wp_send_json_success( array( 'links' => WS_CRUD::get_location_links() ) );
+}
+
+add_action( 'wp_ajax_ws_location_links_save', 'ws_ajax_location_links_save' );
+function ws_ajax_location_links_save() {
+    ws_guard( 'locations_manage' );
+    $pairs = isset( $_POST['links'] ) ? json_decode( wp_unslash( (string) $_POST['links'] ), true ) : array();
+    $count = WS_CRUD::set_location_links( is_array( $pairs ) ? $pairs : array() );
+    ws_log_audit( 'location_links_save', 'location', 0, array( 'links' => $count ) );
+    wp_send_json_success( array( 'count' => $count ) );
+}
+
 /* ---------------- Stock ---------------- */
 
 add_action( 'wp_ajax_ws_stock_move', 'ws_ajax_stock_move' );

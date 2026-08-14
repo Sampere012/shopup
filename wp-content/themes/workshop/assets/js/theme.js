@@ -929,10 +929,20 @@
             search: '',
             formOpen: false,
             form: {},
-            init() { this.restoreTableState(); this.reload(); },
+            /* Estado del lienzo de conexiones (stock compartido). */
+            links: [],
+            nodes: [],
+            linkMode: null,
+            linkFrom: null,
+            linkMoveId: null,
+            tempLine: null,
+            hoverNode: 0,
+            savingLinks: false,
+            savedLinksKey: '',
+            init() { this.restoreTableState(); this.reload(); this.loadLinkState(); },
             reload() {
                 fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ action: 'ws_locations_list', ws_nonce: WS.nonce, search: this.search, sort: this.sortKey, dir: this.sortDir, page: this.page, pageSize: this.pageSize }) })
-                    .then(r => r.json()).then(r => { if (r.success) { this.locations = r.data.locations; this.total = r.data.total; this.page = r.data.page; } });
+                    .then(r => r.json()).then(r => { if (r.success) { this.locations = r.data.locations; this.total = r.data.total; this.page = r.data.page; this.rebuildNodes(); } });
             },
             money(v) { return money(v, this.currency); },
             save() {
@@ -956,7 +966,7 @@
             },
             removeReq(l) {
                 $('ws_delete_location', { id: l.id }).then(res => {
-                    if (res.success) { toast('success', 'Ubicación eliminada'); this.reload(); } else { toast('error', 'Error', res.data && res.data.msg); }
+                    if (res.success) { toast('success', 'Ubicación eliminada'); this.reload(); this.loadLinks(); } else { toast('error', 'Error', res.data && res.data.msg); }
                 });
             },
             openForm(l) {
@@ -982,7 +992,169 @@
                 // Muestra la URL final ya normalizada.
                 return WS.home + 'tienda/' + slugify(s) + '/';
             },
-            storeUrl(slug) { return WS.home + 'tienda/' + slug + '/'; }
+            storeUrl(slug) { return WS.home + 'tienda/' + slug + '/'; },
+
+            /* --- Conectar ubicaciones (stock compartido) --- */
+            locName(id) {
+                const l = this.locations.find(l => l.id === id);
+                return l ? l.name : ('#' + id);
+            },
+            linkKey(a, b) { return (a < b ? a + '-' + b : b + '-' + a); },
+            linksKey() { return this.links.map(l => this.linkKey(l.a, l.b)).sort().join('|'); },
+            isDirty() { return this.linksKey() !== this.savedLinksKey; },
+            displayLinks() { return this.links.filter(l => this.nodePos(l.a) && this.nodePos(l.b)); },
+            nodeLinks(id) { return this.links.filter(l => l.a === id || l.b === id); },
+            nodePos(id) {
+                const n = this.nodes.find(n => n.id === id);
+                return (n && n.x !== null && n.x !== undefined && n.y !== null && n.y !== undefined) ? { x: n.x, y: n.y } : null;
+            },
+            nodeStyle(id) {
+                const p = this.nodePos(id);
+                return p ? { left: p.x + '%', top: p.y + '%' } : { left: '50%', top: '50%' };
+            },
+            nodeClass(id) {
+                return {
+                    'is-connected': this.nodeLinks(id).length > 0,
+                    'is-target': this.linkMode === 'connect' && this.hoverNode === id && id !== this.linkFrom
+                };
+            },
+            rebuildNodes() {
+                const prev = {};
+                this.nodes.forEach(n => { prev[n.id] = n; });
+                let missing = false;
+                this.nodes = this.locations.map(l => {
+                    const old = prev[l.id];
+                    if (old && old.x !== null && old.x !== undefined && old.y !== null && old.y !== undefined) return old;
+                    missing = true;
+                    return { id: l.id, x: null, y: null };
+                });
+                if (missing) this.autoLayout();
+                this.persistNodePositions();
+            },
+            autoLayout() {
+                const rect = this.$refs.canvas ? this.$refs.canvas.getBoundingClientRect() : { width: 800, height: 460 };
+                const cx = rect.width / 2;
+                const cy = rect.height / 2;
+                const radius = Math.min(rect.height / 2 - 40, 80 + this.nodes.length * 16);
+                this.nodes.forEach((n, i) => {
+                    const angle = (2 * Math.PI * i) / Math.max(1, this.nodes.length) - Math.PI / 2;
+                    n.x = ((cx + radius * Math.cos(angle)) / rect.width) * 100;
+                    n.y = ((cy + radius * Math.sin(angle)) / rect.height) * 100;
+                });
+                this.persistNodePositions();
+            },
+            persistNodePositions() {
+                try { localStorage.setItem('ws_loc_nodes_' + (WS.business || 'default'), JSON.stringify(this.nodes)); } catch (e) {}
+            },
+            loadLinkState() {
+                try {
+                    const saved = JSON.parse(localStorage.getItem('ws_loc_nodes_' + (WS.business || 'default')) || '[]');
+                    this.nodes = Array.isArray(saved) ? saved : [];
+                } catch (e) {
+                    this.nodes = [];
+                }
+                this.loadLinks();
+            },
+            loadLinks() {
+                $('ws_location_links_get', {}).then(res => {
+                    if (res.success && Array.isArray(res.data.links)) {
+                        this.links = res.data.links;
+                        this.savedLinksKey = this.linksKey();
+                    }
+                });
+            },
+            toggleLink(a, b) {
+                const key = this.linkKey(a, b);
+                const exists = this.links.some(l => this.linkKey(l.a, l.b) === key);
+                if (exists) {
+                    this.links = this.links.filter(l => this.linkKey(l.a, l.b) !== key);
+                } else {
+                    this.links.push(a < b ? { a: a, b: b } : { a: b, b: a });
+                }
+            },
+            removeLink(link) {
+                const key = this.linkKey(link.a, link.b);
+                this.links = this.links.filter(l => this.linkKey(l.a, l.b) !== key);
+            },
+            clearLinks() { this.links = []; },
+            saveLinks() {
+                this.savingLinks = true;
+                const links = this.links.map(l => [l.a, l.b]);
+                $('ws_location_links_save', { links: JSON.stringify(links) }).then(res => {
+                    this.savingLinks = false;
+                    if (res.success) {
+                        toast('success', 'Conexiones guardadas');
+                        this.savedLinksKey = this.linksKey();
+                    } else {
+                        toast('error', 'Error', res.data && res.data.msg);
+                        this.loadLinks();
+                    }
+                });
+            },
+            canvasPos(evt) {
+                const rect = this.$refs.canvas.getBoundingClientRect();
+                return {
+                    x: Math.max(0, Math.min(100, ((evt.clientX - rect.left) / rect.width) * 100)),
+                    y: Math.max(0, Math.min(100, ((evt.clientY - rect.top) / rect.height) * 100))
+                };
+            },
+            startConnect(id, evt) {
+                if (evt) evt.preventDefault();
+                this.linkMode = 'connect';
+                this.linkFrom = id;
+                this.hoverNode = 0;
+                this.tempLine = this.canvasPos(evt);
+                this._pm = (e) => this.onLinkPointerMove(e);
+                this._pu = (e) => this.onLinkPointerUp(e);
+                window.addEventListener('pointermove', this._pm);
+                window.addEventListener('pointerup', this._pu);
+            },
+            startMove(id, evt) {
+                if (evt) evt.preventDefault();
+                this.linkMode = 'move';
+                this.linkMoveId = id;
+                this._pm = (e) => this.onLinkPointerMove(e);
+                this._pu = (e) => this.onLinkPointerUp(e);
+                window.addEventListener('pointermove', this._pm);
+                window.addEventListener('pointerup', this._pu);
+            },
+            onLinkPointerMove(evt) {
+                if (this.linkMode === 'connect') {
+                    this.tempLine = this.canvasPos(evt);
+                    const el = document.elementFromPoint(evt.clientX, evt.clientY);
+                    const nodeEl = el && el.closest ? el.closest('[data-node-id]') : null;
+                    this.hoverNode = nodeEl ? parseInt(nodeEl.getAttribute('data-node-id'), 10) : 0;
+                } else if (this.linkMode === 'move' && this.linkMoveId) {
+                    const pos = this.canvasPos(evt);
+                    const node = this.nodes.find(n => n.id === this.linkMoveId);
+                    if (node) {
+                        node.x = Math.max(6, Math.min(94, pos.x));
+                        node.y = Math.max(9, Math.min(91, pos.y));
+                    }
+                }
+            },
+            onLinkPointerUp(evt) {
+                if (this.linkMode === 'connect') {
+                    const el = document.elementFromPoint(evt.clientX, evt.clientY);
+                    const nodeEl = el && el.closest ? el.closest('[data-node-id]') : null;
+                    const targetId = nodeEl ? parseInt(nodeEl.getAttribute('data-node-id'), 10) : 0;
+                    if (targetId && targetId !== this.linkFrom) {
+                        this.toggleLink(this.linkFrom, targetId);
+                    }
+                    this.linkMode = null;
+                    this.linkFrom = null;
+                    this.tempLine = null;
+                    this.hoverNode = 0;
+                } else if (this.linkMode === 'move') {
+                    this.linkMode = null;
+                    this.linkMoveId = null;
+                    this.persistNodePositions();
+                }
+                if (this._pm) window.removeEventListener('pointermove', this._pm);
+                if (this._pu) window.removeEventListener('pointerup', this._pu);
+                this._pm = null;
+                this._pu = null;
+            }
         }));
 
         /* Proveedores */

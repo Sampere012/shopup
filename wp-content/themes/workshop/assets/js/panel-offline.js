@@ -21,7 +21,7 @@
         'cart_count', 'cart_get', 'cart_total',
         'customers_get',
         'expenses_list',
-        'get_location_by_slug', 'locations_list',
+        'get_location_by_slug', 'location_links_get', 'locations_list',
         'loyalty_customers', 'loyalty_settings', 'loyalty_stats', 'loyalty_transactions',
         'movements_list', 'my_locations',
         'notifications_list',
@@ -53,7 +53,7 @@
     // Las lecturas de DETALLE (order_detail, get_location_by_slug…) quedan
     // fuera: devolver el último registro cacheado mostraría un dato equivocado.
     var SNAPSHOT_ACTIONS = [
-        'cache_customers', 'customers_get', 'expenses_list', 'locations_list',
+        'cache_customers', 'customers_get', 'expenses_list', 'location_links_get', 'locations_list',
         'movements_list', 'my_locations',
         'notifications_list', 'order_list', 'pos_cash_history', 'pos_sales_get',
         'price_history_list', 'products_get', 'products_list', 'reviews_get',

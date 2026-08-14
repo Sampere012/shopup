@@ -46,6 +46,20 @@ function ws_db_tables() {
             UNIQUE KEY slug (slug)
         ) {charset};",
 
+        // Conexiones entre ubicaciones (stock compartido): cuando se vende en
+        // una ubicación, el stock se rebaja también en TODAS las conectadas
+        // (transitividad: A-B y B-C implica A-C). Se guarda el par canónico
+        // (location_a < location_b) para que el grafo sea no dirigido.
+        'location_links' => "CREATE TABLE {prefix}ws_location_links (
+            id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            location_a BIGINT(20) UNSIGNED NOT NULL,
+            location_b BIGINT(20) UNSIGNED NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY pair (location_a, location_b),
+            KEY location_b (location_b)
+        ) {charset};",
+
         'suppliers' => "CREATE TABLE {prefix}ws_suppliers (
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
             name VARCHAR(255) NOT NULL,
@@ -879,6 +893,32 @@ function ws_db_migrate() {
                 ? $wpdb->prefix . WS_TABLE_PREFIX . $ws_count_suffix . '_'
                 : $wpdb->prefix;
             $sql = str_replace( '{prefix}', $cnt_prefix, $sql );
+            $sql = str_replace( '{charset}', $wpdb->get_charset_collate(), $sql );
+            dbDelta( $sql );
+        }
+    }
+
+    // Conexiones entre ubicaciones (stock compartido): se crea la tabla de
+    // enlaces por defecto y por negocio con slug (igual que stock_counts,
+    // dbDelta no altera las tablas ya creadas).
+    require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+    $ws_link_suffixes = array( '' );
+    if ( class_exists( 'WS_Business' ) && $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', WS_Business::table() ) ) === WS_Business::table() ) {
+        foreach ( WS_Business::all() as $ws_ln ) {
+            $l_slug = (string) ( $ws_ln->slug ?? '' );
+            if ( '' !== $l_slug ) {
+                $ws_link_suffixes[] = ws_biz_table_suffix( $l_slug );
+            }
+        }
+    }
+    foreach ( $ws_link_suffixes as $ws_link_suffix ) {
+        $lk_t = ws_table_for( $ws_link_suffix, 'location_links' );
+        if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $lk_t ) ) !== $lk_t ) {
+            $sql = ws_db_tables()['location_links'];
+            $lk_prefix = '' !== $ws_link_suffix
+                ? $wpdb->prefix . WS_TABLE_PREFIX . $ws_link_suffix . '_'
+                : $wpdb->prefix;
+            $sql = str_replace( '{prefix}', $lk_prefix, $sql );
             $sql = str_replace( '{charset}', $wpdb->get_charset_collate(), $sql );
             dbDelta( $sql );
         }
