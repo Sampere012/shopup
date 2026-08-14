@@ -92,19 +92,21 @@ function ws_db_tables() {
             KEY product_id (product_id)
         ) {charset};",
 
-        // Visibilidad en la tienda POR UBICACIÓN: un producto/combo puede
-        // mostrarse en la tienda de un PV y ocultarse en la de otro. Cada fila
-        // es un override (entidad + ubicación); sin fila manda el flag global
-        // (products/combos.store_visible).
+        // Visibilidad POR UBICACIÓN Y CANAL: un producto/combo puede mostrarse
+        // u ocultarse en la TIENDA de un PV y en el POS de forma independiente
+        // (channel 'store' | 'pos'). Cada fila es un override (entidad +
+        // ubicación + canal); sin fila manda el flag global
+        // (products/combos.store_visible para la tienda; el POS es visible).
         'store_visibility' => "CREATE TABLE {prefix}ws_store_visibility (
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
             entity_type VARCHAR(10) NOT NULL,
             entity_id BIGINT(20) UNSIGNED NOT NULL,
             location_id BIGINT(20) UNSIGNED NOT NULL,
+            channel VARCHAR(10) NOT NULL DEFAULT 'store',
             visible TINYINT(1) NOT NULL DEFAULT 1,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
-            UNIQUE KEY entity_location (entity_type, entity_id, location_id),
+            UNIQUE KEY entity_location (entity_type, entity_id, location_id, channel),
             KEY location_id (location_id)
         ) {charset};",
 
@@ -1173,6 +1175,14 @@ function ws_db_migrate() {
             $sv_sql = str_replace( '{prefix}', $sv_prefix, $sv_sql );
             $sv_sql = str_replace( '{charset}', $wpdb->get_charset_collate(), $sv_sql );
             dbDelta( $sv_sql );
+        }
+        // Columna canal (store | pos): las tablas creadas antes de este cambio
+        // no la tienen; se añade y se arregla la clave única para incluirla.
+        $sv_cols = $wpdb->get_col( "SHOW COLUMNS FROM {$sv_t}", 0 );
+        if ( ! in_array( 'channel', $sv_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$sv_t} ADD COLUMN channel VARCHAR(10) NOT NULL DEFAULT 'store' AFTER location_id" );
+            $wpdb->query( "ALTER TABLE {$sv_t} DROP INDEX entity_location" );
+            $wpdb->query( "ALTER TABLE {$sv_t} ADD UNIQUE KEY entity_location (entity_type, entity_id, location_id, channel)" );
         }
         // Seed solo cuando la tabla está vacía (una vez).
         if ( (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$sv_t}" ) > 0 ) {

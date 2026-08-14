@@ -83,6 +83,7 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                         <th><?php esc_html_e( 'Stock', 'workshop' ); ?></th>
                         <th><?php esc_html_e( 'Precio venta', 'workshop' ); ?></th>
                         <th title="<?php esc_attr_e( 'Visible en la tienda pública (el stock sigue en el inventario)', 'workshop' ); ?>"><?php esc_html_e( 'Tienda', 'workshop' ); ?></th>
+                        <th title="<?php esc_attr_e( 'Visible en el punto de venta (POS) de esta ubicación', 'workshop' ); ?>"><?php esc_html_e( 'POS', 'workshop' ); ?></th>
                         <th><?php esc_html_e( 'Acciones', 'workshop' ); ?></th>
                     </tr>
                 </thead>
@@ -101,8 +102,15 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                             <td x-text="money(c.sale_price, c.currency)"></td>
                             <td class="ws-actions">
                                 <template x-if="canManageStore">
-                                    <button type="button" class="ws-icon-btn" :class="!c.store_visible && 'ws-icon-btn-muted'" :title="c.store_visible ? '<?php esc_attr_e( 'Visible en la tienda', 'workshop' ); ?>' : '<?php esc_attr_e( 'Oculto de la tienda (sigue en el inventario)', 'workshop' ); ?>'" @click="toggleStoreVisible('combo', c)">
+                                    <button type="button" class="ws-icon-btn" :class="!c.store_visible && 'ws-icon-btn-muted'" :title="c.store_visible ? '<?php esc_attr_e( 'Visible en la tienda', 'workshop' ); ?>' : '<?php esc_attr_e( 'Oculto de la tienda (sigue en el inventario)', 'workshop' ); ?>'" @click="toggleVisible('store', 'combo', c)">
                                         <i class="fa-solid" :class="c.store_visible ? 'fa-eye' : 'fa-eye-slash'"></i>
+                                    </button>
+                                </template>
+                            </td>
+                            <td class="ws-actions">
+                                <template x-if="canManageStore">
+                                    <button type="button" class="ws-icon-btn ws-icon-btn-pos" :class="!c.pos_visible && 'ws-icon-btn-muted'" :title="c.pos_visible ? '<?php esc_attr_e( 'Visible en el POS', 'workshop' ); ?>' : '<?php esc_attr_e( 'Oculto del POS (sigue en el inventario)', 'workshop' ); ?>'" @click="toggleVisible('pos', 'combo', c)">
+                                        <i class="fa-solid" :class="c.pos_visible ? 'fa-cash-register' : 'fa-eye-slash'"></i>
                                     </button>
                                 </template>
                             </td>
@@ -114,7 +122,7 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                             </td>
                         </tr>
                     </template>
-                    <tr x-show="comboRows.length === 0"><td colspan="6"><p class="ws-empty"><?php esc_html_e( 'Sin combos.', 'workshop' ); ?></p></td></tr>
+                    <tr x-show="comboRows.length === 0"><td colspan="7"><p class="ws-empty"><?php esc_html_e( 'Sin combos.', 'workshop' ); ?></p></td></tr>
                 </tbody>
             </table>
         </div>
@@ -129,6 +137,7 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                     <th class="ws-th-sort" @click="sort('min_stock')"><?php esc_html_e( 'Mínimo', 'workshop' ); ?> <i class="fa-solid" :class="sortIcon('min_stock')"></i></th>
                     <th class="ws-th-sort" @click="sort('sale_price')"><?php esc_html_e( 'Precio venta', 'workshop' ); ?> <i class="fa-solid" :class="sortIcon('sale_price')"></i></th>
                     <th title="<?php esc_attr_e( 'Visible en la tienda pública (el stock sigue en el inventario)', 'workshop' ); ?>"><?php esc_html_e( 'Tienda', 'workshop' ); ?></th>
+                    <th title="<?php esc_attr_e( 'Visible en el punto de venta (POS) de esta ubicación', 'workshop' ); ?>"><?php esc_html_e( 'POS', 'workshop' ); ?></th>
                     <th><?php esc_html_e( 'Acciones', 'workshop' ); ?></th>
                 </tr>
             </thead>
@@ -160,8 +169,15 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                         <td x-text="money(row.sale_price, row.currency)"></td>
                         <td class="ws-actions">
                             <template x-if="canManageStore">
-                                <button type="button" class="ws-icon-btn" :class="!row.store_visible && 'ws-icon-btn-muted'" :title="row.store_visible ? '<?php esc_attr_e( 'Visible en la tienda', 'workshop' ); ?>' : '<?php esc_attr_e( 'Oculto de la tienda (sigue en el inventario)', 'workshop' ); ?>'" @click="toggleStoreVisible('product', row)">
+                                <button type="button" class="ws-icon-btn" :class="!row.store_visible && 'ws-icon-btn-muted'" :title="row.store_visible ? '<?php esc_attr_e( 'Visible en la tienda', 'workshop' ); ?>' : '<?php esc_attr_e( 'Oculto de la tienda (sigue en el inventario)', 'workshop' ); ?>'" @click="toggleVisible('store', 'product', row)">
                                     <i class="fa-solid" :class="row.store_visible ? 'fa-eye' : 'fa-eye-slash'"></i>
+                                </button>
+                            </template>
+                        </td>
+                        <td class="ws-actions">
+                            <template x-if="canManageStore">
+                                <button type="button" class="ws-icon-btn ws-icon-btn-pos" :class="!row.pos_visible && 'ws-icon-btn-muted'" :title="row.pos_visible ? '<?php esc_attr_e( 'Visible en el POS', 'workshop' ); ?>' : '<?php esc_attr_e( 'Oculto del POS (sigue en el inventario)', 'workshop' ); ?>'" @click="toggleVisible('pos', 'product', row)">
+                                    <i class="fa-solid" :class="row.pos_visible ? 'fa-cash-register' : 'fa-eye-slash'"></i>
                                 </button>
                             </template>
                         </td>
@@ -173,7 +189,7 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                         </td>
                     </tr>
                 </template>
-                <tr x-show="total === 0"><td colspan="8"><p class="ws-empty"><?php esc_html_e( 'Sin resultados.', 'workshop' ); ?></p></td></tr>
+                <tr x-show="total === 0"><td colspan="9"><p class="ws-empty"><?php esc_html_e( 'Sin resultados.', 'workshop' ); ?></p></td></tr>
             </tbody>
         </table>
         <div class="ws-pagination" x-show="stockSub === 'products' && total > pageSize">

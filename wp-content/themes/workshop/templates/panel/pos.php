@@ -432,6 +432,10 @@ if ( ! empty( $sub_data['is_trial'] ) && $sub_data['trial_days_left'] > 0 && $su
                         </button>
                     </div>
                 </template>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal: contenido completo de un combo (desde el ojo del card del POS) -->
     <div class="ws-modal" x-show="comboDetail" x-cloak @keydown.escape.window="comboDetail = null">
         <div class="ws-modal-backdrop" @click="comboDetail = null"></div>

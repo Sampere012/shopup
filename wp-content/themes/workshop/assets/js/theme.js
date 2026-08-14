@@ -1717,6 +1717,7 @@
                             barcode: '',
                             is_combo: 1,
                             store_visible: l.store_visible !== undefined ? l.store_visible : c.store_visible,
+                            pos_visible: l.pos_visible !== undefined ? l.pos_visible : 1,
                             sale_price: c.sale_price,
                             currency: c.currency,
                             location_id: l.location_id,
@@ -1732,19 +1733,27 @@
                     .then(r => r.json()).then(r => { if (r.success) { this.rows = r.data.rows; this.combos = r.data.combos || []; this.total = r.data.total; this.page = r.data.page; } });
             },
             get canAnyMove() { return this.canEntry || this.canExit || this.canWriteoff || this.canTransfer || this.canVenta; },
-            // Muestra/oculta un producto o combo de la TIENDA PÚBLICA de UNA
-            // ubicación: cada PV tiene su propia tienda, así que el cambio se
-            // guarda por (entidad, ubicación) y no afecta a las otras.
-            toggleStoreVisible(kind, item) {
+            // Muestra/oculta un producto o combo de un CANAL de UNA ubicación
+            // ('store' = tienda pública, 'pos' = punto de venta): cada PV tiene
+            // su propia tienda y su POS, así que el cambio se guarda por
+            // (entidad, ubicación, canal) y no afecta a las otras ni al otro.
+            toggleVisible(channel, kind, item) {
                 if (!this.canManageStore) return;
                 const id = kind === 'combo' ? item.combo_id : item.product_id;
                 const locationId = item.location_id || 0;
-                if (!locationId) { toast('error', 'Selecciona una ubicación para mostrar/ocultar en la tienda'); return; }
-                const target = !item.store_visible;
-                $('ws_store_toggle', { kind: kind, id: id, location_id: locationId, visible: target ? 1 : 0 }).then(res => {
+                if (!locationId) { toast('error', 'Selecciona una ubicación para mostrar/ocultar'); return; }
+                const isStore = channel === 'store';
+                const current = isStore ? item.store_visible : item.pos_visible;
+                const target = !current;
+                $('ws_store_toggle', { kind: kind, id: id, location_id: locationId, channel: channel, visible: target ? 1 : 0 }).then(res => {
                     if (res.success) {
-                        item.store_visible = target ? 1 : 0;
-                        toast('success', target ? 'Visible en la tienda' : 'Oculto de la tienda');
+                        if (isStore) {
+                            item.store_visible = target ? 1 : 0;
+                            toast('success', target ? 'Visible en la tienda' : 'Oculto de la tienda');
+                        } else {
+                            item.pos_visible = target ? 1 : 0;
+                            toast('success', target ? 'Visible en el POS' : 'Oculto del POS');
+                        }
                     } else {
                         toast('error', 'Error', res.data && res.data.msg);
                     }

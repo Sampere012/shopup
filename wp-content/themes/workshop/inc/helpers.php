@@ -483,17 +483,21 @@ function ws_locations_select( $name, $selected = 0, $attr = '' ) {
  * Visibilidad EFECTIVA en la tienda pública de una ubicación.
  *
  * Un producto/combo puede mostrarse en la tienda de un PV y ocultarse en la
- * de otro: los overrides viven en ws_store_visibility (entidad + ubicación).
- * Sin override manda el flag global (products/combos.store_visible).
+ * de otro, y de forma INDEPENDIENTE en el POS de esa ubicación (canal
+ * 'store' | 'pos'): los overrides viven en ws_store_visibility (entidad +
+ * ubicación + canal). Sin override: la tienda usa el flag global
+ * (products/combos.store_visible) y el POS es visible.
  *
  * @param string $kind        'product' | 'combo'.
  * @param int    $id          ID del producto o combo.
  * @param int    $location_id Ubicación (PV/almacén).
+ * @param string $channel     'store' | 'pos'.
  * @return bool
  */
-function ws_store_visible( $kind, $id, $location_id ) {
+function ws_store_visible( $kind, $id, $location_id, $channel = 'store' ) {
     global $wpdb;
     $kind        = ( 'combo' === $kind ) ? 'combo' : 'product';
+    $channel     = ( 'pos' === $channel ) ? 'pos' : 'store';
     $id          = (int) $id;
     $location_id = (int) $location_id;
     if ( ! $id || ! $location_id ) {
@@ -505,11 +509,15 @@ function ws_store_visible( $kind, $id, $location_id ) {
         return true;
     }
     $override = $wpdb->get_var( $wpdb->prepare(
-        "SELECT visible FROM {$sv} WHERE entity_type=%s AND entity_id=%d AND location_id=%d",
-        $kind, $id, $location_id
+        "SELECT visible FROM {$sv} WHERE entity_type=%s AND entity_id=%d AND location_id=%d AND channel=%s",
+        $kind, $id, $location_id, $channel
     ) );
     if ( null !== $override ) {
         return (bool) $override;
+    }
+    // Sin override: el POS es visible por defecto; la tienda usa el global.
+    if ( 'pos' === $channel ) {
+        return true;
     }
     $main = ( 'combo' === $kind ) ? ws_table_name( 'combos' ) : ws_table_name( 'products' );
     $g    = (int) $wpdb->get_var( $wpdb->prepare( "SELECT store_visible FROM {$main} WHERE id=%d", $id ) );

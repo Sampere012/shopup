@@ -678,18 +678,23 @@ function ws_ajax_store_toggle() {
     $kind        = sanitize_key( $_POST['kind'] ?? '' );
     $id          = (int) ( $_POST['id'] ?? 0 );
     $location_id = (int) ( $_POST['location_id'] ?? 0 );
+    $channel     = sanitize_key( $_POST['channel'] ?? 'store' );
     $visible     = ! empty( $_POST['visible'] );
     if ( ! in_array( $kind, array( 'product', 'combo' ), true ) || ! $id || ! $location_id ) {
         wp_send_json_error( array( 'msg' => __( 'Datos inválidos.', 'workshop' ) ) );
     }
+    if ( ! in_array( $channel, array( 'store', 'pos' ), true ) ) {
+        $channel = 'store';
+    }
     global $wpdb;
-    // La visibilidad en la tienda es POR UBICACIÓN (cada PV tiene su tienda):
-    // se guarda un override en ws_store_visibility para (entidad, ubicación)
-    // sin tocar el flag global. Mostrar/ocultar en un PV no afecta a los otros.
-    $table = ws_table_name( 'store_visibility' );
+    // La visibilidad es POR UBICACIÓN Y CANAL (cada PV tiene su tienda y su
+    // POS): se guarda un override en ws_store_visibility para (entidad,
+    // ubicación, canal) sin tocar el flag global. Mostrar/ocultar en un PV
+    // no afecta a los otros ni al otro canal.
+    $table  = ws_table_name( 'store_visibility' );
     $exists = (int) $wpdb->get_var( $wpdb->prepare(
-        "SELECT id FROM {$table} WHERE entity_type=%s AND entity_id=%d AND location_id=%d",
-        $kind, $id, $location_id
+        "SELECT id FROM {$table} WHERE entity_type=%s AND entity_id=%d AND location_id=%d AND channel=%s",
+        $kind, $id, $location_id, $channel
     ) );
     if ( $exists ) {
         $res = $wpdb->update( $table, array( 'visible' => $visible ? 1 : 0 ), array( 'id' => $exists ) );
@@ -698,14 +703,15 @@ function ws_ajax_store_toggle() {
             'entity_type' => $kind,
             'entity_id'   => $id,
             'location_id' => $location_id,
+            'channel'     => $channel,
             'visible'     => $visible ? 1 : 0,
         ) );
     }
     // false = error real; 0 = sin cambios (el valor ya era el pedido), NO error.
     if ( false === $res ) {
-        wp_send_json_error( array( 'msg' => __( 'No se pudo guardar la visibilidad en la tienda (¿falta la tabla store_visibility?). Recarga la página para migrar la base de datos.', 'workshop' ) ) );
+        wp_send_json_error( array( 'msg' => __( 'No se pudo guardar la visibilidad (¿falta la tabla store_visibility?). Recarga la página para migrar la base de datos.', 'workshop' ) ) );
     }
-    ws_log_audit( 'store_visibility', $kind, $id, array( 'location_id' => $location_id, 'store_visible' => $visible ) );
+    ws_log_audit( 'store_visibility', $kind, $id, array( 'location_id' => $location_id, 'channel' => $channel, 'store_visible' => $visible ) );
     wp_send_json_success( array( 'store_visible' => $visible ) );
 }
 
@@ -1050,6 +1056,7 @@ function ws_stock_rows_map( $rows, $group = array() ) {
             'sale_price'    => (float) $r->sale_price,
             'currency'      => $r->currency,
             'store_visible' => (int) ( $r->store_visible ?? 1 ),
+            'pos_visible'   => 1,
             'group_total'   => $g ? (float) $g['total'] : (float) $r->qty,
             'group_parts'   => $g ? $g['parts'] : array( array(
                 'id'   => (int) $r->location_id,
@@ -1062,10 +1069,11 @@ function ws_stock_rows_map( $rows, $group = array() ) {
 }
 
 /**
- * Aplica los overrides de visibilidad POR UBICACIÓN a filas ya mapeadas por
- * ws_stock_rows_map (cada fila tiene product_id + location_id). Consulta en
- * lote la tabla ws_store_visibility y reescribe store_visible en las filas
- * que tengan override (las demás conservan el flag global).
+ * Aplica los overrides de visibilidad POR UBICACIÓN Y CANAL a filas ya
+ * mapeadas por ws_stock_rows_map (cada fila tiene product_id + location_id).
+ * Consulta en lote ws_store_visibility y reescribe store_visible (canal
+ * 'store') y pos_visible (canal 'pos'); las filas sin override conservan el
+ * valor por defecto que ya trae el mapeo.
  */
 function ws_apply_store_visibility_overrides( &$rows ) {
     global $wpdb;
@@ -1080,17 +1088,21 @@ function ws_apply_store_visibility_overrides( &$rows ) {
         $id_ph   = implode( ',', array_fill( 0, count( $sv_ids ), '%d' ) );
         $loc_ph  = implode( ',', array_fill( 0, count( $sv_locs ), '%d' ) );
         $sv_rows = $wpdb->get_results( $wpdb->prepare(
-            "SELECT entity_id, location_id, visible FROM {$sv_t} WHERE entity_type='product' AND entity_id IN ({$id_ph}) AND location_id IN ({$loc_ph})",
+            "SELECT entity_id, location_id, channel, visible FROM {$sv_t} WHERE entity_type='product' AND entity_id IN ({$id_ph}) AND location_id IN ({$loc_ph})",
             ...array_merge( $sv_ids, $sv_locs )
         ) );
         foreach ( $sv_rows as $svr ) {
-            $sv_map[ (int) $svr->entity_id . ':' . (int) $svr->location_id ] = (int) $svr->visible;
+            $channel = ( 'pos' === (string) $svr->channel ) ? 'pos' : 'store';
+            $sv_map[ $channel . ':' . (int) $svr->entity_id . ':' . (int) $svr->location_id ] = (int) $svr->visible;
         }
     }
     foreach ( $rows as $i => $row ) {
         $key = (int) $row['product_id'] . ':' . (int) $row['location_id'];
-        if ( array_key_exists( $key, $sv_map ) ) {
-            $rows[ $i ]['store_visible'] = $sv_map[ $key ] ? 1 : 0;
+        if ( array_key_exists( 'store:' . $key, $sv_map ) ) {
+            $rows[ $i ]['store_visible'] = $sv_map[ 'store:' . $key ] ? 1 : 0;
+        }
+        if ( array_key_exists( 'pos:' . $key, $sv_map ) ) {
+            $rows[ $i ]['pos_visible'] = $sv_map[ 'pos:' . $key ] ? 1 : 0;
         }
     }
 }
@@ -1253,7 +1265,8 @@ function ws_ajax_stock_list() {
                 'location_id'   => (int) $lid,
                 'location_name' => $loc_names[ (int) $lid ] ?? '',
                 'qty'           => (float) $c['qty'],
-                'store_visible' => ws_store_visible( 'combo', $cid, $lid ) ? 1 : 0,
+                'store_visible' => ws_store_visible( 'combo', $cid, $lid, 'store' ) ? 1 : 0,
+                'pos_visible'   => ws_store_visible( 'combo', $cid, $lid, 'pos' ) ? 1 : 0,
             );
         }
     }
@@ -2946,6 +2959,26 @@ function ws_ajax_products_get() {
         'offset'       => $offset,
     ) );
 
+    // POS: mostrar/ocultar POR UBICACIÓN (canal 'pos'), igual que la tienda
+    // pero independiente. Lo oculto del POS no aparece en el catálogo del POS
+    // de esa ubicación (sigue en el inventario y en la tienda si está visible).
+    global $wpdb;
+    $sv_pos_t = ws_table_name( 'store_visibility' );
+    if ( $loc_ids && $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $sv_pos_t ) ) === $sv_pos_t ) {
+        $sv_pos_ph = implode( ',', array_fill( 0, count( $loc_ids ), '%d' ) );
+        $sv_hidden = $wpdb->get_results( $wpdb->prepare(
+            "SELECT entity_id, location_id FROM {$sv_pos_t} WHERE entity_type='product' AND channel='pos' AND visible=0 AND location_id IN ({$sv_pos_ph})",
+            ...$loc_ids
+        ) );
+        $pos_hidden = array();
+        foreach ( $sv_hidden as $h ) {
+            $pos_hidden[ (int) $h->entity_id . ':' . (int) $h->location_id ] = true;
+        }
+        $stock_rows = array_values( array_filter( $stock_rows, function ( $r ) use ( $pos_hidden ) {
+            return ! isset( $pos_hidden[ (int) $r->product_id . ':' . (int) $r->location_id ] );
+        } ) );
+    }
+
     // Moneda de la ubicación seleccionada: el POS cobra en la moneda del PV,
     // así que el precio de VENTA (y el costo, para la ganancia) se convierten
     // a esa moneda. Sin ubicación concreta se deja la moneda nativa.
@@ -2984,6 +3017,9 @@ function ws_ajax_products_get() {
     if ( $location_id ) {
         foreach ( WS_Combos::catalog_rows( $location_id ) as $c ) {
             if ( $search && false === mb_stripos( $c['name'], $search ) ) {
+                continue;
+            }
+            if ( ! ws_store_visible( 'combo', (int) $c['combo_id'], $location_id, 'pos' ) ) {
                 continue;
             }
             $cprice = (float) $c['price'];
