@@ -104,23 +104,15 @@ $currencies = ws_currencies();
         </div>
 
         <div class="ws-link-canvas" x-ref="canvas">
-            <svg class="ws-link-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
-                <defs>
-                    <linearGradient id="wsLinkGrad" x1="0" y1="0" x2="1" y2="1">
-                        <stop offset="0%" stop-color="var(--ws-primary)"/>
-                        <stop offset="100%" stop-color="#22d3ee"/>
-                    </linearGradient>
-                </defs>
-                <template x-for="link in displayLinks()" :key="'l' + linkKey(link.a, link.b)">
-                    <g class="ws-link-g" @click="removeLink(link)" :title="'Desconectar: ' + locName(link.a) + ' ↔ ' + locName(link.b)">
-                        <line class="ws-link-hit" :x1="nodePos(link.a).x" :y1="nodePos(link.a).y" :x2="nodePos(link.b).x" :y2="nodePos(link.b).y"/>
-                        <line class="ws-link-line" :x1="nodePos(link.a).x" :y1="nodePos(link.a).y" :x2="nodePos(link.b).x" :y2="nodePos(link.b).y"/>
-                    </g>
-                </template>
-                <g x-show="linkMode === 'connect' && tempLine && linkFrom">
-                    <line class="ws-link-temp" :x1="(nodePos(linkFrom) || {x:50}).x" :y1="(nodePos(linkFrom) || {y:50}).y" :x2="tempLine.x" :y2="tempLine.y"/>
-                </g>
-            </svg>
+            <template x-for="link in displayLinks()" :key="'l' + linkKey(link.a, link.b)">
+                <div class="ws-link-line" :style="lineStyle(link)" :title="'Desconectar: ' + locName(link.a) + ' ↔ ' + locName(link.b)" @click="removeLink(link)"></div>
+            </template>
+            <template x-for="link in displayLinks()" :key="'m' + linkKey(link.a, link.b)">
+                <span class="ws-link-mid" :style="midStyle(link)" :title="'Desconectar: ' + locName(link.a) + ' ↔ ' + locName(link.b)" @click="removeLink(link)"><i class="fa-solid fa-link"></i></span>
+            </template>
+            <template x-if="linkMode === 'connect' && tempLine && linkFrom">
+                <div class="ws-link-temp" :style="tempLineStyle()"></div>
+            </template>
 
             <template x-for="l in canvasLocations" :key="l.id">
                 <div class="ws-link-node" :class="nodeClass(l.id)" :data-node-id="l.id" :style="nodeStyle(l.id)" @pointerdown.stop="startMove(l.id, $event)">

@@ -935,12 +935,19 @@
             hoverNode: 0,
             savingLinks: false,
             savedLinksKey: '',
+            canvasTick: 0,
             initCanvas() {
                 try {
                     const saved = JSON.parse(localStorage.getItem('ws_loc_nodes_' + (WS.business || 'default')) || '[]');
                     this.nodes = Array.isArray(saved) ? saved : [];
                 } catch (e) {
                     this.nodes = [];
+                }
+                // Las líneas se dibujan en píxeles: al redimensionar la ventana
+                // se re-renderizan (las posiciones de los nodos son %).
+                if (!this._resizeBound) {
+                    this._resizeBound = () => { this.canvasTick++; };
+                    window.addEventListener('resize', this._resizeBound);
                 }
                 this.loadLinks();
                 this.loadCanvasLocations();
@@ -969,6 +976,57 @@
             nodeStyle(id) {
                 const p = this.nodePos(id);
                 return p ? { left: p.x + '%', top: p.y + '%' } : { left: '50%', top: '50%' };
+            },
+            canvasRect() {
+                const el = this.$refs.canvas;
+                if (!el) return { width: 800, height: 460 };
+                const r = el.getBoundingClientRect();
+                return { width: r.width || 800, height: r.height || 460 };
+            },
+            // Las líneas de conexión son divs rotados (en píxeles): el x-for
+            // dentro de <svg> no recibe el scope del bucle en Alpine y rompe
+            // con 'link is not defined'.
+            lineStyle(link) {
+                void this.canvasTick; // re-render al redimensionar
+                const rect = this.canvasRect();
+                const p1 = this.nodePos(link.a), p2 = this.nodePos(link.b);
+                if (!p1 || !p2) return { display: 'none' };
+                const x1 = (p1.x / 100) * rect.width, y1 = (p1.y / 100) * rect.height;
+                const x2 = (p2.x / 100) * rect.width, y2 = (p2.y / 100) * rect.height;
+                const dx = x2 - x1, dy = y2 - y1;
+                const len = Math.sqrt(dx * dx + dy * dy);
+                const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+                return {
+                    left: ((x1 + x2) / 2) + 'px',
+                    top: ((y1 + y2) / 2) + 'px',
+                    width: Math.max(2, len) + 'px',
+                    transform: 'translate(-50%, -50%) rotate(' + angle + 'deg)'
+                };
+            },
+            midStyle(link) {
+                void this.canvasTick;
+                const p1 = this.nodePos(link.a), p2 = this.nodePos(link.b);
+                if (!p1 || !p2) return { display: 'none' };
+                return {
+                    left: ((p1.x + p2.x) / 2) + '%',
+                    top: ((p1.y + p2.y) / 2) + '%'
+                };
+            },
+            tempLineStyle() {
+                const rect = this.canvasRect();
+                const from = this.nodePos(this.linkFrom) || { x: 50, y: 50 };
+                const t = this.tempLine || { x: 50, y: 50 };
+                const x1 = (from.x / 100) * rect.width, y1 = (from.y / 100) * rect.height;
+                const x2 = (t.x / 100) * rect.width, y2 = (t.y / 100) * rect.height;
+                const dx = x2 - x1, dy = y2 - y1;
+                const len = Math.sqrt(dx * dx + dy * dy);
+                const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+                return {
+                    left: ((x1 + x2) / 2) + 'px',
+                    top: ((y1 + y2) / 2) + 'px',
+                    width: Math.max(2, len) + 'px',
+                    transform: 'translate(-50%, -50%) rotate(' + angle + 'deg)'
+                };
             },
             nodeClass(id) {
                 return {
