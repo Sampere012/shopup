@@ -219,6 +219,7 @@ function ws_ajax_locations_list() {
                 'name'            => $l->name,
                 'slug'            => $l->slug,
                 'address'         => $l->address,
+                'description'     => (string) ( $l->description ?? '' ),
                 'photo'           => $l->photo,
                 'currency'        => $l->currency,
                 'payment_methods' => is_array( $methods ) ? $methods : array(),
@@ -979,6 +980,7 @@ function ws_stock_rows_map( $rows, $group = array() ) {
             'location_id'   => (int) $r->location_id,
             'location_name' => $r->location_name ?? '',
             'location_type' => $r->location_type ?? '',
+            'location_description' => (string) ( $r->location_description ?? '' ),
             'name'          => $r->name,
             'barcode'       => $r->barcode,
             'image'         => $r->image,
@@ -1051,6 +1053,13 @@ function ws_ajax_stock_list() {
         $group = WS_Stock::stock_group_info( $rows );
         $out   = ws_stock_rows_map( $rows, $group );
         $loc   = $location_id ? $location_id : ( $allowed_ids ? $allowed_ids[0] : 0 );
+        $loc_desc = '';
+        foreach ( $allowed as $l ) {
+            if ( (int) $l->id === (int) $loc ) {
+                $loc_desc = (string) ( $l->description ?? '' );
+                break;
+            }
+        }
         $like  = '' !== $search ? mb_strtolower( $search ) : '';
         foreach ( WS_Combos::catalog_rows( $loc ) as $c ) {
             if ( '' !== $like && false === mb_strpos( mb_strtolower( $c['name'] ), $like ) ) {
@@ -1062,6 +1071,7 @@ function ws_ajax_stock_list() {
                 'location_id'   => $loc,
                 'location_name' => '',
                 'location_type' => '',
+                'location_description' => $loc_desc,
                 'name'          => $c['name'],
                 'barcode'       => '',
                 'image'         => $c['photo'],
@@ -1099,8 +1109,10 @@ function ws_ajax_stock_list() {
     // Añade los combos activos (stock derivado) por cada ubicación del filtro.
     $like = '' !== $search ? mb_strtolower( $search ) : '';
     $loc_names = array();
+    $loc_descs = array();
     foreach ( $allowed as $l ) {
         $loc_names[ (int) $l->id ] = $l->name;
+        $loc_descs[ (int) $l->id ] = (string) ( $l->description ?? '' );
     }
     foreach ( $loc_ids as $lid ) {
         foreach ( WS_Combos::catalog_rows( $lid ) as $c ) {
@@ -1113,6 +1125,7 @@ function ws_ajax_stock_list() {
                 'location_id'   => (int) $lid,
                 'location_name' => $loc_names[ (int) $lid ] ?? '',
                 'location_type' => '',
+                'location_description' => $loc_descs[ (int) $lid ] ?? '',
                 'name'          => $c['name'],
                 'barcode'       => '',
                 'image'         => $c['photo'],

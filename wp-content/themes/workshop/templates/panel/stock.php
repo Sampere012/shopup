@@ -85,7 +85,10 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                                 <span class="ws-combo-badge" x-show="row.is_combo" x-cloak title="<?php esc_attr_e( 'Este producto es un combo: su stock se calcula desde sus componentes', 'workshop' ); ?>"><i class="fa-solid fa-layer-group"></i> <?php esc_html_e( 'Combo', 'workshop' ); ?></span>
                             </div>
                         </td>
-                        <td><span class="ws-badge" :class="row.location_type === 'pv' ? 'ws-badge-pv' : 'ws-badge-wh'" x-text="row.location_name"></span></td>
+                        <td>
+                            <span class="ws-badge" :class="row.location_type === 'pv' ? 'ws-badge-pv' : 'ws-badge-wh'" x-text="row.location_name"></span>
+                            <small class="ws-loc-desc" x-show="row.location_description" x-text="row.location_description"></small>
+                        </td>
                         <td class="ws-strong" :class="!row.is_combo && row.group_total <= row.min_stock ? 'ws-text-danger' : ''" x-text="row.qty"></td>
                         <td>
                             <template x-if="row.group_parts && row.group_parts.length > 1">

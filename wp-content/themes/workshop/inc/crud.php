@@ -522,7 +522,7 @@ class WS_CRUD {
         }
         if ( ! empty( $args['search'] ) ) {
             $like = '%' . $wpdb->esc_like( $args['search'] ) . '%';
-            $where[] = $wpdb->prepare( '(name LIKE %s OR address LIKE %s OR whatsapp LIKE %s OR slug LIKE %s)', $like, $like, $like, $like );
+            $where[] = $wpdb->prepare( '(name LIKE %s OR address LIKE %s OR description LIKE %s OR whatsapp LIKE %s OR slug LIKE %s)', $like, $like, $like, $like, $like );
         }
         return $where;
     }
@@ -597,6 +597,7 @@ class WS_CRUD {
             'name'            => $name,
             'slug'            => $slug,
             'address'         => sanitize_text_field( $data['address'] ?? '' ),
+            'description'     => sanitize_textarea_field( $data['description'] ?? '' ),
             'photo'           => esc_url_raw( $data['photo'] ?? '' ),
             'currency'        => sanitize_text_field( $data['currency'] ?? ws_currency_symbol() ),
             'payment_methods' => $payment_methods,

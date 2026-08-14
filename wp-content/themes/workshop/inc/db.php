@@ -34,6 +34,7 @@ function ws_db_tables() {
             name VARCHAR(255) NOT NULL,
             slug VARCHAR(255) NOT NULL DEFAULT '',
             address VARCHAR(255) NOT NULL DEFAULT '',
+            description TEXT NULL,
             photo VARCHAR(255) NOT NULL DEFAULT '',
             currency VARCHAR(10) NOT NULL DEFAULT '€',
             payment_methods TEXT NULL,
@@ -627,6 +628,10 @@ function ws_db_migrate() {
         $lcols = $wpdb->get_col( "SHOW COLUMNS FROM {$loc_t}", 0 );
         if ( ! in_array( 'store_settings', $lcols, true ) ) {
             $wpdb->query( "ALTER TABLE {$loc_t} ADD COLUMN store_settings TEXT NULL AFTER payment_methods" );
+        }
+        // Descripción breve de la ubicación (se muestra en Stock y en la tienda pública).
+        if ( ! in_array( 'description', $lcols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$loc_t} ADD COLUMN description TEXT NULL AFTER address" );
         }
     }
 

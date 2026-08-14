@@ -46,7 +46,7 @@ $rates      = ws_exchange_rates();
                         <td>
                             <div class="ws-cell-product">
                                 <div class="ws-thumb"><i class="fa-solid" :class="l.type === 'pv' ? 'fa-store' : 'fa-warehouse'"></i></div>
-                                <div><strong x-text="l.name"></strong></div>
+                                <div><strong x-text="l.name"></strong><small class="ws-loc-desc" x-show="l.description" x-text="l.description"></small></div>
                             </div>
                         </td>
                         <td><span class="ws-badge" :class="l.type === 'pv' ? 'ws-badge-pv' : 'ws-badge-wh'"><span x-text="l.type === 'pv' ? 'PV' : 'Almacén'"></span></span></td>
@@ -169,6 +169,10 @@ $rates      = ws_exchange_rates();
                     <label class="ws-field ws-span-2">
                         <span><?php esc_html_e( 'Dirección', 'workshop' ); ?></span>
                         <input type="text" x-model="form.address">
+                    </label>
+                    <label class="ws-field ws-span-2">
+                        <span><?php esc_html_e( 'Descripción', 'workshop' ); ?></span>
+                        <textarea x-model="form.description" rows="2" placeholder="<?php esc_attr_e( 'Breve descripción que aparece junto al nombre en Stock', 'workshop' ); ?>"></textarea>
                     </label>
                     <label class="ws-field">
                         <span><?php esc_html_e( 'Foto URL', 'workshop' ); ?></span>

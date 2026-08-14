@@ -10,10 +10,10 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'WS_VERSION', '0.4.31' );
+define( 'WS_VERSION', '0.4.32' );
 // Versión del esquema de BD: subir al añadir columnas/tablas para forzar la
 // instalación/migración diferida (ws_lazy_install / ws_db_migrate).
-define( 'WS_DB_VERSION', '0.10.4' );
+define( 'WS_DB_VERSION', '0.10.5' );
 define( 'WS_PATH', get_template_directory() . '/' );
 define( 'WS_URL', get_template_directory_uri() . '/' );
 define( 'WS_TABLE_PREFIX', 'ws_' );

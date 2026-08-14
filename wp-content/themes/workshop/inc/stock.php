@@ -919,7 +919,7 @@ class WS_Stock {
         global $wpdb;
         $where = self::stock_rows_where( $args );
         $sql = "SELECT s.*, p.name, p.barcode, p.category, p.category_id, p.min_stock, p.sale_price, p.transfer_pct, p.currency, p.show_equiv, p.image, p.description,
-                l.name AS location_name, l.type AS location_type
+                l.name AS location_name, l.type AS location_type, l.description AS location_description
                 FROM " . self::table( 'stock' ) . " s
                 INNER JOIN " . self::table( 'products' ) . " p ON p.id = s.product_id
                 LEFT JOIN " . self::table( 'locations' ) . " l ON l.id = s.location_id
