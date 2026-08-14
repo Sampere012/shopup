@@ -103,10 +103,10 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                         <td x-text="row.min_stock"></td>
                         <td x-text="money(row.sale_price, row.currency)"></td>
                         <td class="ws-actions">
-                            <template x-if="!row.is_combo && canEntry"><button class="ws-icon-btn" title="Entrada" @click="openMove('entrada', row)"><i class="fa-solid fa-down-long"></i></button></template>
-                            <template x-if="!row.is_combo && canExit"><button class="ws-icon-btn" title="Salida" @click="openMove('salida', row)"><i class="fa-solid fa-up-long"></i></button></template>
-                            <template x-if="!row.is_combo && canWriteoff"><button class="ws-icon-btn ws-danger" title="Baja" @click="openMove('baja', row)"><i class="fa-solid fa-trash-can"></i></button></template>
-                            <template x-if="!row.is_combo && canTransfer"><button class="ws-icon-btn" title="Transferencia" @click="openTransfer(row)"><i class="fa-solid fa-arrow-right-arrow-left"></i></button></template>
+                            <template x-if="canEntry"><button class="ws-icon-btn" title="Entrada" @click="openMove('entrada', row)"><i class="fa-solid fa-down-long"></i></button></template>
+                            <template x-if="canExit"><button class="ws-icon-btn" title="Salida" @click="openMove('salida', row)"><i class="fa-solid fa-up-long"></i></button></template>
+                            <template x-if="canWriteoff"><button class="ws-icon-btn ws-danger" title="Baja" @click="openMove('baja', row)"><i class="fa-solid fa-trash-can"></i></button></template>
+                            <template x-if="canTransfer"><button class="ws-icon-btn" title="Transferencia" @click="openTransfer(row)"><i class="fa-solid fa-arrow-right-arrow-left"></i></button></template>
                         </td>
                     </tr>
                 </template>
@@ -239,7 +239,7 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                 <button class="ws-cart-close" @click="moveOpen=false"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <form @submit.prevent="doMove" class="ws-form">
-                <p><strong x-text="moveProduct.name"></strong> <span class="ws-muted" x-text="'(' + moveProduct.barcode + ')'"></span></p>
+                <p><strong x-text="moveProduct.name"></strong> <span class="ws-muted" x-show="moveProduct.barcode" x-text="'(' + moveProduct.barcode + ')'"></span> <span class="ws-combo-badge" x-show="moveProduct.is_combo" x-cloak><i class="fa-solid fa-layer-group"></i> Combo</span></p>
                 <div class="ws-form-grid">
                     <label class="ws-field ws-span-2">
                         <span><?php esc_html_e( 'Ubicación', 'workshop' ); ?></span>
@@ -277,7 +277,7 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                 <button class="ws-cart-close" @click="transferOpen=false"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <form @submit.prevent="doTransfer" class="ws-form">
-                <p><strong x-text="moveProduct.name"></strong> <span class="ws-muted" x-text="'(' + moveProduct.barcode + ')'"></span></p>
+                <p><strong x-text="moveProduct.name"></strong> <span class="ws-muted" x-show="moveProduct.barcode" x-text="'(' + moveProduct.barcode + ')'"></span> <span class="ws-combo-badge" x-show="moveProduct.is_combo" x-cloak><i class="fa-solid fa-layer-group"></i> Combo</span></p>
                 <div class="ws-form-grid">
                     <label class="ws-field">
                         <span><?php esc_html_e( 'Origen', 'workshop' ); ?></span>

@@ -615,10 +615,28 @@ function ws_ajax_stock_move() {
     ws_guard( $map[ $type ] );
 
     $product_id  = (int) ( $_POST['product_id'] ?? 0 );
+    $combo_id    = (int) ( $_POST['combo_id'] ?? 0 );
     $location_id = (int) ( $_POST['location_id'] ?? 0 );
     $qty         = (float) ( $_POST['qty'] ?? 0 );
     $ref         = sanitize_text_field( $_POST['reference'] ?? '' );
     $note        = sanitize_text_field( $_POST['note'] ?? '' );
+
+    // Combo: se mueven sus COMPONENTES (cada producto × cantidad), igual que
+    // en el asistente. El movimiento queda registrado por componente.
+    if ( $combo_id > 0 ) {
+        global $wpdb;
+        $wpdb->query( 'START TRANSACTION' );
+        $result = ( 'entrada' === $type )
+            ? WS_Combos::increase_in_tx( $combo_id, $location_id, $qty, $type, $ref, $note )
+            : WS_Combos::decrease_in_tx( $combo_id, $location_id, $qty, $type, $ref, $note );
+        if ( is_wp_error( $result ) ) {
+            $wpdb->query( 'ROLLBACK' );
+            wp_send_json_error( array( 'msg' => $result->get_error_message() ) );
+        }
+        $wpdb->query( 'COMMIT' );
+        ws_log_audit( 'stock_' . $type, 'combo', $combo_id, array( 'location' => $location_id, 'qty' => $qty ) );
+        wp_send_json_success( array( 'qty' => WS_Combos::stock( $combo_id, $location_id ) ) );
+    }
 
     if ( 'entrada' === $type ) {
         $result = WS_Stock::increase( $product_id, $location_id, $qty, $type, $ref, $note );
@@ -636,15 +654,19 @@ add_action( 'wp_ajax_ws_stock_transfer', 'ws_ajax_stock_transfer' );
 function ws_ajax_stock_transfer() {
     ws_guard( 'stock_transfer' );
     $product_id = (int) ( $_POST['product_id'] ?? 0 );
+    $combo_id   = (int) ( $_POST['combo_id'] ?? 0 );
     $from       = (int) ( $_POST['from_location'] ?? 0 );
     $to         = (int) ( $_POST['to_location'] ?? 0 );
     $qty        = (float) ( $_POST['qty'] ?? 0 );
     $note       = sanitize_text_field( $_POST['note'] ?? '' );
-    $result     = WS_Stock::transfer( $product_id, $from, $to, $qty, '', $note );
+    // Combo: transfiere cada componente (qty × N) de forma atómica.
+    $result = ( $combo_id > 0 )
+        ? WS_Combos::transfer( $combo_id, $from, $to, $qty, '', $note )
+        : WS_Stock::transfer( $product_id, $from, $to, $qty, '', $note );
     if ( is_wp_error( $result ) ) {
         wp_send_json_error( array( 'msg' => $result->get_error_message() ) );
     }
-    ws_log_audit( 'stock_transfer', 'movement', $product_id, array( 'from' => $from, 'to' => $to, 'qty' => $qty ) );
+    ws_log_audit( 'stock_transfer', $combo_id > 0 ? 'combo' : 'movement', $combo_id > 0 ? $combo_id : $product_id, array( 'from' => $from, 'to' => $to, 'qty' => $qty ) );
     wp_send_json_success();
 }
 

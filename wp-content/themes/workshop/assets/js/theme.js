@@ -1707,12 +1707,12 @@
             openMove(type, row) {
                 this.moveType = type;
                 this.moveProduct = row;
-                this.move = { product_id: row.product_id, location_id: row.location_id, qty: '', reference: '', note: '' };
+                this.move = { product_id: row.product_id, combo_id: row.combo_id || 0, location_id: row.location_id, qty: '', reference: '', note: '' };
                 this.moveOpen = true;
             },
             openTransfer(row) {
                 this.moveProduct = row;
-                this.transfer = { product_id: row.product_id, from_location: row.location_id, to_location: '', qty: '', note: '' };
+                this.transfer = { product_id: row.product_id, combo_id: row.combo_id || 0, from_location: row.location_id, to_location: '', qty: '', note: '' };
                 this.transferOpen = true;
             },
             openWizard() {
