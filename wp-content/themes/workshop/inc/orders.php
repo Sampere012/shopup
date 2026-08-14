@@ -200,6 +200,12 @@ class WS_Orders {
         if ( ! empty( $args['status'] ) ) {
             $where[] = $wpdb->prepare( 'o.status = %s', $args['status'] );
         }
+        if ( ! empty( $args['date_from'] ) ) {
+            $where[] = $wpdb->prepare( 'o.created_at >= %s', $args['date_from'] . ' 00:00:00' );
+        }
+        if ( ! empty( $args['date_to'] ) ) {
+            $where[] = $wpdb->prepare( 'o.created_at <= %s', $args['date_to'] . ' 23:59:59' );
+        }
         return $where;
     }
 

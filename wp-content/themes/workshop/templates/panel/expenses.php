@@ -58,11 +58,12 @@ $ws_months = array(
     }, $ws_exp_locations ),
 ) ) ); ?>)">
 
-    <div class="ws-alert ws-alert-info">
+    <div class="ws-alert ws-alert-info ws-alert-dismissible" data-dismiss-key="ws_exp_help">
         <i class="fa-solid fa-money-bill-wave"></i>
         <span>
             <?php esc_html_e( 'Registra aquí los gastos de tu negocio con su fecha (el gasto es por mes). Elige si el gasto es GENERAL (se reparte a todas las ubicaciones) o de UNA ubicación concreta. Las utilidades se calculan en Reportes por fecha y por ubicación.', 'workshop' ); ?>
         </span>
+        <button type="button" class="ws-alert-close" onclick="wsDismissInfoAlert('ws_exp_help', this)" title="<?php esc_attr_e( 'No volver a mostrar', 'workshop' ); ?>" aria-label="<?php esc_attr_e( 'Cerrar aviso', 'workshop' ); ?>"><i class="fa-solid fa-xmark"></i></button>
     </div>
 
     <!-- Filtro de mes para la lista + total del mes -->

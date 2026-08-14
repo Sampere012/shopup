@@ -1770,10 +1770,13 @@
             canAccept: opts.canAccept,
             orders: [],
             statusFilter: '',
+            dateFrom: '',
+            dateTo: '',
             detailOpen: false,
             detail: {},
+            clearDates() { this.dateFrom = ''; this.dateTo = ''; this.onFilter(); },
             load() {
-                fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ action: 'ws_order_list', ws_nonce: WS.nonce, status: this.statusFilter, sort: this.sortKey, dir: this.sortDir, page: this.page, pageSize: this.pageSize }) })
+                fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ action: 'ws_order_list', ws_nonce: WS.nonce, status: this.statusFilter, date_from: this.dateFrom, date_to: this.dateTo, sort: this.sortKey, dir: this.sortDir, page: this.page, pageSize: this.pageSize }) })
                     .then(r => r.json()).then(r => { if (r.success) { this.orders = r.data.orders; this.total = r.data.total; this.page = r.data.page; } });
             },
             money(v, c) { return money(v, c); },
@@ -3636,5 +3639,26 @@
     document.querySelectorAll('.ws-ann-banner').forEach(function (b) {
         var id = parseInt(b.getAttribute('data-ann') || '0', 10);
         if (dismissed.indexOf(id) !== -1) { b.remove(); }
+    });
+})();
+
+/* ------------------------------------------------------------------ */
+/* Alertas informativas descartables (Gastos, Anuncios, etc.): se       */
+/* pueden cerrar con la X y no vuelven a salir para ese usuario.       */
+/* Uso: <div class="ws-alert ws-alert-info" data-dismiss-key="clave">  */
+/*      <button class="ws-alert-close" onclick="wsDismissInfoAlert('clave', this)">×</button> */
+/* ------------------------------------------------------------------ */
+(function () {
+    'use strict';
+    var PREFIX = 'ws_dismissed_alert:';
+    window.wsDismissInfoAlert = function (key, btn) {
+        if (!key) { return; }
+        try { localStorage.setItem(PREFIX + key, '1'); } catch (e) {}
+        var alert = btn && btn.closest ? btn.closest('.ws-alert') : null;
+        if (alert) { alert.remove(); }
+    };
+    document.querySelectorAll('.ws-alert[data-dismiss-key]').forEach(function (el) {
+        var key = el.getAttribute('data-dismiss-key');
+        if (key && localStorage.getItem(PREFIX + key) === '1') { el.remove(); }
     });
 })();

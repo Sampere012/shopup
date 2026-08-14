@@ -35,7 +35,7 @@ $ws_ann_types    = array(
     'list'    => $ws_ann_list,
 ) ) ); ?>)">
 
-    <div class="ws-alert ws-alert-info">
+    <div class="ws-alert ws-alert-info ws-alert-dismissible" data-dismiss-key="ws_ann_help">
         <i class="fa-solid fa-bullhorn"></i>
         <span>
             <?php
@@ -46,6 +46,7 @@ $ws_ann_types    = array(
             }
             ?>
         </span>
+        <button type="button" class="ws-alert-close" onclick="wsDismissInfoAlert('ws_ann_help', this)" title="<?php esc_attr_e( 'No volver a mostrar', 'workshop' ); ?>" aria-label="<?php esc_attr_e( 'Cerrar aviso', 'workshop' ); ?>"><i class="fa-solid fa-xmark"></i></button>
     </div>
 
     <?php if ( $ws_ann_can ) : ?>

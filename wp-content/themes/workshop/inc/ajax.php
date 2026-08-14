@@ -1070,13 +1070,24 @@ function ws_ajax_order_cancel() {
 add_action( 'wp_ajax_ws_order_list', 'ws_ajax_order_list' );
 function ws_ajax_order_list() {
     ws_guard( 'orders_view' );
-    $status  = sanitize_key( $_POST['status'] ?? '' );
+    $status    = sanitize_key( $_POST['status'] ?? '' );
+    $date_from = sanitize_text_field( $_POST['date_from'] ?? '' );
+    $date_to   = sanitize_text_field( $_POST['date_to'] ?? '' );
+    $date_from = preg_match( '/^\d{4}-\d{2}-\d{2}$/', $date_from ) ? $date_from : '';
+    $date_to   = preg_match( '/^\d{4}-\d{2}-\d{2}$/', $date_to ) ? $date_to : '';
+    if ( $date_from && $date_to && $date_from > $date_to ) {
+        $tmp       = $date_from;
+        $date_from = $date_to;
+        $date_to   = $tmp;
+    }
     $loc_ids = array_map( fn( $l ) => (int) $l->id, ws_user_locations() );
 
-    ws_send_list( 'orders', function ( $args ) use ( $status, $loc_ids ) {
+    ws_send_list( 'orders', function ( $args ) use ( $status, $date_from, $date_to, $loc_ids ) {
         $rows = WS_Orders::all( array_merge( array(
             'location_ids' => $loc_ids,
             'status'       => $status,
+            'date_from'    => $date_from,
+            'date_to'      => $date_to,
         ), $args ) );
         $out = array();
         foreach ( $rows as $o ) {
@@ -1096,8 +1107,8 @@ function ws_ajax_order_list() {
             );
         }
         return $out;
-    }, function () use ( $status, $loc_ids ) {
-        return WS_Orders::count_all( array( 'location_ids' => $loc_ids, 'status' => $status ) );
+    }, function () use ( $status, $date_from, $date_to, $loc_ids ) {
+        return WS_Orders::count_all( array( 'location_ids' => $loc_ids, 'status' => $status, 'date_from' => $date_from, 'date_to' => $date_to ) );
     }, array() );
 }
 

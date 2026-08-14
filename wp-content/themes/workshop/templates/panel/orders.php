@@ -30,7 +30,11 @@ $statuses   = WS_Orders::statuses();
                     <option value="<?php echo esc_attr( $key ); ?>"><?php echo esc_html( $label ); ?></option>
                 <?php endforeach; ?>
             </select>
-
+            <span class="ws-muted" style="font-size:.85em"><?php esc_html_e( 'Desde', 'workshop' ); ?></span>
+            <input type="date" x-model="dateFrom" @change="onFilter()" aria-label="<?php esc_attr_e( 'Desde', 'workshop' ); ?>" title="<?php esc_attr_e( 'Desde', 'workshop' ); ?>">
+            <span class="ws-muted" style="font-size:.85em"><?php esc_html_e( 'Hasta', 'workshop' ); ?></span>
+            <input type="date" x-model="dateTo" @change="onFilter()" aria-label="<?php esc_attr_e( 'Hasta', 'workshop' ); ?>" title="<?php esc_attr_e( 'Hasta', 'workshop' ); ?>">
+            <button type="button" class="ws-btn ws-btn-secondary" @click="clearDates()" x-show="dateFrom || dateTo"><i class="fa-solid fa-rotate-left"></i> <?php esc_html_e( 'Limpiar', 'workshop' ); ?></button>
         </div>
     </div>
 

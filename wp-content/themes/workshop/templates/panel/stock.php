@@ -40,17 +40,20 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
 
     <div class="ws-card">
         <div class="ws-stock-head">
-            <div class="ws-search">
-                <i class="fa-solid fa-magnifying-glass"></i>
-                <input type="search" placeholder="<?php esc_attr_e( 'Buscar…', 'workshop' ); ?>" x-model="search" @keyup.enter="onSearch()" @input="onSearch()">
-            </div>
             <div class="ws-stock-filters">
+                <div class="ws-search">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                    <input type="search" placeholder="<?php esc_attr_e( 'Buscar…', 'workshop' ); ?>" x-model="search" @keyup.enter="onSearch()" @input="onSearch()">
+                </div>
                 <select x-model="locationId" @change="onFilter()">
                     <option value=""><?php esc_html_e( 'Todas las ubicaciones', 'workshop' ); ?></option>
                     <template x-for="l in locations" :key="l.id"><option :value="l.id" x-text="l.name + (l.type === 'pv' ? ' (PV)' : '')"></option></template>
                 </select>
-                <label class="ws-check"><input type="checkbox" x-model="lowOnly" @change="onFilter()"><span><?php esc_html_e( 'Solo stock bajo', 'workshop' ); ?></span></label>                                <button class="ws-btn ws-btn-secondary" @click="openCount()" title="<?php esc_attr_e( 'Compara el stock físico (lo que cuentas) con el virtual (lo que dice la app)', 'workshop' ); ?>"><i class="fa-solid fa-list-check"></i> <?php esc_html_e( 'Cuadre de inventario', 'workshop' ); ?></button>
-                                <button class="ws-btn ws-btn-icon-only ws-btn-secondary" @click="openCountsHistory()" title="<?php esc_attr_e( 'Historial de cuadres', 'workshop' ); ?>"><i class="fa-solid fa-clock-rotate-left"></i></button>
+                <label class="ws-check ws-check-pill"><input type="checkbox" x-model="lowOnly" @change="onFilter()"><span><?php esc_html_e( 'Solo stock bajo', 'workshop' ); ?></span></label>
+            </div>
+            <div class="ws-stock-actions">
+                <button class="ws-btn ws-btn-secondary" @click="openCount()" title="<?php esc_attr_e( 'Compara el stock físico (lo que cuentas) con el virtual (lo que dice la app)', 'workshop' ); ?>"><i class="fa-solid fa-list-check"></i> <?php esc_html_e( 'Cuadre de inventario', 'workshop' ); ?></button>
+                <button class="ws-btn ws-btn-icon-only ws-btn-secondary" @click="openCountsHistory()" title="<?php esc_attr_e( 'Historial de cuadres', 'workshop' ); ?>"><i class="fa-solid fa-clock-rotate-left"></i></button>
                 <template x-if="canManageLinks">
                     <button class="ws-btn ws-btn-secondary" @click="openLinks()" title="<?php esc_attr_e( 'Conecta ubicaciones para compartir stock: al vender en una, se rebaja en todas las conectadas', 'workshop' ); ?>"><i class="fa-solid fa-share-nodes"></i> <?php esc_html_e( 'Conectar ubicaciones', 'workshop' ); ?></button>
                 </template>
