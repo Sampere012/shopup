@@ -348,7 +348,9 @@
                 if (seed && seed.baseCurrency) { this.baseCurrency = seed.baseCurrency; }
                 if (seed && seed.rates) { this.rates = seed.rates; }
                 if (seed && seed.currencies) { this.currencies = seed.currencies; }
-                if (seed && seed.displayCurrency) { this.displayCurrency = seed.displayCurrency; }
+                // '' = sin adaptación (mostrar el precio nativo del producto);
+                // una moneda = convertir los precios a esa moneda.
+                if (seed && seed.displayCurrency !== undefined && seed.displayCurrency !== null) { this.displayCurrency = seed.displayCurrency; }
                 if (seed && seed.whatsappNumbers) { this.whatsappNumbers = seed.whatsappNumbers; }
                 this.loadCart();
                 // Valoraciones de la tienda: se cargan al entrar (las estrellas
@@ -471,7 +473,8 @@
             // equivalencia muestra el precio nativo del producto.
             priceInfo(p) {
                 const cur = p.currency || this.currency;
-                const target = this.displayCurrency || this.currency;
+                // displayCurrency '' = precio nativo del producto (sin adaptar).
+                const target = this.displayCurrency || '';
                 const show = p.show_equiv === undefined ? 1 : Number(p.show_equiv);
                 const adapted = target && cur !== target;
                 const main = adapted
@@ -491,7 +494,7 @@
                 const pct = Number(p && p.transfer_pct) || 0;
                 if (pct <= 0) return '';
                 const cur = (p && p.currency) || this.currency;
-                const target = this.displayCurrency || this.currency;
+                const target = this.displayCurrency || '';
                 const amount = (Number(p && p.price) || 0) * (1 + pct / 100);
                 if (target && cur !== target) return 'Transf.: ' + money(this.convert(amount, cur, target), target);
                 return 'Transf.: ' + money(amount, cur);
@@ -633,7 +636,7 @@
                     if (item.qty + 1 > p.qty) { toast('warning', 'Stock insuficiente'); return false; }
                     item.qty++;
                 } else {
-                    this.cartItems.push({ product_id: p.id, name: p.name, price: p.price, currency: p.currency || this.currency, qty: 1 });
+                    this.cartItems.push({ product_id: p.id, combo_id: p.combo_id || 0, name: p.name, price: p.price, currency: p.currency || this.currency, qty: 1 });
                 }
                 this.saveCart();
                 this.pulseCard(p.id);
@@ -699,8 +702,10 @@
             },
             checkout() {
                 if (this.busy) return;
-                const items = {};
-                this.cartItems.forEach(i => { items[i.product_id] = i.qty; });
+                // Ítems: productos normales y combos (combo_id > 0) en un solo
+                // JSON. Los ids de combos van en NEGATIVO (-combo_id) para no
+                // chocar con los ids de productos reales.
+                const items = this.cartItems.map(i => ({ product_id: i.product_id, combo_id: i.combo_id || 0, qty: i.qty }));
                 this.busy = true;
                 const body = new URLSearchParams({
                     action: 'ws_create_order',
@@ -710,8 +715,8 @@
                     customer_phone: this.customer.phone,
                     customer_address: this.customer.address,
                     whatsapp_number: this.customer.number || '',
+                    items: JSON.stringify(items),
                 });
-                Object.keys(items).forEach(k => body.append('items[' + k + ']', items[k]));
                 fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body })
                     .then(r => r.json())
                     .then(res => {
@@ -752,6 +757,20 @@
             bulkOpen: false,
             bulkSaving: false,
             bulk: { field: 'min_stock', mode: 'set', value: 0 },
+            // Combos: agrupar productos. Stock DERIVADO de los componentes.
+            locations: opts.locations || [],
+            canTransfer: opts.canTransfer,
+            combos: [],
+            comboSearch: '',
+            comboLocationId: (opts.locations && opts.locations.length ? opts.locations[0].id : 0),
+            comboPage: 1,
+            comboPageSize: 10,
+            comboTotal: 0,
+            comboFormOpen: false,
+            comboTransferOpen: false,
+            comboForm: {},
+            comboTransfer: { combo: null, from_location: 0, to_location: 0, count: 1, note: '' },
+            allProducts: [],
             // Pestañas: lista de productos / historial de precios.
             tab: 'products',
             historyLoaded: false,
@@ -778,6 +797,84 @@
             setTab(t) {
                 this.tab = t;
                 if (t === 'history' && !this.historyLoaded) this.loadHistory();
+                if (t === 'combos') {
+                    this.loadCombos();
+                    if (!this.allProducts.length) this.loadAllProducts();
+                }
+            },
+            get comboPages() { return Math.max(1, Math.ceil(this.comboTotal / this.comboPageSize)); },
+            onComboSearch() {
+                clearTimeout(this._comboSearchTimer);
+                this._comboSearchTimer = setTimeout(() => { this.comboPage = 1; this.loadCombos(); }, 300);
+            },
+            comboGo(n) {
+                if (n < 1 || n > this.comboPages) return;
+                this.comboPage = n;
+                this.loadCombos();
+            },
+            loadCombos() {
+                fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ action: 'ws_combos_list', ws_nonce: WS.nonce, search: this.comboSearch, location_id: this.comboLocationId, page: this.comboPage, pageSize: this.comboPageSize }) })
+                    .then(r => r.json()).then(r => { if (r.success) { this.combos = r.data.combos; this.comboTotal = r.data.total; this.comboPage = r.data.page; } });
+            },
+            // Todos los productos para el editor de componentes (sin paginar).
+            loadAllProducts() {
+                $('ws_products_list', {}).then(r => {
+                    if (r.success) this.allProducts = r.data.products || [];
+                });
+            },
+            openComboForm(c) {
+                this.comboForm = c ? {
+                    id: c.id,
+                    name: c.name,
+                    photo: c.photo || '',
+                    price_mode: c.price_mode || 'auto',
+                    price: Number(c.price) || 0,
+                    currency: c.currency || this.currency,
+                    active: !!c.active,
+                    items: (c.items || []).map(i => ({ product_id: i.product_id, qty: i.qty }))
+                } : {
+                    id: 0, name: '', photo: '', price_mode: 'auto', price: 0, currency: this.currency, active: true, items: [{ product_id: '', qty: 1 }]
+                };
+                this.comboFormOpen = true;
+            },
+            addComboItem() { this.comboForm.items.push({ product_id: '', qty: 1 }); },
+            removeComboItem(i) { this.comboForm.items.splice(i, 1); },
+            saveCombo() {
+                const body = new URLSearchParams({ action: 'ws_combo_save', ws_nonce: WS.nonce, items: JSON.stringify(this.comboForm.items) });
+                Object.keys(this.comboForm).forEach(k => { if (k !== 'items') body.append(k, this.comboForm[k] === null || this.comboForm[k] === undefined ? '' : this.comboForm[k]); });
+                fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body })
+                    .then(r => r.json())
+                    .then(res => {
+                        if (res.success) { toast('success', 'Combo guardado'); this.comboFormOpen = false; this.loadCombos(); }
+                        else { toast('error', 'Error', res.data && res.data.msg); }
+                    });
+            },
+            removeCombo(c) {
+                if (typeof Swal !== 'undefined') {
+                    Swal.fire({ title: '¿Eliminar combo?', text: 'Se quitará el agrupamiento (los productos no se tocan).', icon: 'warning', showCancelButton: true, confirmButtonText: 'Eliminar', cancelButtonText: 'Cancelar' })
+                        .then(r => { if (r.isConfirmed) this.removeComboReq(c); });
+                } else { this.removeComboReq(c); }
+            },
+            removeComboReq(c) {
+                $('ws_combo_delete', { id: c.id }).then(res => {
+                    if (res.success) { toast('success', 'Combo eliminado'); this.loadCombos(); } else { toast('error', 'Error', res.data && res.data.msg); }
+                });
+            },
+            toggleCombo(c) {
+                $('ws_combo_toggle', { id: c.id, active: c.active ? 0 : 1 }).then(res => {
+                    if (res.success) { c.active = c.active ? 0 : 1; toast('success', c.active ? 'Combo habilitado' : 'Combo deshabilitado'); } else { toast('error', 'Error', res.data && res.data.msg); }
+                });
+            },
+            openComboTransfer(c) {
+                this.comboTransfer = { combo: c, from_location: this.comboLocationId || (this.locations.length ? this.locations[0].id : 0), to_location: (this.locations[1] && this.locations[1].id) || 0, count: 1, note: '' };
+                this.comboTransferOpen = true;
+            },
+            saveComboTransfer() {
+                const t = this.comboTransfer;
+                if (!t.combo) return;
+                $('ws_combo_transfer', { combo_id: t.combo.id, from_location: t.from_location, to_location: t.to_location, count: t.count, note: t.note }).then(res => {
+                    if (res.success) { toast('success', 'Combo transferido'); this.comboTransferOpen = false; this.loadCombos(); } else { toast('error', 'Error', res.data && res.data.msg); }
+                });
             },
             loadHistory() {
                 this.historyRows = [];
@@ -1279,7 +1376,7 @@
                     if (k === 'payment_methods') return;
                     body.append(k, this.form[k] === null || this.form[k] === undefined ? '' : this.form[k]);
                 });
-                body.set('store_settings', JSON.stringify(this.form.store_settings || { currency: '', rate: '' }));
+                body.set('store_settings', JSON.stringify(this.form.store_settings || { currency: '', rate: '', price_source: 'location' }));
                 fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body })
                     .then(r => r.json())
                     .then(res => {
@@ -1302,10 +1399,10 @@
                 if (l) {
                     this.form = Object.assign({}, l, {
                         payment_methods: (l.payment_methods && l.payment_methods.length ? l.payment_methods : []),
-                        store_settings: Object.assign({ currency: '', rate: '' }, l.store_settings || {})
+                        store_settings: Object.assign({ currency: '', rate: '', price_source: 'location' }, l.store_settings || {})
                     });
                 } else {
-                    this.form = { type: 'pv', name: '', slug: '', address: '', photo: '', currency: this.currency, whatsapp: '', delivery_cost: 0, active: true, payment_methods: [], store_settings: { currency: '', rate: '' } };
+                    this.form = { type: 'pv', name: '', slug: '', address: '', photo: '', currency: this.currency, whatsapp: '', delivery_cost: 0, active: true, payment_methods: [], store_settings: { currency: '', rate: '', price_source: 'location' } };
                 }
                 if (!this.form.currency) this.form.currency = this.currency;
                 if (!this.currencies.length || this.currencies.indexOf(this.form.currency) === -1) {

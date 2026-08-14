@@ -188,12 +188,20 @@ $rates      = ws_exchange_rates();
                         <div class="ws-form-divider"><i class="fa-solid fa-store"></i> <?php esc_html_e( 'Tienda pública', 'workshop' ); ?></div>
                     </div>
                     <label class="ws-field">
+                        <span><?php esc_html_e( 'Precio a mostrar', 'workshop' ); ?></span>
+                        <select x-model="form.store_settings.price_source">
+                            <option value="location"><?php esc_html_e( 'De la ubicación (convertido con la tasa)', 'workshop' ); ?></option>
+                            <option value="product"><?php esc_html_e( 'Del producto (su moneda, sin convertir)', 'workshop' ); ?></option>
+                        </select>
+                        <small class="ws-muted" style="display:block;margin-top:4px;font-size:.76em"><?php esc_html_e( 'Ej: el PV vende en CUP y el producto está en USD → muestra el precio convertido (ubicación) o el precio en USD tal cual (producto).', 'workshop' ); ?></small>
+                    </label>
+                    <label class="ws-field">
                         <span><?php esc_html_e( 'Moneda de la tienda', 'workshop' ); ?></span>
                         <select x-model="form.store_settings.currency">
                             <option value=""><?php esc_html_e( 'Automática (la de la ubicación)', 'workshop' ); ?></option>
                             <template x-for="c in currencies" :key="c"><option :value="c" x-text="c"></option></template>
                         </select>
-                        <small class="ws-muted" style="display:block;margin-top:4px;font-size:.76em"><?php esc_html_e( 'Los precios de los productos se muestran en esta moneda (convertidos con la tasa).', 'workshop' ); ?></small>
+                        <small class="ws-muted" style="display:block;margin-top:4px;font-size:.76em"><?php esc_html_e( 'Moneda a la que se convierten los precios cuando eliges «De la ubicación».', 'workshop' ); ?></small>
                     </label>
                     <label class="ws-field">
                         <span><?php esc_html_e( 'Tasa de cambio a mostrar', 'workshop' ); ?></span>

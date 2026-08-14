@@ -61,9 +61,14 @@ if ( $ws_biz && ! empty( $ws_biz->slug ) ) {
 </div>
 
 <div class="ws-kpis">
+    <?php
+        // Total de ventas convertido a la moneda del reporte (si hay varias
+        // monedas, sumar sin convertir mezclaría CUP y USD).
+        $total_kpi = array_sum( array_map( fn( $c ) => ws_convert( (float) $c->total, $c->currency, $currency ), (array) $data['currency_totals'] ) );
+    ?>
     <div class="ws-kpi">
         <div class="ws-kpi-icon ws-kpi-green"><i class="fa-solid fa-arrow-trend-up"></i></div>
-        <div><span><?php echo esc_html( sprintf( __( 'Ventas · %s', 'workshop' ), $filters['period_label'] ) ); ?></span><strong><?php echo ws_money( $data['total_sales'], $currency ); ?></strong></div>
+        <div><span><?php echo esc_html( sprintf( __( 'Ventas · %s', 'workshop' ), $filters['period_label'] ) ); ?></span><strong><?php echo ws_money( $total_kpi, $currency ); ?></strong></div>
     </div>
     <div class="ws-kpi">
         <div class="ws-kpi-icon ws-kpi-blue"><i class="fa-solid fa-receipt"></i></div>
@@ -74,6 +79,33 @@ if ( $ws_biz && ! empty( $ws_biz->slug ) ) {
         <div><span><?php esc_html_e( 'Movimientos', 'workshop' ); ?></span><strong><?php echo esc_html( number_format_i18n( $data['total_moves'] ) ); ?></strong></div>
     </div>
 </div>
+
+<?php if ( ! empty( $data['currency_totals'] ) && count( $data['currency_totals'] ) > 0 ) : ?>
+<div class="ws-card">
+    <h3 class="ws-card-title"><i class="fa-solid fa-coins"></i> <?php esc_html_e( 'Ventas por moneda', 'workshop' ); ?></h3>
+    <p class="ws-muted" style="margin:0 0 10px;font-size:.82em"><?php esc_html_e( 'Cada moneda con su total real (los montos no se mezclan) y su equivalente en la moneda base del negocio.', 'workshop' ); ?></p>
+    <table class="ws-table" data-sortable data-ts="reports-currency">
+        <thead><tr>
+            <th><?php esc_html_e( 'Moneda', 'workshop' ); ?></th>
+            <th><?php esc_html_e( 'Pedidos (tienda)', 'workshop' ); ?></th>
+            <th><?php esc_html_e( 'Ventas POS', 'workshop' ); ?></th>
+            <th><?php esc_html_e( 'Total', 'workshop' ); ?></th>
+            <th><?php esc_html_e( 'Equivalente', 'workshop' ); ?> <?php echo esc_html( $currency ); ?></th>
+        </tr></thead>
+        <tbody>
+        <?php foreach ( $data['currency_totals'] as $ct ) : ?>
+            <tr>
+                <td><strong><?php echo esc_html( $ct->currency ); ?></strong></td>
+                <td><?php echo esc_html( number_format_i18n( $ct->orders ) ); ?></td>
+                <td><?php echo esc_html( number_format_i18n( $ct->pos ) ); ?></td>
+                <td><?php echo ws_money( $ct->total, $ct->currency ); ?></td>
+                <td class="ws-muted"><?php echo ws_money( ws_convert( (float) $ct->total, $ct->currency, $currency ), $currency ); ?></td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+</div>
+<?php endif; ?>
 
 <!-- Utilidades: ingresos menos gastos, por mes y por punto de venta -->
 <div class="ws-grid-2">

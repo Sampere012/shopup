@@ -225,21 +225,79 @@ function ws_reports_data( $filters ) {
 		) );
 	}
 
+	// Ventas por MONEDA: cada moneda con sus pedidos, ventas POS y total.
+	// Así el reporte no mezcla CUP + USD (sumar sin convertir sería incorrecto).
+	$currency_totals = array();
+	$base_currency   = ws_currency_symbol();
+	if ( $loc_ids ) {
+		$by_cur_orders = $wpdb->get_results( $wpdb->prepare(
+			"SELECT currency, SUM(total) AS total, COUNT(*) AS n
+			 FROM {$orders_table}
+			 WHERE location_id IN ({$ph}) AND status IN ('accepted','completed')
+			   AND created_at >= %s AND created_at <= %s
+			 GROUP BY currency",
+			...array_merge( $args, array( $since, $until ) )
+		) );
+		foreach ( $by_cur_orders as $row ) {
+			$cur = $row->currency ? $row->currency : $base_currency;
+			if ( ! isset( $currency_totals[ $cur ] ) ) {
+				$currency_totals[ $cur ] = array( 'orders' => 0, 'pos' => 0, 'total' => 0.0 );
+			}
+			$currency_totals[ $cur ]['orders'] += (int) $row->n;
+			$currency_totals[ $cur ]['total']  += (float) $row->total;
+		}
+		if ( $has_pos ) {
+			$by_cur_pos = $wpdb->get_results( $wpdb->prepare(
+				"SELECT currency, SUM(total) AS total, COUNT(*) AS n
+				 FROM {$pos_sales_table}
+				 WHERE location_id IN ({$ph}) AND status <> 'cancelled'
+				   AND created_at >= %s AND created_at <= %s
+				 GROUP BY currency",
+				...array_merge( $args, array( $since, $until ) )
+			) );
+			foreach ( $by_cur_pos as $row ) {
+				$cur = $row->currency ? $row->currency : $base_currency;
+				if ( ! isset( $currency_totals[ $cur ] ) ) {
+					$currency_totals[ $cur ] = array( 'orders' => 0, 'pos' => 0, 'total' => 0.0 );
+				}
+				$currency_totals[ $cur ]['pos']   += (int) $row->n;
+				$currency_totals[ $cur ]['total'] += (float) $row->total;
+			}
+		}
+	}
+	// Ordena por total desc y añade el equivalente en la moneda base.
+	$currency_rows = array();
+	foreach ( $currency_totals as $cur => $t ) {
+		$currency_rows[] = (object) array(
+			'currency'   => $cur,
+			'orders'     => (int) $t['orders'],
+			'pos'        => (int) $t['pos'],
+			'total'      => round( $t['total'], 2 ),
+			'total_base' => round( ws_convert( $t['total'], $cur, $base_currency ), 2 ),
+		);
+	}
+	usort( $currency_rows, fn( $a, $b ) => (float) $b->total <=> (float) $a->total );
+
+	// Total CONVERTIDO a la moneda base (para no mezclar monedas al sumar).
+	$total_sales_base = array_sum( array_map( fn( $c ) => (float) $c->total_base, $currency_rows ) );
+
 	return array(
-		'sales'        => $sales,
-		'by_type'      => $by_type,
-		'top'          => array_slice( $top_all, 0, 10 ),
-		'top_all'      => $top_all,
-		'bottom'       => array_slice( $bottom, 0, 10 ),
-		'transactions' => $transactions,
-		'pos_summary'  => $pos_summary,
-		'pos_sales'    => $pos_sales,
-		'pos_products' => $pos_products,
-		'total_sales'  => $total_sales,
-		'total_orders' => $total_orders,
-		'total_units'  => $total_units,
-		'total_moves'  => $total_moves,
-		'avg_sale'     => $total_orders ? $total_sales / $total_orders : 0.0,
+		'sales'            => $sales,
+		'by_type'          => $by_type,
+		'top'              => array_slice( $top_all, 0, 10 ),
+		'top_all'          => $top_all,
+		'bottom'           => array_slice( $bottom, 0, 10 ),
+		'transactions'     => $transactions,
+		'pos_summary'      => $pos_summary,
+		'pos_sales'        => $pos_sales,
+		'pos_products'     => $pos_products,
+		'total_sales'      => $total_sales,
+		'total_sales_base' => $total_sales_base,
+		'currency_totals'  => $currency_rows,
+		'total_orders'     => $total_orders,
+		'total_units'      => $total_units,
+		'total_moves'      => $total_moves,
+		'avg_sale'         => $total_orders ? $total_sales / $total_orders : 0.0,
 	);
 }
 
@@ -702,12 +760,30 @@ function ws_reports_build_sheets( $filters, $data ) {
 		array( __( 'Período', 'workshop' ), $filters['period_label'] ),
 		array( __( 'Generado', 'workshop' ), date( 'd/m/Y H:i', current_time( 'timestamp' ) ) ),
 		array(),
-		array( __( 'Ventas totales', 'workshop' ), $money( $data['total_sales'] ) ),
+		array( __( 'Ventas totales (convertidas)', 'workshop' ), $money( $data['total_sales_base'] ) ),
 		array( __( 'Transacciones', 'workshop' ), array( (int) $data['total_orders'], 'n' ) ),
 		array( __( 'Ticket promedio', 'workshop' ), $money( $data['avg_sale'] ) ),
 		array( __( 'Unidades vendidas', 'workshop' ), array( (float) $data['total_units'], 'n' ) ),
 		array( __( 'Movimientos registrados', 'workshop' ), array( (int) $data['total_moves'], 'n' ) ),
 	);
+
+	// Ventas por MONEDA (no se mezclan montos de monedas distintas).
+	if ( ! empty( $data['currency_totals'] ) ) {
+		$summary_rows[] = array();
+		$summary_rows[] = array( __( 'VENTAS POR MONEDA', 'workshop' ), '' );
+		foreach ( $data['currency_totals'] as $ct ) {
+			$summary_rows[] = array(
+				$ct->currency,
+				array(
+					/* translators: 1: pedidos tienda, 2: ventas POS */
+					sprintf( __( 'Pedidos: %1$d · POS: %2$d', 'workshop' ), (int) $ct->orders, (int) $ct->pos ),
+					's',
+				),
+				$money( $ct->total ),
+				array( round( (float) $ct->total_base, 2 ), 'n', 1 ),
+			);
+		}
+	}
 
 	if ( $data['pos_summary'] ) {
 		$summary_rows[] = array( __( 'Ventas POS', 'workshop' ), $money( $data['pos_summary']->total ) );

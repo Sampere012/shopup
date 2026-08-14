@@ -179,6 +179,36 @@ class WS_Stock {
     }
 
     /**
+     * Transferencia de UN producto asumiendo que la transacción ya está
+     * abierta (la usa la transferencia de COMBOS para mover los componentes
+     * de forma atómica). Registra el movimiento tipo 'transferencia'.
+     */
+    public static function transfer_in_tx( $product_id, $from_location, $to_location, $qty, $ref = '', $note = '', $user_id = 0 ) {
+        global $wpdb;
+        $product_id    = (int) $product_id;
+        $from_location = (int) $from_location;
+        $to_location   = (int) $to_location;
+        $qty           = (float) $qty;
+        if ( ! $product_id || ! $from_location || ! $to_location || $qty <= 0 ) {
+            return new WP_Error( 'invalid', __( 'Datos de transferencia inválidos.', 'workshop' ) );
+        }
+        if ( $from_location === $to_location ) {
+            return new WP_Error( 'same', __( 'Origen y destino deben ser distintos.', 'workshop' ) );
+        }
+        $updated = self::_decrease_locked( $product_id, $from_location, $qty );
+        if ( ! $updated ) {
+            return new WP_Error( 'insufficient', __( 'Stock insuficiente para la transferencia.', 'workshop' ) );
+        }
+        if ( ! self::_apply_fraction_links( $product_id, $from_location, $qty, '-' ) ) {
+            return new WP_Error( 'insufficient', __( 'Stock insuficiente para la transferencia (unidades relacionadas).', 'workshop' ) );
+        }
+        self::_upsert_stock( $product_id, $to_location, $qty, '+', null );
+        self::_apply_fraction_links( $product_id, $to_location, $qty, '+' );
+        self::_log( 'transferencia', $product_id, $from_location, $to_location, $qty, $ref, $note, $user_id );
+        return true;
+    }
+
+    /**
      * Movimiento múltiple (entrada/salida/baja o tipo personalizado) atómico.
      * $items = array de array( 'product_id' => int, 'qty' => float ).
      * $direction ('entrada'|'salida') solo se usa cuando $type es un tipo

@@ -33,7 +33,12 @@ class WS_Orders {
     }
 
     /**
-     * Crea un pedido a partir de items [product_id => qty].
+     * Crea un pedido a partir de items. Cada ítem puede ser:
+     *   [product_id => qty]            (formato clásico)
+     *   [ ['product_id'=>int,'combo_id'=>int,'qty'=>float], ... ]
+     * Los ítems de combo (combo_id>0) se guardan con product_id = -combo_id
+     * y el precio del combo (manual o auto) convertido a la moneda de la
+     * ubicación. Al aceptar el pedido se descuentan los componentes.
      */
     public static function create( $location_id, $items, $customer ) {
         global $wpdb;
@@ -52,16 +57,49 @@ class WS_Orders {
         $order_items = array();
 
         $wpdb->query( 'START TRANSACTION' );
-        foreach ( $items as $product_id => $qty ) {
+        foreach ( $items as $key => $val ) {
+            if ( is_array( $val ) ) {
+                $product_id = (int) ( $val['product_id'] ?? 0 );
+                $combo_id   = (int) ( $val['combo_id'] ?? 0 );
+                $qty        = (float) ( $val['qty'] ?? 0 );
+            } else {
+                // Formato clásico: items[product_id] = qty.
+                $product_id = (int) $key;
+                $combo_id   = 0;
+                $qty        = (float) $val;
+            }
+            if ( $qty <= 0 ) {
+                $wpdb->query( 'ROLLBACK' );
+                return new WP_Error( 'qty', __( 'Cantidad inválida.', 'workshop' ) );
+            }
+
+            // Ítem de COMBO: el precio viene del combo (manual o auto).
+            if ( $combo_id > 0 ) {
+                $combo = WS_Combos::get( $combo_id );
+                if ( ! $combo ) {
+                    $wpdb->query( 'ROLLBACK' );
+                    return new WP_Error( 'product', __( 'Combo no encontrado.', 'workshop' ) );
+                }
+                $price = ws_convert( WS_Combos::price( $combo ), $combo->currency, $currency );
+                $subtotal += $price * $qty;
+                $order_items[] = array(
+                    'product_id'   => -1 * $combo_id,
+                    'combo_id'     => $combo_id,
+                    'product_name' => $combo->name,
+                    'qty'          => $qty,
+                    'price'        => round( $price, 2 ),
+                );
+                continue;
+            }
+
+            if ( ! $product_id ) {
+                $wpdb->query( 'ROLLBACK' );
+                return new WP_Error( 'product', __( 'Producto no encontrado.', 'workshop' ) );
+            }
             $product = WS_CRUD::get_product( $product_id );
             if ( ! $product ) {
                 $wpdb->query( 'ROLLBACK' );
                 return new WP_Error( 'product', __( 'Producto no encontrado.', 'workshop' ) );
-            }
-            $qty = (float) $qty;
-            if ( $qty <= 0 ) {
-                $wpdb->query( 'ROLLBACK' );
-                return new WP_Error( 'qty', __( 'Cantidad inválida.', 'workshop' ) );
             }
             // Precio en la moneda de la ubicación (convierte si el producto
             // está en otra moneda configurada, p. ej. USD -> CUP).
@@ -69,6 +107,7 @@ class WS_Orders {
             $subtotal += $price * $qty;
             $order_items[] = array(
                 'product_id'   => $product_id,
+                'combo_id'     => 0,
                 'product_name' => $product->name,
                 'qty'          => $qty,
                 'price'        => $price,
@@ -94,6 +133,7 @@ class WS_Orders {
             $wpdb->insert( self::table( 'order_items' ), array(
                 'order_id'     => $order_id,
                 'product_id'   => $item['product_id'],
+                'combo_id'     => $item['combo_id'],
                 'product_name' => $item['product_name'],
                 'qty'          => $item['qty'],
                 'price'        => $item['price'],
@@ -197,10 +237,18 @@ class WS_Orders {
         $items = self::get_items( $order_id );
         $wpdb->query( 'START TRANSACTION' );
         foreach ( $items as $item ) {
-            $result = WS_Stock::decrease_in_tx(
-                $item->product_id, $order->location_id, $item->qty, 'pedido',
-                $order->number, 'Venta PV (pedido)', get_current_user_id()
-            );
+            // Ítem de combo: se descuentan sus componentes (cada producto × qty).
+            if ( (int) $item->combo_id > 0 ) {
+                $result = WS_Combos::decrease_in_tx(
+                    (int) $item->combo_id, $order->location_id, (float) $item->qty, 'pedido',
+                    $order->number, 'Venta PV (pedido combo)', get_current_user_id()
+                );
+            } else {
+                $result = WS_Stock::decrease_in_tx(
+                    $item->product_id, $order->location_id, $item->qty, 'pedido',
+                    $order->number, 'Venta PV (pedido)', get_current_user_id()
+                );
+            }
             if ( is_wp_error( $result ) ) {
                 $wpdb->query( 'ROLLBACK' );
                 return $result;

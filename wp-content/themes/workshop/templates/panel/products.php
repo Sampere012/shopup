@@ -41,10 +41,12 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
     'currency'    => $currency,
     'currencies'  => $currencies,
     'categories'  => $categories,
+    'locations'   => WS_CRUD::get_locations(),
     'canEdit'     => $can_edit,
     'canDelete'   => $can_delete,
     'canCreate'   => $can_create,
     'canFraction' => $can_fraction,
+    'canTransfer' => ws_can( 'stock_transfer' ),
 ) ) ); ?>)">
 
     <div class="ws-tabs">
@@ -55,6 +57,7 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
         <?php if ( $can_suppliers ) : ?>
         <button type="button" class="ws-tab" :class="tab === 'suppliers' && 'is-active'" @click="setTab('suppliers')"><i class="fa-solid fa-truck-field"></i> <?php esc_html_e( 'Proveedores', 'workshop' ); ?></button>
         <?php endif; ?>
+        <button type="button" class="ws-tab" :class="tab === 'combos' && 'is-active'" @click="setTab('combos')"><i class="fa-solid fa-layer-group"></i> <?php esc_html_e( 'Combos', 'workshop' ); ?></button>
         <button type="button" class="ws-tab" :class="tab === 'history' && 'is-active'" @click="setTab('history')"><i class="fa-solid fa-chart-line"></i> <?php esc_html_e( 'Historial de precios', 'workshop' ); ?></button>
     </div>
 
@@ -186,6 +189,194 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
                     </select>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- Pestaña: Combos (agrupar productos) -->
+    <div x-show="tab === 'combos'" x-cloak>
+        <div class="ws-toolbar">
+            <div class="ws-search">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input type="search" placeholder="<?php esc_attr_e( 'Buscar combo…', 'workshop' ); ?>" x-model="comboSearch" @input="onComboSearch()">
+            </div>
+            <label class="ws-field" style="max-width:230px">
+                <span><?php esc_html_e( 'Stock en ubicación', 'workshop' ); ?></span>
+                <select x-model="comboLocationId" @change="loadCombos()">
+                    <template x-for="l in locations" :key="l.id"><option :value="l.id" x-text="l.name"></option></template>
+                </select>
+            </label>
+            <button class="ws-btn ws-btn-primary" @click="openComboForm()" x-show="canEdit"><i class="fa-solid fa-plus"></i> <?php esc_html_e( 'Nuevo combo', 'workshop' ); ?></button>
+        </div>
+
+        <div class="ws-card">
+            <table class="ws-table">
+                <thead>
+                    <tr>
+                        <th><?php esc_html_e( 'Combo', 'workshop' ); ?></th>
+                        <th><?php esc_html_e( 'Precio', 'workshop' ); ?></th>
+                        <th><?php esc_html_e( 'Componentes', 'workshop' ); ?></th>
+                        <th><?php esc_html_e( 'Stock', 'workshop' ); ?></th>
+                        <th><?php esc_html_e( 'Estado', 'workshop' ); ?></th>
+                        <th class="ws-actions"><?php esc_html_e( 'Acciones', 'workshop' ); ?></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <template x-for="c in combos" :key="c.id">
+                        <tr>
+                            <td>
+                                <div class="ws-cell-product">
+                                    <div class="ws-thumb"><img x-show="c.photo" :src="c.photo" :alt="c.name" loading="lazy"><i x-show="!c.photo" class="fa-solid fa-layer-group"></i></div>
+                                    <div><strong x-text="c.name"></strong></div>
+                                </div>
+                            </td>
+                            <td>
+                                <strong x-text="money(c.price, c.currency)"></strong>
+                                <small class="ws-muted ws-block" x-text="c.price_mode === 'auto' ? 'Auto-calculado' : 'Manual'"></small>
+                            </td>
+                            <td>
+                                <span x-text="c.items.map(i => i.qty + '× ' + i.name).join(', ')" style="font-size:.8em"></span>
+                            </td>
+                            <td>
+                                <span class="ws-badge" :class="c.stock > 0 ? 'ws-badge-ok' : 'ws-badge-danger'" x-text="c.stock === null ? '—' : (c.stock + ' uds.')"></span>
+                            </td>
+                            <td>
+                                <button type="button" class="ws-toggle" :class="c.active ? 'is-on' : ''" @click="toggleCombo(c)" :title="c.active ? '<?php esc_attr_e( 'Deshabilitar combo', 'workshop' ); ?>' : '<?php esc_attr_e( 'Habilitar combo', 'workshop' ); ?>'" x-show="canEdit">
+                                    <i class="fa-solid" :class="c.active ? 'fa-toggle-on' : 'fa-toggle-off'"></i>
+                                </button>
+                                <span class="ws-badge" :class="c.active ? 'ws-badge-ok' : 'ws-badge-muted'" x-text="c.active ? '<?php esc_html_e( 'Activo', 'workshop' ); ?>' : '<?php esc_html_e( 'Inactivo', 'workshop' ); ?>'" x-show="!canEdit"></span>
+                            </td>
+                            <td class="ws-actions">
+                                <template x-if="canTransfer">
+                                    <button class="ws-icon-btn" title="<?php esc_attr_e( 'Transferir combo', 'workshop' ); ?>" @click="openComboTransfer(c)"><i class="fa-solid fa-arrow-right-arrow-left"></i></button>
+                                </template>
+                                <template x-if="canEdit">
+                                    <button class="ws-icon-btn" title="<?php esc_attr_e( 'Editar', 'workshop' ); ?>" @click="openComboForm(c)"><i class="fa-solid fa-pen"></i></button>
+                                </template>
+                                <template x-if="canDelete">
+                                    <button class="ws-icon-btn ws-danger" title="<?php esc_attr_e( 'Eliminar', 'workshop' ); ?>" @click="removeCombo(c)"><i class="fa-solid fa-trash-can"></i></button>
+                                </template>
+                            </td>
+                        </tr>
+                    </template>
+                    <tr x-show="!combos.length"><td colspan="6"><p class="ws-empty"><?php esc_html_e( 'Sin combos. Crea uno agrupando productos.', 'workshop' ); ?></p></td></tr>
+                </tbody>
+            </table>
+            <div class="ws-pagination" x-show="comboTotal > comboPageSize">
+                <span><?php esc_html_e( 'Página', 'workshop' ); ?> <b x-text="comboPage"></b> / <b x-text="comboPages"></b></span>
+                <div>
+                    <button class="ws-page-btn" :disabled="comboPage <= 1" @click="comboGo(comboPage - 1)"><i class="fa-solid fa-chevron-left"></i></button>
+                    <button class="ws-page-btn" :disabled="comboPage >= comboPages" @click="comboGo(comboPage + 1)"><i class="fa-solid fa-chevron-right"></i></button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal combo: crear/editar -->
+    <div class="ws-modal" x-show="comboFormOpen" x-cloak @keydown.escape.window="comboFormOpen=false">
+        <div class="ws-modal-backdrop" @click="comboFormOpen=false"></div>
+        <div class="ws-modal-box">
+            <div class="ws-modal-head">
+                <h3 x-text="comboForm.id ? 'Editar combo' : 'Nuevo combo'"></h3>
+                <button class="ws-cart-close" @click="comboFormOpen=false"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form @submit.prevent="saveCombo" class="ws-form">
+                <div class="ws-form-grid">
+                    <label class="ws-field">
+                        <span><?php esc_html_e( 'Nombre *', 'workshop' ); ?></span>
+                        <input type="text" x-model="comboForm.name" required>
+                    </label>
+                    <label class="ws-field">
+                        <span><?php esc_html_e( 'Foto del combo', 'workshop' ); ?></span>
+                        <input type="url" x-model="comboForm.photo" placeholder="https://…">
+                    </label>
+                    <label class="ws-field">
+                        <span><?php esc_html_e( 'Precio', 'workshop' ); ?></span>
+                        <select x-model="comboForm.price_mode">
+                            <option value="auto"><?php esc_html_e( 'Auto (suma de los productos)', 'workshop' ); ?></option>
+                            <option value="manual"><?php esc_html_e( 'Manual (lo pongo yo)', 'workshop' ); ?></option>
+                        </select>
+                    </label>
+                    <template x-if="comboForm.price_mode === 'manual'">
+                        <label class="ws-field">
+                            <span><?php esc_html_e( 'Precio del combo *', 'workshop' ); ?></span>
+                            <input type="number" step="0.01" min="0" x-model.number="comboForm.price" required>
+                        </label>
+                    </template>
+                    <template x-if="comboForm.price_mode === 'manual'">
+                        <label class="ws-field">
+                            <span><?php esc_html_e( 'Moneda del precio', 'workshop' ); ?></span>
+                            <select x-model="comboForm.currency">
+                                <template x-for="c in currencies" :key="c"><option :value="c" x-text="c"></option></template>
+                            </select>
+                        </label>
+                    </template>
+                    <label class="ws-field ws-span-2">
+                        <span><?php esc_html_e( '¿Cuánto se coge de cada producto?', 'workshop' ); ?></span>
+                        <small class="ws-muted ws-block" style="margin:-4px 0 6px;font-size:.76em"><?php esc_html_e( 'Cada combo consume estas cantidades. El stock del combo es el mínimo disponible de sus productos.', 'workshop' ); ?></small>
+                        <div class="ws-combo-items">
+                            <template x-for="(row, ri) in comboForm.items" :key="ri">
+                                <div class="ws-combo-item-row">
+                                    <select x-model="row.product_id" required>
+                                        <option value="">— <?php esc_html_e( 'Producto', 'workshop' ); ?> —</option>
+                                        <template x-for="p in allProducts" :key="p.id"><option :value="p.id" x-text="p.name + (p.currency && p.currency !== currency ? ' (' + p.currency + ')' : '')"></option></template>
+                                    </select>
+                                    <input type="number" step="0.01" min="0.01" x-model.number="row.qty" placeholder="<?php esc_attr_e( 'Cantidad', 'workshop' ); ?>" required>
+                                    <button type="button" class="ws-icon-btn ws-danger" @click="removeComboItem(ri)" x-show="comboForm.items.length > 1"><i class="fa-solid fa-xmark"></i></button>
+                                </div>
+                            </template>
+                            <button type="button" class="ws-btn ws-btn-secondary ws-btn-sm" @click="addComboItem()"><i class="fa-solid fa-plus"></i> <?php esc_html_e( 'Añadir producto', 'workshop' ); ?></button>
+                        </div>
+                    </label>
+                    <label class="ws-field">
+                        <span><?php esc_html_e( 'Habilitado', 'workshop' ); ?></span>
+                        <label class="ws-check"><input type="checkbox" x-model="comboForm.active"><span><?php esc_html_e( 'Visible en tienda y POS', 'workshop' ); ?></span></label>
+                    </label>
+                </div>
+                <div class="ws-modal-foot">
+                    <button type="button" class="ws-btn ws-btn-secondary" @click="comboFormOpen=false"><?php esc_html_e( 'Cancelar', 'workshop' ); ?></button>
+                    <button type="submit" class="ws-btn ws-btn-primary"><i class="fa-solid fa-floppy-disk"></i> <?php esc_html_e( 'Guardar combo', 'workshop' ); ?></button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal transferir combo -->
+    <div class="ws-modal" x-show="comboTransferOpen" x-cloak @keydown.escape.window="comboTransferOpen=false">
+        <div class="ws-modal-backdrop" @click="comboTransferOpen=false"></div>
+        <div class="ws-modal-box">
+            <div class="ws-modal-head">
+                <h3><i class="fa-solid fa-arrow-right-arrow-left"></i> <?php esc_html_e( 'Transferir combo', 'workshop' ); ?> <span class="ws-muted" x-text="comboTransfer.combo ? ('«' + comboTransfer.combo.name + '»') : ''"></span></h3>
+                <button class="ws-cart-close" @click="comboTransferOpen=false"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form @submit.prevent="saveComboTransfer" class="ws-form">
+                <p class="ws-muted" style="font-size:.82em"><?php esc_html_e( 'Se moverán los PRODUCTOS del combo (cada componente × cantidad). El stock del origen se rebaja y el del destino aumenta.', 'workshop' ); ?></p>
+                <div class="ws-form-grid">
+                    <label class="ws-field">
+                        <span><?php esc_html_e( 'Desde *', 'workshop' ); ?></span>
+                        <select x-model="comboTransfer.from_location" required>
+                            <template x-for="l in locations" :key="l.id"><option :value="l.id" x-text="l.name"></option></template>
+                        </select>
+                    </label>
+                    <label class="ws-field">
+                        <span><?php esc_html_e( 'Hacia *', 'workshop' ); ?></span>
+                        <select x-model="comboTransfer.to_location" required>
+                            <template x-for="l in locations" :key="l.id"><option :value="l.id" x-text="l.name"></option></template>
+                        </select>
+                    </label>
+                    <label class="ws-field">
+                        <span><?php esc_html_e( 'Cantidad de combos *', 'workshop' ); ?></span>
+                        <input type="number" step="1" min="1" x-model.number="comboTransfer.count" required>
+                    </label>
+                    <label class="ws-field">
+                        <span><?php esc_html_e( 'Nota', 'workshop' ); ?></span>
+                        <input type="text" x-model="comboTransfer.note">
+                    </label>
+                </div>
+                <div class="ws-modal-foot">
+                    <button type="button" class="ws-btn ws-btn-secondary" @click="comboTransferOpen=false"><?php esc_html_e( 'Cancelar', 'workshop' ); ?></button>
+                    <button type="submit" class="ws-btn ws-btn-primary"><i class="fa-solid fa-right-left"></i> <?php esc_html_e( 'Transferir', 'workshop' ); ?></button>
+                </div>
+            </form>
         </div>
     </div>
 

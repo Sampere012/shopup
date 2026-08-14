@@ -183,11 +183,12 @@ function ws_ajax_my_locations() {
     $out = array();
     foreach ( ws_user_locations() as $l ) {
         $out[] = array(
-            'id'    => (int) $l->id,
-            'name'  => $l->name,
-            'slug'  => $l->slug,
-            'type'  => $l->type,
-            'active'=> (int) $l->active,
+            'id'       => (int) $l->id,
+            'name'     => $l->name,
+            'slug'     => $l->slug,
+            'type'     => $l->type,
+            'active'   => (int) $l->active,
+            'currency' => $l->currency ? $l->currency : ws_currency_symbol(),
         );
     }
     wp_send_json_success( array( 'data' => $out ) );
@@ -285,6 +286,102 @@ function ws_ajax_products_bulk_edit() {
         'field' => $field, 'mode' => $mode, 'value' => $value, 'updated' => $updated,
     ) );
     wp_send_json_success( array( 'updated' => $updated ) );
+}
+
+/* ---------------- Combos ---------------- */
+
+add_action( 'wp_ajax_ws_combos_list', 'ws_ajax_combos_list' );
+function ws_ajax_combos_list() {
+    ws_guard( 'products_view' );
+    $search    = sanitize_text_field( $_POST['search'] ?? '' );
+    $location_id = (int) ( $_POST['location_id'] ?? 0 );
+    ws_send_list( 'combos', function ( $args ) use ( $search, $location_id ) {
+        $rows = WS_Combos::all( array_merge( array( 'search' => $search ), $args ) );
+        $out  = array();
+        foreach ( $rows as $c ) {
+            $price = WS_Combos::price( $c );
+            $out[] = array(
+                'id'          => (int) $c->id,
+                'name'        => $c->name,
+                'photo'       => $c->photo,
+                'price_mode'  => $c->price_mode,
+                'price'       => round( $price, 2 ),
+                'currency'    => $c->currency,
+                'active'      => (int) $c->active,
+                'item_count'  => (int) $c->item_count,
+                'stock'       => $location_id ? WS_Combos::stock( (int) $c->id, $location_id ) : null,
+                'items'       => array_map( function ( $it ) {
+                    return array(
+                        'product_id' => (int) $it->product_id,
+                        'name'       => $it->product_name,
+                        'qty'        => (float) $it->qty,
+                        'sale_price' => (float) $it->sale_price,
+                        'currency'   => $it->product_currency,
+                    );
+                }, WS_Combos::items( (int) $c->id ) ),
+            );
+        }
+        return $out;
+    }, function () use ( $search ) {
+        return WS_Combos::count( array( 'search' => $search ) );
+    }, array( 'search' => $search ) );
+}
+
+add_action( 'wp_ajax_ws_combo_save', 'ws_ajax_combo_save' );
+function ws_ajax_combo_save() {
+    ws_guard( 'products_create', 'products_edit' );
+    $id = (int) ( $_POST['id'] ?? 0 );
+    if ( $id && ! ws_can( 'products_edit' ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Sin permiso para editar combos.', 'workshop' ) ) );
+    }
+    if ( ! $id ) {
+        $limit = ws_plan_guard( 'products' );
+        if ( is_wp_error( $limit ) ) {
+            wp_send_json_error( array( 'msg' => $limit->get_error_message() ) );
+        }
+    }
+    $items = isset( $_POST['items'] ) ? (array) json_decode( wp_unslash( $_POST['items'] ), true ) : array();
+    $result = WS_Combos::save( array_merge( $_POST, array( 'items' => $items ) ), $id );
+    if ( is_wp_error( $result ) ) {
+        wp_send_json_error( array( 'msg' => $result->get_error_message() ) );
+    }
+    ws_log_audit( $id ? 'combo_update' : 'combo_create', 'combo', $result, array( 'name' => $_POST['name'] ?? '' ) );
+    wp_send_json_success( array( 'id' => $result ) );
+}
+
+add_action( 'wp_ajax_ws_combo_delete', 'ws_ajax_combo_delete' );
+function ws_ajax_combo_delete() {
+    ws_guard( 'products_delete' );
+    $id = (int) ( $_POST['id'] ?? 0 );
+    WS_Combos::delete( $id );
+    ws_log_audit( 'combo_delete', 'combo', $id );
+    wp_send_json_success();
+}
+
+add_action( 'wp_ajax_ws_combo_toggle', 'ws_ajax_combo_toggle' );
+function ws_ajax_combo_toggle() {
+    ws_guard( 'products_edit' );
+    $id     = (int) ( $_POST['id'] ?? 0 );
+    $active = ! empty( $_POST['active'] );
+    WS_Combos::set_active( $id, $active );
+    ws_log_audit( 'combo_toggle', 'combo', $id, array( 'active' => $active ) );
+    wp_send_json_success( array( 'active' => $active ) );
+}
+
+add_action( 'wp_ajax_ws_combo_transfer', 'ws_ajax_combo_transfer' );
+function ws_ajax_combo_transfer() {
+    ws_guard( 'stock_transfer' );
+    $combo_id = (int) ( $_POST['combo_id'] ?? 0 );
+    $from     = (int) ( $_POST['from_location'] ?? 0 );
+    $to       = (int) ( $_POST['to_location'] ?? 0 );
+    $count    = (float) ( $_POST['count'] ?? 0 );
+    $note     = sanitize_text_field( $_POST['note'] ?? '' );
+    $result = WS_Combos::transfer( $combo_id, $from, $to, $count, 'Transferencia combo', $note, get_current_user_id() );
+    if ( is_wp_error( $result ) ) {
+        wp_send_json_error( array( 'msg' => $result->get_error_message() ) );
+    }
+    ws_log_audit( 'combo_transfer', 'combo', $combo_id, array( 'from' => $from, 'to' => $to, 'count' => $count ) );
+    wp_send_json_success();
 }
 
 add_action( 'wp_ajax_ws_import_products', 'ws_ajax_import_products' );
@@ -1032,7 +1129,34 @@ function ws_ajax_create_order() {
         wp_send_json_error( array( 'msg' => __( 'Sesión expirada.', 'workshop' ) ) );
     }
     $location_id = (int) ( $_POST['location_id'] ?? 0 );
-    $items       = isset( $_POST['items'] ) && is_array( $_POST['items'] ) ? array_map( 'absint', $_POST['items'] ) : array();
+    // Ítems: formato nuevo (JSON de {product_id, combo_id, qty}) o el clásico
+    // items[product_id]=qty. Los combos llevan combo_id>0 (id negativo en la
+    // tienda para no chocar con productos reales).
+    $items = array();
+    if ( isset( $_POST['items'] ) && is_string( $_POST['items'] ) ) {
+        $decoded = json_decode( wp_unslash( $_POST['items'] ), true );
+        if ( is_array( $decoded ) ) {
+            foreach ( $decoded as $raw ) {
+                if ( ! is_array( $raw ) ) {
+                    continue;
+                }
+                $pid = (int) ( $raw['product_id'] ?? 0 );
+                $cid = (int) ( $raw['combo_id'] ?? 0 );
+                $qty = (float) ( $raw['qty'] ?? 0 );
+                if ( ( $pid || $cid ) && $qty > 0 ) {
+                    $items[] = array( 'product_id' => $pid, 'combo_id' => $cid, 'qty' => $qty );
+                }
+            }
+        }
+    } elseif ( isset( $_POST['items'] ) && is_array( $_POST['items'] ) ) {
+        foreach ( $_POST['items'] as $pid => $qty ) {
+            $pid = (int) $pid;
+            $qty = (float) $qty;
+            if ( $pid && $qty > 0 ) {
+                $items[] = array( 'product_id' => $pid, 'combo_id' => 0, 'qty' => $qty );
+            }
+        }
+    }
     $customer    = array(
         'name'    => sanitize_text_field( $_POST['customer_name'] ?? '' ),
         'phone'   => sanitize_text_field( $_POST['customer_phone'] ?? '' ),
@@ -1041,7 +1165,9 @@ function ws_ajax_create_order() {
     if ( empty( $customer['name'] ) || empty( $customer['phone'] ) ) {
         wp_send_json_error( array( 'msg' => __( 'Nombre y teléfono son obligatorios.', 'workshop' ) ) );
     }
-    $items = array_filter( $items, fn( $qty ) => $qty > 0 );
+    if ( empty( $items ) ) {
+        wp_send_json_error( array( 'msg' => __( 'El pedido está vacío.', 'workshop' ) ) );
+    }
     $order_id = WS_Orders::create( $location_id, $items, $customer );
     if ( is_wp_error( $order_id ) ) {
         wp_send_json_error( array( 'msg' => $order_id->get_error_message() ) );
@@ -2321,17 +2447,58 @@ function ws_ajax_pos_sale_save() {
     $discrepancies = array();
     $wpdb->query( 'START TRANSACTION' );
     foreach ( (array) $data['items'] as $it ) {
+        $combo_id = (int) ( $it['combo_id'] ?? 0 );
         $pid = (int) ( $it['product_id'] ?? 0 );
         $qty = (float) ( $it['qty'] ?? 0 );
-        if ( ! $pid || $qty <= 0 ) {
+        if ( ( ! $pid && ! $combo_id ) || $qty <= 0 ) {
             continue;
         }
         $pname = sanitize_text_field( $it['product_name'] ?? '' );
         if ( '' === $pname ) {
-            $found = $wpdb->get_var( $wpdb->prepare(
-                "SELECT name FROM " . ws_table_name( 'products' ) . " WHERE id=%d", $pid
-            ) );
-            $pname = $found ? $found : '#' . $pid;
+            if ( $combo_id > 0 ) {
+                $c = WS_Combos::get( $combo_id );
+                $pname = $c ? $c->name : 'Combo #' . $combo_id;
+            } else {
+                $found = $wpdb->get_var( $wpdb->prepare(
+                    "SELECT name FROM " . ws_table_name( 'products' ) . " WHERE id=%d", $pid
+                ) );
+                $pname = $found ? $found : '#' . $pid;
+            }
+        }
+
+        // Venta de un COMBO: se descuentan sus componentes (cada producto × qty).
+        if ( $combo_id > 0 ) {
+            if ( $is_offline_sync ) {
+                foreach ( WS_Combos::expand( $combo_id, $qty ) as $cp ) {
+                    $deducted_raw = WS_Stock::decrease_partial_in_tx(
+                        $cp['product_id'], $data['location_id'], $cp['qty'], 'salida',
+                        'Venta POS offline', 'Venta offline #' . substr( $data['client_ref'], 0, 8 ), get_current_user_id()
+                    );
+                    if ( abs( (float) $deducted_raw ) < $cp['qty'] ) {
+                        $discrepancies[] = array(
+                            'product'  => $pname . ' (' . $cp['product_id'] . ')',
+                            'requested'=> $cp['qty'],
+                            'deducted' => abs( (float) $deducted_raw ),
+                            'missing'  => round( $cp['qty'] - abs( (float) $deducted_raw ), 2 ),
+                            'fraction' => $deducted_raw < 0,
+                        );
+                    }
+                }
+            } else {
+                $stock_res = WS_Combos::decrease_in_tx(
+                    $combo_id, $data['location_id'], $qty, 'salida',
+                    'Venta POS', 'Venta #pendiente', get_current_user_id()
+                );
+                if ( is_wp_error( $stock_res ) ) {
+                    $wpdb->query( 'ROLLBACK' );
+                    wp_send_json_error( array( 'msg' => sprintf(
+                        /* translators: %s: nombre del combo */
+                        __( 'No hay stock suficiente para el combo «%s» (sus productos se usan en otros combos o ventas).', 'workshop' ),
+                        $pname
+                    ) ) );
+                }
+            }
+            continue;
         }
 
         if ( $is_offline_sync ) {
@@ -2450,8 +2617,21 @@ function ws_ajax_products_get() {
         'offset'       => $offset,
     ) );
 
+    // Moneda de la ubicación seleccionada: el POS cobra en la moneda del PV,
+    // así que el precio de VENTA (y el costo, para la ganancia) se convierten
+    // a esa moneda. Sin ubicación concreta se deja la moneda nativa.
+    $loc_currency = ws_location_currency( $location_id );
+
     $out = array();
     foreach ( $stock_rows as $r ) {
+        $sale_price = (float) $r->sale_price;
+        $cost_price = (float) $r->cost_price;
+        $cur        = $r->currency;
+        if ( $location_id && $cur && $cur !== $loc_currency ) {
+            $sale_price = (float) ws_convert( $sale_price, $cur, $loc_currency );
+            $cost_price = (float) ws_convert( $cost_price, $cur, $loc_currency );
+            $cur        = $loc_currency;
+        }
         $out[] = array(
             'id'          => (int) $r->product_id,
             'name'        => $r->name,
@@ -2459,18 +2639,54 @@ function ws_ajax_products_get() {
             'category'    => (string) ( $r->category ?? '' ),
             'image'       => $r->image,
             'description' => $r->description ?? '',
-            'sale_price'  => (float) $r->sale_price,
+            'sale_price'  => $sale_price,
+            'cost_price'  => $cost_price,
             'transfer_pct'=> (float) $r->transfer_pct,
-            'currency'    => $r->currency,
+            'currency'    => $cur,
             'show_equiv'  => (int) ( $r->show_equiv ?? 1 ),
             'stock'       => (float) $r->qty,
+            'is_combo'    => 0,
+            'combo_id'    => 0,
         );
+    }
+
+    // Combos activos (stock derivado de sus componentes) como ítems de catálogo.
+    $combo_count = 0;
+    if ( $location_id ) {
+        foreach ( WS_Combos::catalog_rows( $location_id ) as $c ) {
+            if ( $search && false === mb_stripos( $c['name'], $search ) ) {
+                continue;
+            }
+            $cprice = (float) $c['price'];
+            if ( $c['currency'] && $c['currency'] !== $loc_currency ) {
+                $cprice = (float) ws_convert( $cprice, $c['currency'], $loc_currency );
+            }
+            $out[] = array(
+                'id'          => $c['id'],
+                'combo_id'    => $c['combo_id'],
+                'name'        => $c['name'],
+                'barcode'     => '',
+                'category'    => 'Combo',
+                'image'       => $c['photo'] ? ws_image_url( $c['photo'] ) : '',
+                'description' => '',
+                'sale_price'  => $cprice,
+                'cost_price'  => 0,
+                'transfer_pct'=> 0,
+                'currency'    => $loc_currency,
+                'show_equiv'  => 0,
+                'stock'       => (float) $c['qty'],
+                'is_combo'    => 1,
+                'combo_id'    => $c['combo_id'],
+                'combo_items' => $c['items'],
+            );
+            $combo_count++;
+        }
     }
 
     $total = WS_Stock::count_stock_rows( array(
         'location_ids' => $loc_ids,
         'search'       => $search,
-    ) );
+    ) ) + $combo_count;
 
     wp_send_json_success( array( 'data' => $out, 'total' => $total ) );
 }

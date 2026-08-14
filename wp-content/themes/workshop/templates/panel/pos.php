@@ -422,6 +422,9 @@ document.addEventListener('alpine:init', () => {
         cartOpen: false,
         currentLocationId: null,
         currentLocationName: '',
+        // Moneda de la ubicación actual: el POS cobra en la moneda del PV
+        // (los precios ya llegan convertidos) y la venta se guarda en ella.
+        currentLocationCurrency: '',
         // Datos de pago
         cashAmount: 0,
         transferAmount: 0,
@@ -477,6 +480,7 @@ document.addEventListener('alpine:init', () => {
                     const found = this.locations.find(l => String(l.id) === String(saved));
                     this.currentLocationId = found ? found.id : this.locations[0].id;
                     this.currentLocationName = (found || this.locations[0]).name;
+                    this.currentLocationCurrency = (found || this.locations[0]).currency || WS.currency || '€';
                     localStorage.setItem('ws_current_location_id', this.currentLocationId);
                     this.loadCashStatus();
                     this.loadProducts();
@@ -489,6 +493,7 @@ document.addEventListener('alpine:init', () => {
         changeLocation() {
             const loc = this.locations.find(l => l.id === this.currentLocationId);
             this.currentLocationName = loc ? loc.name : '';
+            this.currentLocationCurrency = (loc && loc.currency) || WS.currency || '€';
             localStorage.setItem('ws_current_location_id', this.currentLocationId);
             this.cart = [];
             this.clearPayment();
@@ -860,6 +865,7 @@ document.addEventListener('alpine:init', () => {
             } else {
                 this.cart.push({
                     product_id: product.id,
+                    combo_id: product.combo_id || 0,
                     product_name: product.name,
                     price: product.sale_price,
                     cost_price: product.cost_price || 0,
@@ -991,7 +997,7 @@ document.addEventListener('alpine:init', () => {
                 customer_name: (needsTransfer && this.payCustomerName.trim()) ? this.payCustomerName : (this.customer?.name || '<?php esc_html_e( 'Venta general', 'workshop' ); ?>'),
                 customer_doc: needsTransfer ? this.payCustomerDoc : '',
                 customer_phone: needsTransfer ? this.payCustomerPhone : (this.customer?.phone || ''),
-                currency: WS.currency || '€',
+                currency: this.currentLocationCurrency || WS.currency || '€',
                 subtotal: this.subtotal,
                 discount: this.discount,
                 total: this.total,
@@ -1002,6 +1008,7 @@ document.addEventListener('alpine:init', () => {
                 status: 'completed',
                 items: JSON.stringify(this.cart.map(item => ({
                     product_id: item.product_id,
+                    combo_id: item.combo_id || 0,
                     product_name: item.product_name,
                     qty: item.qty,
                     price: item.price,
@@ -1089,7 +1096,7 @@ document.addEventListener('alpine:init', () => {
 
         formatPrice(price) {
             const val = Number(price) || 0;
-            const sym = WS.currency || '';
+            const sym = this.currentLocationCurrency || WS.currency || '';
             if (/^[A-Z]{3}$/.test(sym)) {
                 try {
                     return new Intl.NumberFormat('es-ES', { style: 'currency', currency: sym }).format(val);

@@ -580,12 +580,16 @@ class WS_CRUD {
             : '';
 
         // Configuración de la tienda pública (JSON): moneda de visualización
-        // ('' = la de la ubicación) y qué tasa mostrar ('', 'none' o moneda).
+        // ('' = la de la ubicación), qué tasa mostrar ('', 'none' o moneda) y
+        // si los precios se muestran del producto o convertidos a la ubicación.
         $store_settings = array();
         $raw_ss = isset( $data['store_settings'] ) ? json_decode( wp_unslash( (string) $data['store_settings'] ), true ) : null;
         if ( is_array( $raw_ss ) ) {
-            $store_settings['currency'] = sanitize_text_field( (string) ( $raw_ss['currency'] ?? '' ) );
-            $store_settings['rate']     = sanitize_text_field( (string) ( $raw_ss['rate'] ?? '' ) );
+            $store_settings['currency']    = sanitize_text_field( (string) ( $raw_ss['currency'] ?? '' ) );
+            $store_settings['rate']        = sanitize_text_field( (string) ( $raw_ss['rate'] ?? '' ) );
+            $store_settings['price_source'] = in_array( $raw_ss['price_source'] ?? '', array( 'product', 'location' ), true )
+                ? $raw_ss['price_source']
+                : 'location';
         }
 
         $fields = array(

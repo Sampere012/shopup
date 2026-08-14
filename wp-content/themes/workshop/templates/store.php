@@ -9,6 +9,8 @@ defined( 'ABSPATH' ) || exit;
 
 $location = get_query_var( 'ws_location' );
 $products = WS_Stock::stock_rows( array( 'location_id' => $location->id ) );
+// Combos activos como ítems del catálogo (stock derivado de sus componentes).
+$products = array_merge( $products, WS_Combos::catalog_rows( $location->id ) );
 $payments = ws_payment_methods( $location->id );
 
 // Datos de monedas/tasas/WhatsApp para la tienda.
@@ -26,6 +28,16 @@ if ( ! empty( $location->store_settings ) ) {
 }
 $store_display_currency = sanitize_text_field( (string) ( $store_settings['currency'] ?? '' ) );
 if ( '' === $store_display_currency ) {
+    $store_display_currency = $store_currency;
+}
+// Precio a mostrar: 'product' = el precio NATIVO del producto (su moneda);
+// 'location' = el precio convertido a la moneda de la tienda (la ubicación).
+// Con 'product' no se adapta nada (displayCurrency se deja vacío).
+$store_price_source = sanitize_text_field( (string) ( $store_settings['price_source'] ?? '' ) );
+if ( 'product' === $store_price_source ) {
+    $store_display_currency = '';
+} elseif ( 'location' !== $store_price_source ) {
+    // Sin configurar: comportamiento actual = convertir a la moneda de la ubicación.
     $store_display_currency = $store_currency;
 }
 $store_rate_mode = sanitize_text_field( (string) ( $store_settings['rate'] ?? '' ) );
@@ -468,8 +480,30 @@ window.WS_STORE_DATA = <?php echo wp_json_encode( array(
     'whatsappNumbers' => $ws_store_was,
     'categories' => $ws_store_categories,
     'products' => array_map( function ( $r ) {
+        // Combos (filas de WS_Combos::catalog_rows): id negativo, foto propia,
+        // precio (manual o auto) en la moneda del combo y stock derivado.
+        if ( ! empty( $r['is_combo'] ) ) {
+            return array(
+                'id'           => (int) $r['id'],
+                'combo_id'     => (int) $r['combo_id'],
+                'name'         => $r['name'],
+                'barcode'      => '',
+                'image'        => ! empty( $r['photo'] ) ? ws_image_url( $r['photo'] ) : '',
+                'description'  => '',
+                'category_id'  => 0,
+                'category'     => __( 'Combo', 'workshop' ),
+                'price'        => (float) $r['price'],
+                'transfer_pct' => 0,
+                'currency'     => $r['currency'],
+                'show_equiv'   => 0,
+                'qty'          => (float) $r['qty'],
+                'is_combo'     => 1,
+                'combo_items'  => $r['items'],
+            );
+        }
         return array(
             'id'           => (int) $r->product_id,
+            'combo_id'     => 0,
             'name'         => $r->name,
             'barcode'      => $r->barcode,
             'image'        => $r->image ? ws_image_url( $r->image ) : '',
@@ -481,6 +515,8 @@ window.WS_STORE_DATA = <?php echo wp_json_encode( array(
             'currency'     => $r->currency,
             'show_equiv'   => (int) ( $r->show_equiv ?? 1 ),
             'qty'          => (float) $r->qty,
+            'is_combo'     => 0,
+            'combo_items'  => array(),
         );
     }, $products ),
 ) ); ?>;

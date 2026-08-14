@@ -61,6 +61,34 @@ function ws_db_tables() {
             KEY location_b (location_b)
         ) {charset};",
 
+        // Combos: paquetes de productos (1 combo contiene x, y, z con sus
+        // cantidades). El precio puede ser manual o auto-calculado desde los
+        // precios de sus productos. El stock del combo se DERIVA del stock de
+        // sus componentes (min de floor(stock / cantidad)).
+        'combos' => "CREATE TABLE {prefix}ws_combos (
+            id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            name VARCHAR(255) NOT NULL,
+            photo VARCHAR(255) NOT NULL DEFAULT '',
+            price_mode VARCHAR(10) NOT NULL DEFAULT 'auto',
+            price DECIMAL(12,2) NOT NULL DEFAULT 0,
+            currency VARCHAR(10) NOT NULL DEFAULT '€',
+            active TINYINT(1) NOT NULL DEFAULT 1,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY active (active)
+        ) {charset};",
+
+        'combo_items' => "CREATE TABLE {prefix}ws_combo_items (
+            id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            combo_id BIGINT(20) UNSIGNED NOT NULL,
+            product_id BIGINT(20) UNSIGNED NOT NULL,
+            qty DECIMAL(12,2) NOT NULL DEFAULT 1,
+            PRIMARY KEY (id),
+            UNIQUE KEY combo_product (combo_id, product_id),
+            KEY product_id (product_id)
+        ) {charset};",
+
         'suppliers' => "CREATE TABLE {prefix}ws_suppliers (
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
             name VARCHAR(255) NOT NULL,
@@ -150,6 +178,7 @@ function ws_db_tables() {
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
             order_id BIGINT(20) UNSIGNED NOT NULL,
             product_id BIGINT(20) UNSIGNED NOT NULL,
+            combo_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
             product_name VARCHAR(255) NOT NULL DEFAULT '',
             qty DECIMAL(12,2) NOT NULL DEFAULT 0,
             price DECIMAL(12,2) NOT NULL DEFAULT 0,
@@ -354,7 +383,8 @@ function ws_db_tables() {
         'pos_sale_items' => "CREATE TABLE {prefix}ws_pos_sale_items (
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
             sale_id BIGINT(20) UNSIGNED NOT NULL,
-            product_id BIGINT(20) UNSIGNED NOT NULL,
+            product_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
+            combo_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
             product_name VARCHAR(255) NOT NULL DEFAULT '',
             qty DECIMAL(12,2) NOT NULL DEFAULT 0,
             price DECIMAL(12,2) NOT NULL DEFAULT 0,
@@ -946,6 +976,51 @@ function ws_db_migrate() {
             $sql = str_replace( '{prefix}', $lk_prefix, $sql );
             $sql = str_replace( '{charset}', $wpdb->get_charset_collate(), $sql );
             dbDelta( $sql );
+        }
+    }
+
+    // Combos: se crea la tabla por defecto y la de cada negocio con slug
+    // (igual que stock_counts/location_links, dbDelta no altera las tablas ya
+    // creadas). La columna combo_id de order_items/pos_sale_items se añade
+    // con ALTER si falta.
+    require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+    $ws_combo_suffixes = array( '' );
+    if ( class_exists( 'WS_Business' ) && $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', WS_Business::table() ) ) === WS_Business::table() ) {
+        foreach ( WS_Business::all() as $ws_cb ) {
+            $cb_slug = (string) ( $ws_cb->slug ?? '' );
+            if ( '' !== $cb_slug ) {
+                $ws_combo_suffixes[] = ws_biz_table_suffix( $cb_slug );
+            }
+        }
+    }
+    foreach ( $ws_combo_suffixes as $ws_combo_suffix ) {
+        $combo_prefix = '' !== $ws_combo_suffix
+            ? $wpdb->prefix . WS_TABLE_PREFIX . $ws_combo_suffix . '_'
+            : $wpdb->prefix;
+        $combo_t = ws_table_for( $ws_combo_suffix, 'combos' );
+        if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $combo_t ) ) !== $combo_t ) {
+            $sql = ws_db_tables()['combos'];
+            $sql = str_replace( '{prefix}', $combo_prefix, $sql );
+            $sql = str_replace( '{charset}', $wpdb->get_charset_collate(), $sql );
+            dbDelta( $sql );
+        }
+        $ci_t = ws_table_for( $ws_combo_suffix, 'combo_items' );
+        if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $ci_t ) ) !== $ci_t ) {
+            $sql = ws_db_tables()['combo_items'];
+            $sql = str_replace( '{prefix}', $combo_prefix, $sql );
+            $sql = str_replace( '{charset}', $wpdb->get_charset_collate(), $sql );
+            dbDelta( $sql );
+        }
+        // combo_id en los ítems de pedidos y ventas POS (para ventas de combos).
+        foreach ( array( 'order_items', 'pos_sale_items' ) as $ws_ci_tbl ) {
+            $ws_ci_t = ws_table_for( $ws_combo_suffix, $ws_ci_tbl );
+            if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $ws_ci_t ) ) !== $ws_ci_t ) {
+                continue;
+            }
+            $ws_ci_cols = $wpdb->get_col( "SHOW COLUMNS FROM {$ws_ci_t}", 0 );
+            if ( ! in_array( 'combo_id', $ws_ci_cols, true ) ) {
+                $wpdb->query( "ALTER TABLE {$ws_ci_t} ADD COLUMN combo_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0 AFTER product_id" );
+            }
         }
     }
 
