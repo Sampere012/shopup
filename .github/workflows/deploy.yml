@@ -6,13 +6,83 @@ on:
   workflow_dispatch:
 
 jobs:
-  ftp-deploy:
+  validate:
+    name: Validate before deploy (Vercel-style gate)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Deploy wp-content to InfinityFree
+      - name: PHP syntax check (php -l)
+        run: |
+          set -euo pipefail
+          failed=0
+          while IFS= read -r f; do
+            if ! php -l "$f" > /tmp/php_err 2>&1; then
+              echo "::error::PHP ERROR en $f"
+              cat /tmp/php_err
+              failed=1
+            fi
+          done < <(find wp-content -type f -name '*.php')
+          exit $failed
+
+      - name: JavaScript syntax check (node --check)
+        run: |
+          set -euo pipefail
+          failed=0
+          while IFS= read -r f; do
+            if ! node --check "$f" > /tmp/js_err 2>&1; then
+              echo "::error::JS ERROR en $f"
+              cat /tmp/js_err
+              failed=1
+            fi
+          done < <(find wp-content -type f -name '*.js')
+          if ! node --check sw.prod.js > /tmp/js_err 2>&1; then
+            echo "::error::JS ERROR en sw.prod.js"
+            cat /tmp/js_err
+            failed=1
+          fi
+          exit $failed
+
+      - name: JSON syntax check
+        run: |
+          set -euo pipefail
+          failed=0
+          while IFS= read -r f; do
+            if ! node -e 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))' "$f" > /tmp/json_err 2>&1; then
+              echo "::error::JSON ERROR en $f"
+              cat /tmp/json_err
+              failed=1
+            fi
+          done < <(echo "manifest.json"; find wp-content -type f -name '*.json')
+          exit $failed
+
+      - name: Report validation errors (GitHub Issue)
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          MSG=$(git log -1 --format='%s')
+          gh issue create \
+            --title "Deploy bloqueado: errores de validación en ${{ github.sha }}" \
+            --body "El deploy **no se ejecutó** (validación fallida, igual que Vercel). El sitio sigue con la versión anterior.$(printf '\n\n')- Commit: \`${{ github.sha }}\`$(printf '\n')- Mensaje: $MSG$(printf '\n')- Errores completos: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            || echo "::warning::No se pudo crear la issue (¿issues desactivados?); revisar los logs del run."
+
+  deploy:
+    name: Deploy + health check + rollback
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Guardar commit anterior y mensaje
+        id: info
+        run: |
+          echo "prev=$(git rev-parse HEAD~1 2>/dev/null || echo none)" >> "$GITHUB_OUTPUT"
+          echo "msg=$(git log -1 --format='%s')" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy wp-content a InfinityFree
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           server: ${{ secrets.FTP_HOST }}
@@ -20,17 +90,15 @@ jobs:
           password: ${{ secrets.FTP_PASSWORD }}
           port: 21
           local-dir: ./wp-content/
-          server-dir: ${{ secrets.FTP_REMOTE_DIR }}/
+          server-dir: ${{ secrets.FTP_REMOTE_DIR }}/wp-content/
           dangerous-clean-slate: false
 
-      - name: Deploy root files (sw.js, manifest, errors, .htaccess)
+      - name: Deploy archivos raiz (sw.js, manifest, .htaccess, errors)
         env:
           FTP_HOST: ${{ secrets.FTP_HOST }}
           FTP_USER: ${{ secrets.FTP_USERNAME }}
           FTP_PASS: ${{ secrets.FTP_PASSWORD }}
         run: |
-          # Sin lftp ni apt-get: curl (preinstalado en el runner) sube por FTP
-          # plano. --ftp-create-dirs crea errors/ automáticamente si no existe.
           set -euo pipefail
           shopt -s nullglob
           upload() {
@@ -38,17 +106,76 @@ jobs:
               --user "${FTP_USER}:${FTP_PASS}" --ftp-create-dirs \
               -T "$1" "ftp://${FTP_HOST}/$2"
           }
-          # .htaccess de producción + archivos PWA en la raíz (/htdocs).
-          # sw.prod.js es la versión del Service Worker para producción (sin el
-          # prefijo /workshop de la instalación local) y se sube como sw.js.
           upload sw.prod.js    htdocs/sw.js
           upload manifest.json htdocs/manifest.json
           upload htaccess.prod htdocs/.htaccess
-          # Páginas de error personalizadas.
           for f in errors/*.html; do
             upload "${f}" "htdocs/errors/$(basename "${f}")"
           done
 
-      - name: Trigger URL migration on production
+      - name: Health check tras el deploy (fallo = 5xx = rollback)
+        id: health
+        continue-on-error: true
+        run: bash .github/scripts/healthcheck.sh
+
+      # ---------------- Rollback (quedarse con la versión anterior) ----------------
+      - name: Restaurar version anterior en el worktree
+        if: steps.health.outcome == 'failure'
         run: |
-          curl -sS -o /dev/null -w "HTTP %{http_code}\n" --max-time 60 "http://shopup.site.je/" || true
+          PREV="${{ steps.info.outputs.prev }}"
+          if [ "$PREV" = "none" ]; then
+            echo "::error::No hay commit anterior para hacer rollback"
+            exit 1
+          fi
+          git checkout -- . 2>/dev/null || true
+          git checkout "$PREV" -- wp-content sw.prod.js manifest.json htaccess.prod errors
+          echo "Version restaurada: $(git log -1 --format='%h %s' "$PREV")"
+
+      - name: Rollback wp-content (version anterior)
+        if: steps.health.outcome == 'failure'
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_HOST }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          port: 21
+          local-dir: ./wp-content/
+          server-dir: ${{ secrets.FTP_REMOTE_DIR }}/wp-content/
+          dangerous-clean-slate: false
+
+      - name: Rollback archivos raiz (version anterior)
+        if: steps.health.outcome == 'failure'
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USERNAME }}
+          FTP_PASS: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          upload() {
+            curl -sS --connect-timeout 30 --max-time 90 \
+              --user "${FTP_USER}:${FTP_PASS}" --ftp-create-dirs \
+              -T "$1" "ftp://${FTP_HOST}/$2"
+          }
+          upload sw.prod.js    htdocs/sw.js
+          upload manifest.json htdocs/manifest.json
+          upload htaccess.prod htdocs/.htaccess
+          for f in errors/*.html; do
+            upload "${f}" "htdocs/errors/$(basename "${f}")"
+          done
+
+      - name: Health check tras el rollback
+        if: steps.health.outcome == 'failure'
+        id: rbhealth
+        continue-on-error: true
+        run: bash .github/scripts/healthcheck.sh
+
+      - name: Reportar deploy roto (GitHub Issue)
+        if: steps.health.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create \
+            --title "Deploy roto: la web devolvio 500 — se aplico rollback" \
+            --body "El deploy de \`${{ github.sha }}\` provocó un error (HTTP 5xx) en producción en:${{ env.HEALTH_FAILED }}.$(printf '\n\n')Se aplicó **rollback** a la versión anterior (\`${{ steps.info.outputs.prev }}\`), por lo que la web vuelve a funcionar con el cambio previo.$(printf '\n\n')- Commit roto: \`${{ github.sha }}\` — ${{ steps.info.outputs.msg }}$(printf '\n')- Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            || echo "::warning::No se pudo crear la issue (¿issues desactivados?); revisar los logs del run."
