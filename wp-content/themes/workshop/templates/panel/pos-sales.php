@@ -265,12 +265,13 @@ $can_view = ws_can( 'pos_view' );
                     <th><?php esc_html_e( 'Cuadrado', 'workshop' ); ?></th>
                     <th><?php esc_html_e( 'Diferencia', 'workshop' ); ?></th>
                     <th><?php esc_html_e( 'Estado', 'workshop' ); ?></th>
+                    <th><?php esc_html_e( 'Acciones', 'workshop' ); ?></th>
                 </tr>
             </thead>
             <tbody>
                 <template x-if="cashLoading">
                     <tr>
-                        <td colspan="10" class="ws-text-center">
+                        <td colspan="11" class="ws-text-center">
                             <i class="fa-solid fa-spinner fa-spin"></i>
                             <?php esc_html_e( 'Cargando...', 'workshop' ); ?>
                         </td>
@@ -278,7 +279,7 @@ $can_view = ws_can( 'pos_view' );
                 </template>
                 <template x-if="!cashLoading && cashHistory.length === 0">
                     <tr>
-                        <td colspan="10" class="ws-text-center">
+                        <td colspan="11" class="ws-text-center">
                             <?php esc_html_e( 'No hay arqueos de caja', 'workshop' ); ?>
                         </td>
                     </tr>
@@ -299,10 +300,67 @@ $can_view = ws_can( 'pos_view' );
                         <td>
                             <span class="ws-badge" :class="cash.status === 'closed' ? 'ws-badge-completed' : 'ws-badge-pending'" x-text="cash.status === 'closed' ? '<?php esc_html_e( 'Cerrada', 'workshop' ); ?>' : '<?php esc_html_e( 'Abierta', 'workshop' ); ?>'"></span>
                         </td>
+                        <td>
+                            <template x-if="cash.status === 'closed'">
+                                <button class="ws-btn-icon" title="<?php esc_attr_e( 'Ver cuadre de inventario (físico vs virtual)', 'workshop' ); ?>" @click="viewCashCounts(cash)">
+                                    <i class="fa-solid fa-list-check"></i>
+                                </button>
+                            </template>
+                        </td>
                     </tr>
                 </template>
             </tbody>
         </table>
+    </div>
+
+    <!-- Modal: cuadre de inventario de un cierre (físico vs virtual) -->
+    <div class="ws-modal" x-show="showCountsModal" x-cloak x-transition @keydown.escape.window="showCountsModal = false">
+        <div class="ws-modal-backdrop" @click="showCountsModal = false"></div>
+        <div class="ws-modal-box ws-modal-lg">
+            <div class="ws-modal-head">
+                <h3><i class="fa-solid fa-list-check"></i> <?php esc_html_e( 'Cuadre de inventario', 'workshop' ); ?> #<span x-text="countsRegisterId"></span></h3>
+                <button class="ws-cart-close" @click="showCountsModal = false"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="ws-modal-body">
+                <template x-if="countsLoading">
+                    <p class="ws-empty"><i class="fa-solid fa-spinner fa-spin"></i> <?php esc_html_e( 'Cargando cuadre…', 'workshop' ); ?></p>
+                </template>
+                <template x-if="!countsLoading && countsItems.length === 0">
+                    <p class="ws-empty"><?php esc_html_e( 'Este cierre no registró cuadre de inventario.', 'workshop' ); ?></p>
+                </template>
+                <template x-if="!countsLoading && countsItems.length > 0">
+                    <div>
+                        <div class="ws-cash-cuadre-summary" style="margin-bottom:12px">
+                            <span><i class="fa-solid fa-circle-check ws-text-success"></i> <?php esc_html_e( 'Cuadrados', 'workshop' ); ?>: <b x-text="countsSummary.count - countsSummary.sobrante - countsSummary.faltante"></b></span>
+                            <span><i class="fa-solid fa-plus-circle ws-text-success"></i> <?php esc_html_e( 'Sobrantes', 'workshop' ); ?>: <b x-text="countsSummary.sobrante"></b></span>
+                            <span><i class="fa-solid fa-minus-circle ws-text-danger"></i> <?php esc_html_e( 'Faltantes', 'workshop' ); ?>: <b x-text="countsSummary.faltante"></b></span>
+                        </div>
+                        <table class="ws-items-table">
+                            <thead>
+                                <tr>
+                                    <th><?php esc_html_e( 'Producto', 'workshop' ); ?></th>
+                                    <th><?php esc_html_e( 'Virtual (app)', 'workshop' ); ?></th>
+                                    <th><?php esc_html_e( 'Físico (contado)', 'workshop' ); ?></th>
+                                    <th><?php esc_html_e( 'Diferencia', 'workshop' ); ?></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="c in countsItems" :key="c.product_id">
+                                    <tr>
+                                        <td x-text="c.product_name"></td>
+                                        <td x-text="c.virtual_qty"></td>
+                                        <td x-text="c.physical_qty"></td>
+                                        <td>
+                                            <span class="ws-badge" :class="c.diff > 0.004 ? 'ws-badge-completed' : (c.diff < -0.004 ? 'ws-badge-cancelled' : 'ws-badge-pending')" x-text="(c.diff > 0 ? '+' : '') + c.diff"></span>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                </template>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -335,6 +393,12 @@ document.addEventListener('alpine:init', () => {
         cashDateFrom: '',
         cashDateTo: '',
         cashStatusFilter: '',
+        // Cuadre de inventario de un cierre (físico vs virtual)
+        showCountsModal: false,
+        countsLoading: false,
+        countsRegisterId: 0,
+        countsItems: [],
+        countsSummary: { count: 0, sobrante: 0, faltante: 0 },
 
         init() {
             this.setTodayDates();
@@ -371,6 +435,27 @@ document.addEventListener('alpine:init', () => {
                 console.error('Error cargando arqueo:', error);
             }
             this.cashLoading = false;
+        },
+
+        // Abre el detalle del cuadre de inventario de un cierre cerrado:
+        // compara el conteo FÍSICO que se ingresó al cerrar con el stock
+        // VIRTUAL que manejaba la app en ese momento, producto por producto.
+        async viewCashCounts(cash) {
+            this.countsRegisterId = cash.id || 0;
+            this.countsItems = [];
+            this.countsSummary = { count: 0, sobrante: 0, faltante: 0 };
+            this.showCountsModal = true;
+            this.countsLoading = true;
+            try {
+                const response = await $('ws_pos_cash_counts_get', { register_id: cash.id });
+                if (response.success) {
+                    this.countsItems = (response.data.data && response.data.data.items) || [];
+                    this.countsSummary = (response.data.data && response.data.data.summary) || this.countsSummary;
+                }
+            } catch (error) {
+                console.error('Error cargando cuadre:', error);
+            }
+            this.countsLoading = false;
         },
 
         formatDateTime(date) {

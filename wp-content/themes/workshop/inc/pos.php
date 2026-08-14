@@ -207,15 +207,26 @@ class WS_POS {
         
         // Insertar nuevos items
         foreach ( $items as $item ) {
+            // El costo se guarda en el momento de la venta: permite calcular la
+            // ganancia real (precio − costo) × qty aunque el costo del producto
+            // cambie después. Si no llega, se intenta el costo actual del producto.
+            $cost = (float) ( $item['cost_price'] ?? 0 );
+            if ( $cost <= 0 && ! empty( $item['product_id'] ) ) {
+                $p_cost = $wpdb->get_var( $wpdb->prepare(
+                    "SELECT cost_price FROM " . self::table( 'products' ) . " WHERE id = %d", (int) $item['product_id']
+                ) );
+                $cost = (float) ( $p_cost ?? 0 );
+            }
             $wpdb->insert( $items_table, array(
                 'sale_id' => $sale_id,
                 'product_id' => (int) ($item['product_id'] ?? 0),
                 'product_name' => sanitize_text_field( $item['product_name'] ?? '' ),
                 'qty' => (float) ($item['qty'] ?? 0),
                 'price' => (float) ($item['price'] ?? 0),
+                'cost_price' => $cost,
                 'discount' => (float) ($item['discount'] ?? 0),
                 'subtotal' => (float) ($item['subtotal'] ?? 0),
-            ), array( '%d', '%d', '%s', '%f', '%f', '%f', '%f' ) );
+            ), array( '%d', '%d', '%s', '%f', '%f', '%f', '%f', '%f' ) );
         }
     }
 

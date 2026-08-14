@@ -265,6 +265,13 @@ function ws_reports_utilities( $filters ) {
 	$by_loc_by_month = array(); // ym => [ loc_id => total ].
 	$by_loc_total    = array(); // loc_id => total de ingresos del período.
 
+	// GANANCIA real por costo: para cada item vendido, (precio de venta − costo)
+	// × cantidad. El costo se guarda en el item en el momento de la venta
+	// (cost_price), así el resultado no cambia aunque el producto se reprecie.
+	$profit_by_month      = array(); // ym => ganancia total.
+	$profit_loc_by_month  = array(); // ym => [ loc_id => ganancia ].
+	$profit_by_loc_total  = array(); // loc_id => ganancia del período.
+
 	if ( $loc_ids ) {
 		$order_inc = $wpdb->get_results( $wpdb->prepare(
 			"SELECT DATE_FORMAT(created_at, '%Y-%m') AS ym, location_id, SUM(total) AS total
@@ -286,6 +293,57 @@ function ws_reports_utilities( $filters ) {
 			$income_by_month[ $ym ]                      = (float) ( $income_by_month[ $ym ] ?? 0 ) + (float) $row->total;
 			$by_loc_by_month[ $ym ][ $loc_id ]           = (float) ( $by_loc_by_month[ $ym ][ $loc_id ] ?? 0 ) + (float) $row->total;
 			$by_loc_total[ $loc_id ]                     = (float) ( $by_loc_total[ $loc_id ] ?? 0 ) + (float) $row->total;
+		}
+
+		// Ganancia por costo de ventas POS: items unidos a la venta completada.
+		$pos_items_t = ws_table_name( 'pos_sale_items' );
+		if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $pos_items_t ) ) ) === $pos_items_t ) {
+			$sit_cols = $wpdb->get_col( "SHOW COLUMNS FROM {$pos_items_t}", 0 );
+			if ( in_array( 'cost_price', $sit_cols, true ) ) {
+				$pos_profit = $wpdb->get_results( $wpdb->prepare(
+					"SELECT DATE_FORMAT(s.created_at, '%Y-%m') AS ym, s.location_id,
+					        SUM((i.price - i.cost_price) * i.qty) AS profit
+					 FROM {$pos_items_t} i
+					 INNER JOIN {$pos_t} s ON s.id = i.sale_id
+					 WHERE s.location_id IN ({$ph}) AND s.status = 'completed' AND s.created_at >= %s
+					 GROUP BY ym, s.location_id",
+					...array_merge( $args, array( $since ) )
+				) );
+				foreach ( $pos_profit as $row ) {
+					$loc_id = (int) $row->location_id;
+					$ym     = (string) $row->ym;
+					$p      = (float) $row->profit;
+					$profit_by_month[ $ym ]            = ( $profit_by_month[ $ym ] ?? 0 ) + $p;
+					$profit_loc_by_month[ $ym ][ $loc_id ] = ( $profit_loc_by_month[ $ym ][ $loc_id ] ?? 0 ) + $p;
+					$profit_by_loc_total[ $loc_id ]    = ( $profit_by_loc_total[ $loc_id ] ?? 0 ) + $p;
+				}
+			}
+		}
+
+		// Ganancia por costo de PEDIDOS: el item no guarda costo, así que se
+		// toma el costo ACTUAL del producto (lo más fiel disponible) y si el
+		// producto ya no existe, se asume 0 de costo (ganancia = precio).
+		$order_items_t = ws_table_name( 'order_items' );
+		$products_t    = ws_table_name( 'products' );
+		if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $order_items_t ) ) ) === $order_items_t ) {
+			$order_profit = $wpdb->get_results( $wpdb->prepare(
+				"SELECT DATE_FORMAT(o.created_at, '%Y-%m') AS ym, o.location_id,
+				        SUM(oi.qty * (oi.price - COALESCE(p.cost_price, 0))) AS profit
+				 FROM {$order_items_t} oi
+				 INNER JOIN {$orders_t} o ON o.id = oi.order_id
+				 LEFT JOIN {$products_t} p ON p.id = oi.product_id
+				 WHERE o.location_id IN ({$ph}) AND o.status IN ('accepted','completed') AND o.created_at >= %s
+				 GROUP BY ym, o.location_id",
+				...array_merge( $args, array( $since ) )
+			) );
+			foreach ( $order_profit as $row ) {
+				$loc_id = (int) $row->location_id;
+				$ym     = (string) $row->ym;
+				$p      = (float) $row->profit;
+				$profit_by_month[ $ym ]            = ( $profit_by_month[ $ym ] ?? 0 ) + $p;
+				$profit_loc_by_month[ $ym ][ $loc_id ] = ( $profit_loc_by_month[ $ym ][ $loc_id ] ?? 0 ) + $p;
+				$profit_by_loc_total[ $loc_id ]    = ( $profit_by_loc_total[ $loc_id ] ?? 0 ) + $p;
+			}
 		}
 	}
 
@@ -331,20 +389,24 @@ function ws_reports_utilities( $filters ) {
 	sort( $yms );
 
 	$months = array();
-	$totals = array( 'income' => 0.0, 'expenses' => 0.0, 'utility' => 0.0 );
+	$totals = array( 'income' => 0.0, 'expenses' => 0.0, 'profit' => 0.0, 'utility' => 0.0 );
 	foreach ( $yms as $ym ) {
 		$income   = (float) ( $income_by_month[ $ym ] ?? 0 );
 		$expenses = (float) ( $exp_by_month[ $ym ] ?? 0 );
+		$profit   = (float) ( $profit_by_month[ $ym ] ?? 0 );
 		$months[] = array(
 			'ym'       => $ym,
 			'label'    => ws_month_label( $ym ),
 			'income'   => $income,
 			'expenses' => $expenses,
+			'profit'   => $profit,
 			'utility'  => $income - $expenses,
 			'by_loc'   => $by_loc_by_month[ $ym ] ?? array(),
+			'profit_by_loc' => $profit_loc_by_month[ $ym ] ?? array(),
 		);
 		$totals['income']   += $income;
 		$totals['expenses'] += $expenses;
+		$totals['profit']   += $profit;
 		$totals['utility']  += $income - $expenses;
 	}
 
@@ -354,6 +416,7 @@ function ws_reports_utilities( $filters ) {
 		'by_loc'    => $by_loc_total,
 		'exp_by_loc'=> $exp_by_loc_total,
 		'util_by_loc' => $util_by_loc_total,
+		'profit_by_loc' => $profit_by_loc_total,
 		'locations' => $filters['locations'],
 	);
 }
@@ -703,12 +766,12 @@ function ws_reports_build_sheets( $filters, $data ) {
 	$utilities = ws_reports_utilities( $filters );
 	if ( ! empty( $utilities['months'] ) ) {
 		$util_rows = array(
-			array( __( 'Mes', 'workshop' ), __( 'Ingresos', 'workshop' ), __( 'Gastos', 'workshop' ), __( 'Utilidad', 'workshop' ) ),
+			array( __( 'Mes', 'workshop' ), __( 'Ingresos', 'workshop' ), __( 'Ganancia (venta − costo)', 'workshop' ), __( 'Gastos', 'workshop' ), __( 'Utilidad', 'workshop' ) ),
 		);
 		foreach ( array_reverse( $utilities['months'] ) as $u ) {
-			$util_rows[] = array( $u['label'], $money( $u['income'] ), $money( $u['expenses'] ), $money( $u['utility'] ) );
+			$util_rows[] = array( $u['label'], $money( $u['income'] ), $money( $u['profit'] ), $money( $u['expenses'] ), $money( $u['utility'] ) );
 		}
-		$util_rows[] = array( __( 'Total del período', 'workshop' ), $money( $utilities['totals']['income'] ), $money( $utilities['totals']['expenses'] ), $money( $utilities['totals']['utility'] ) );
+		$util_rows[] = array( __( 'Total del período', 'workshop' ), $money( $utilities['totals']['income'] ), $money( $utilities['totals']['profit'] ), $money( $utilities['totals']['expenses'] ), $money( $utilities['totals']['utility'] ) );
 		$sheets[ __( 'Utilidades', 'workshop' ) ] = $util_rows;
 	}
 	$util_locs = array_unique( array_merge(
@@ -718,7 +781,7 @@ function ws_reports_build_sheets( $filters, $data ) {
 	sort( $util_locs );
 	if ( $util_locs ) {
 		$utilloc_rows = array(
-			array( __( 'Punto de venta', 'workshop' ), __( 'Ingresos', 'workshop' ), __( 'Gastos', 'workshop' ), __( 'Utilidad', 'workshop' ) ),
+			array( __( 'Punto de venta', 'workshop' ), __( 'Ingresos', 'workshop' ), __( 'Ganancia (venta − costo)', 'workshop' ), __( 'Gastos', 'workshop' ), __( 'Utilidad', 'workshop' ) ),
 		);
 		foreach ( $util_locs as $lid ) {
 			$lname = '#' . $lid;
@@ -730,7 +793,8 @@ function ws_reports_build_sheets( $filters, $data ) {
 			}
 			$inc = (float) ( $utilities['by_loc'][ $lid ] ?? 0 );
 			$exp = (float) ( $utilities['exp_by_loc'][ $lid ] ?? 0 );
-			$utilloc_rows[] = array( $lname, $money( $inc ), $money( $exp ), $money( $inc - $exp ) );
+			$prf = (float) ( $utilities['profit_by_loc'][ $lid ] ?? 0 );
+			$utilloc_rows[] = array( $lname, $money( $inc ), $money( $prf ), $money( $exp ), $money( $inc - $exp ) );
 		}
 		$sheets[ __( 'Utilidad por punto de venta', 'workshop' ) ] = $utilloc_rows;
 	}

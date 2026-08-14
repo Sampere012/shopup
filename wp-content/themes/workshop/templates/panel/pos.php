@@ -821,7 +821,7 @@ document.addEventListener('alpine:init', () => {
                 if (existing) {
                     existing.qty = Math.min((Number(existing.qty) || 0) + qty, Number(p.stock));
                 } else {
-                    this.cart.push({ product_id: p.id, product_name: p.name, price: p.sale_price, qty: qty, stock: p.stock });
+                    this.cart.push({ product_id: p.id, product_name: p.name, price: p.sale_price, cost_price: p.cost_price || 0, qty: qty, stock: p.stock });
                 }
                 added++;
             });
@@ -862,6 +862,7 @@ document.addEventListener('alpine:init', () => {
                     product_id: product.id,
                     product_name: product.name,
                     price: product.sale_price,
+                    cost_price: product.cost_price || 0,
                     qty: 1,
                     stock: product.stock
                 });
@@ -1004,6 +1005,7 @@ document.addEventListener('alpine:init', () => {
                     product_name: item.product_name,
                     qty: item.qty,
                     price: item.price,
+                    cost_price: item.cost_price || 0,
                     discount: 0,
                     subtotal: item.qty * item.price
                 })))

@@ -343,6 +343,7 @@ function ws_db_tables() {
             product_name VARCHAR(255) NOT NULL DEFAULT '',
             qty DECIMAL(12,2) NOT NULL DEFAULT 0,
             price DECIMAL(12,2) NOT NULL DEFAULT 0,
+            cost_price DECIMAL(12,2) NOT NULL DEFAULT 0,
             discount DECIMAL(12,2) NOT NULL DEFAULT 0,
             subtotal DECIMAL(12,2) NOT NULL DEFAULT 0,
             PRIMARY KEY (id),
@@ -790,6 +791,29 @@ function ws_db_migrate() {
                 if ( ! in_array( $xp_col, $xp_cols, true ) ) {
                     $wpdb->query( $xp_sql );
                 }
+            }
+        }
+    }
+
+    // Costo de producto en cada item de venta POS: permite calcular la GANANCIA
+    // real (precio de venta − costo) × cantidad por venta, por ubicación y por
+    // período, aunque el precio/costo del producto cambie después. Se aplica a
+    // la tabla por defecto y a la de cada negocio con slug propio.
+    $ws_cost_suffixes = array( '' );
+    if ( class_exists( 'WS_Business' ) && $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', WS_Business::table() ) ) === WS_Business::table() ) {
+        foreach ( WS_Business::all() as $ws_cb ) {
+            $c_slug = (string) ( $ws_cb->slug ?? '' );
+            if ( '' !== $c_slug ) {
+                $ws_cost_suffixes[] = ws_biz_table_suffix( $c_slug );
+            }
+        }
+    }
+    foreach ( $ws_cost_suffixes as $ws_cost_suffix ) {
+        $sit_t = ws_table_for( $ws_cost_suffix, 'pos_sale_items' );
+        if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $sit_t ) ) === $sit_t ) {
+            $sit_cols = $wpdb->get_col( "SHOW COLUMNS FROM {$sit_t}", 0 );
+            if ( ! in_array( 'cost_price', $sit_cols, true ) ) {
+                $wpdb->query( "ALTER TABLE {$sit_t} ADD COLUMN cost_price DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER price" );
             }
         }
     }

@@ -77,6 +77,7 @@ if ( $ws_biz && ! empty( $ws_biz->slug ) ) {
             <thead><tr>
                 <th><?php esc_html_e( 'Mes', 'workshop' ); ?></th>
                 <th><?php esc_html_e( 'Ingresos', 'workshop' ); ?></th>
+                <th><?php esc_html_e( 'Ganancia (venta − costo)', 'workshop' ); ?></th>
                 <th><?php esc_html_e( 'Gastos', 'workshop' ); ?></th>
                 <th><?php esc_html_e( 'Utilidad', 'workshop' ); ?></th>
             </tr></thead>
@@ -85,6 +86,7 @@ if ( $ws_biz && ! empty( $ws_biz->slug ) ) {
                 <tr>
                     <td><strong><?php echo esc_html( $m['label'] ); ?></strong></td>
                     <td><?php echo ws_money( $m['income'], $currency ); ?></td>
+                    <td class="ws-strong" style="color:<?php echo $m['profit'] >= 0 ? 'var(--ws-success)' : 'var(--ws-danger)'; ?>"><?php echo ws_money( $m['profit'], $currency ); ?></td>
                     <td><?php echo ws_money( $m['expenses'], $currency ); ?></td>
                     <td class="ws-strong" style="color:<?php echo $m['utility'] >= 0 ? 'var(--ws-success)' : 'var(--ws-danger)'; ?>"><?php echo ws_money( $m['utility'], $currency ); ?></td>
                 </tr>
@@ -92,12 +94,13 @@ if ( $ws_biz && ! empty( $ws_biz->slug ) ) {
                 <tr>
                     <td><strong><?php esc_html_e( 'Total del período', 'workshop' ); ?></strong></td>
                     <td><strong><?php echo ws_money( $utils['totals']['income'], $currency ); ?></strong></td>
+                    <td class="ws-strong" style="color:<?php echo $utils['totals']['profit'] >= 0 ? 'var(--ws-success)' : 'var(--ws-danger)'; ?>"><strong><?php echo ws_money( $utils['totals']['profit'], $currency ); ?></strong></td>
                     <td><strong><?php echo ws_money( $utils['totals']['expenses'], $currency ); ?></strong></td>
                     <td class="ws-strong" style="color:<?php echo $utils['totals']['utility'] >= 0 ? 'var(--ws-success)' : 'var(--ws-danger)'; ?>"><strong><?php echo ws_money( $utils['totals']['utility'], $currency ); ?></strong></td>
                 </tr>
             </tbody>
         </table>
-        <p class="ws-muted" style="margin:10px 0 0;font-size:.82em"><?php esc_html_e( 'Utilidad = ingresos (pedidos + ventas POS) − gastos del negocio. Los gastos generales se reparten a todas las ubicaciones; los de una ubicación concreta solo cuentan para esa ubicación.', 'workshop' ); ?></p>
+        <p class="ws-muted" style="margin:10px 0 0;font-size:.82em"><?php esc_html_e( 'Ganancia = (precio de venta − costo) × unidades vendidas, guardada en el momento de cada venta. Utilidad = ingresos (pedidos + ventas POS) − gastos del negocio. Los gastos generales se reparten a todas las ubicaciones; los de una ubicación concreta solo cuentan para esa ubicación.', 'workshop' ); ?></p>
         <?php endif; ?>
     </div>
 
@@ -118,6 +121,7 @@ if ( $ws_biz && ! empty( $ws_biz->slug ) ) {
             <thead><tr>
                 <th><?php esc_html_e( 'Punto de venta', 'workshop' ); ?></th>
                 <th><?php esc_html_e( 'Ingresos', 'workshop' ); ?></th>
+                <th><?php esc_html_e( 'Ganancia (venta − costo)', 'workshop' ); ?></th>
                 <th><?php esc_html_e( 'Gastos', 'workshop' ); ?></th>
                 <th><?php esc_html_e( 'Utilidad', 'workshop' ); ?></th>
             </tr></thead>
@@ -125,6 +129,7 @@ if ( $ws_biz && ! empty( $ws_biz->slug ) ) {
                 <?php foreach ( $ws_util_locs as $lid ) :
                     $inc = (float) ( $utils['by_loc'][ $lid ] ?? 0 );
                     $exp = (float) ( $utils['exp_by_loc'][ $lid ] ?? 0 );
+                    $prf = (float) ( $utils['profit_by_loc'][ $lid ] ?? 0 );
                     $utl = $inc - $exp;
                     $lname = '#' . $lid;
                     foreach ( $utils['locations'] as $l ) {
@@ -134,6 +139,7 @@ if ( $ws_biz && ! empty( $ws_biz->slug ) ) {
                 <tr>
                     <td><strong><?php echo esc_html( $lname ); ?></strong></td>
                     <td><?php echo ws_money( $inc, $currency ); ?></td>
+                    <td class="ws-strong" style="color:<?php echo $prf >= 0 ? 'var(--ws-success)' : 'var(--ws-danger)'; ?>"><?php echo ws_money( $prf, $currency ); ?></td>
                     <td><?php echo ws_money( $exp, $currency ); ?></td>
                     <td class="ws-strong" style="color:<?php echo $utl >= 0 ? 'var(--ws-success)' : 'var(--ws-danger)'; ?>"><?php echo ws_money( $utl, $currency ); ?></td>
                 </tr>

@@ -575,7 +575,7 @@ function ws_ajax_movement_venta() {
     }
 
     global $wpdb;
-    $p = $wpdb->get_row( $wpdb->prepare( "SELECT name, currency, sale_price FROM " . ws_table_name( 'products' ) . " WHERE id=%d", $product_id ) );
+    $p = $wpdb->get_row( $wpdb->prepare( "SELECT name, currency, sale_price, cost_price FROM " . ws_table_name( 'products' ) . " WHERE id=%d", $product_id ) );
     if ( ! $p ) {
         wp_send_json_error( array( 'msg' => __( 'Producto no encontrado.', 'workshop' ) ) );
     }
@@ -614,6 +614,7 @@ function ws_ajax_movement_venta() {
             'product_name' => $p->name,
             'qty'          => $qty,
             'price'        => $price,
+            'cost_price'   => (float) $p->cost_price,
             'discount'     => 0,
             'subtotal'     => $subtotal,
         ) ),
@@ -2410,6 +2411,60 @@ function ws_ajax_pos_cash_history() {
     }
 
     wp_send_json_success( array( 'data' => $out ) );
+}
+
+/**
+ * Detalle del CUADRE de un cierre de caja: conteo físico ingresado al cerrar
+ * vs. el stock virtual que manejaba la app, producto por producto. Sirve para
+ * auditar un arqueo pasado (sobrantes/faltantes de inventario).
+ */
+add_action( 'wp_ajax_ws_pos_cash_counts_get', 'ws_ajax_pos_cash_counts_get' );
+function ws_ajax_pos_cash_counts_get() {
+    ws_guard( 'pos_view' );
+
+    $register_id = (int) ( $_POST['register_id'] ?? 0 );
+    if ( ! $register_id ) {
+        wp_send_json_error( array( 'msg' => __( 'Cierre inválido.', 'workshop' ) ) );
+    }
+
+    global $wpdb;
+    $table = ws_table_name( 'pos_cash_counts' );
+    if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $table ) ) ) !== $table ) {
+        wp_send_json_success( array( 'data' => array() ) );
+    }
+
+    $rows = $wpdb->get_results( $wpdb->prepare(
+        "SELECT product_id, product_name, virtual_qty, physical_qty, diff
+         FROM {$table} WHERE register_id = %d ORDER BY id ASC",
+        $register_id
+    ) );
+
+    $out      = array();
+    $sobrante = 0;
+    $faltante = 0;
+    foreach ( $rows as $r ) {
+        $d = (float) $r->diff;
+        if ( $d > 0.004 ) {
+            $sobrante++;
+        } elseif ( $d < -0.004 ) {
+            $faltante++;
+        }
+        $out[] = array(
+            'product_id'   => (int) $r->product_id,
+            'product_name' => $r->product_name,
+            'virtual_qty'  => (float) $r->virtual_qty,
+            'physical_qty' => (float) $r->physical_qty,
+            'diff'         => $d,
+        );
+    }
+
+    wp_send_json_success( array(
+        'data' => array(
+            'register_id' => $register_id,
+            'items'       => $out,
+            'summary'     => array( 'count' => count( $out ), 'sobrante' => $sobrante, 'faltante' => $faltante ),
+        ),
+    ) );
 }
 
 /* ---------------- Cache Offline AJAX ---------------- */
