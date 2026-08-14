@@ -95,6 +95,14 @@ $ws_months = array(
     <div class="ws-card">
         <h3 class="ws-card-title"><i class="fa-solid fa-plus"></i> <span x-text="editingId ? '<?php esc_attr_e( 'Editar gasto', 'workshop' ); ?>' : '<?php esc_attr_e( 'Nuevo gasto', 'workshop' ); ?>'"></span></h3>
         <form class="ws-form ws-grid-2" @submit.prevent="save()">
+            <div class="ws-span-2" x-show="repeatMonths > 1" x-cloak>
+                <div class="ws-alert ws-alert-info" style="margin:0">
+                    <i class="fa-solid fa-calendar-plus"></i>
+                    <span>
+                        <?php esc_html_e( 'Se registrará este gasto en', 'workshop' ); ?> <b x-text="repeatMonths"></b> <?php esc_html_e( 'meses seguidos a partir de la fecha indicada (un gasto por mes). Revisa los datos y pulsa Guardar.', 'workshop' ); ?>
+                    </span>
+                </div>
+            </div>
             <label class="ws-field">
                 <span><?php esc_html_e( 'Concepto *', 'workshop' ); ?></span>
                 <input type="text" x-model="form.concept" required maxlength="255" placeholder="<?php esc_attr_e( 'Ej.: Pago alquiler local', 'workshop' ); ?>">
@@ -158,7 +166,7 @@ $ws_months = array(
                         <td class="ws-muted" x-text="e.date_label"></td>
                         <td class="ws-strong" x-text="money(e.amount)"></td>
                         <td class="ws-actions" x-show="can">
-                            <button class="ws-icon-btn" title="<?php esc_attr_e( 'Duplicar (repetir el gasto el mes siguiente)', 'workshop' ); ?>" @click="duplicate(e)"><i class="fa-solid fa-copy"></i></button>
+                            <button class="ws-icon-btn" title="<?php esc_attr_e( 'Duplicar (repetir el gasto por varios meses)', 'workshop' ); ?>" @click="duplicate(e)"><i class="fa-solid fa-copy"></i></button>
                             <button class="ws-icon-btn" title="<?php esc_attr_e( 'Editar', 'workshop' ); ?>" @click="edit(e)"><i class="fa-solid fa-pen"></i></button>
                             <button class="ws-icon-btn ws-danger" title="<?php esc_attr_e( 'Eliminar', 'workshop' ); ?>" @click="remove(e)"><i class="fa-solid fa-trash-can"></i></button>
                         </td>

@@ -1972,6 +1972,7 @@
                 locations: data.locations || [],
                 editingId: 0,
                 saving: false,
+                repeatMonths: 1,
                 form: { concept: '', amount: 0, category: '', note: '', expense_date: '', location_id: 0 },
 
                 years() {
@@ -1996,37 +1997,76 @@
                 },
                 resetForm() {
                     this.editingId = 0;
+                    this.repeatMonths = 1;
                     this.form = { concept: '', amount: 0, category: '', note: '', expense_date: '', location_id: 0 };
                 },
                 edit(e) {
                     this.editingId = e.id;
+                    this.repeatMonths = 1;
                     this.form = {
                         concept: e.concept, amount: e.amount, category: e.category, note: e.note,
                         expense_date: e.date_raw, location_id: e.location_id || 0
                     };
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                 },
+                // Suma meses a una fecha 'YYYY-MM-DD' (el día se ajusta si el mes
+                // no tiene ese día, p. ej. 31 en febrero).
+                addMonths(dateStr, n) {
+                    const d = dateStr ? new Date(dateStr + 'T00:00:00') : new Date();
+                    const day = d.getDate();
+                    const t = new Date(d.getFullYear(), d.getMonth() + n, 1);
+                    const last = new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate();
+                    t.setDate(Math.min(day, last));
+                    const pad = (x) => String(x).padStart(2, '0');
+                    return t.getFullYear() + '-' + pad(t.getMonth() + 1) + '-' + pad(t.getDate());
+                },
                 duplicate(e) {
-                    // Carga el gasto como NUEVO con la fecha del mes siguiente
-                    // (mismo día): sirve para registrar gastos recurrentes
-                    // (alquiler, servicios…) sin volver a escribir los datos.
-                    // La persona solo ajusta lo que cambie y pulsa Guardar.
-                    const d = e.date_raw ? new Date(e.date_raw + 'T00:00:00') : new Date();
-                    const next = new Date(d.getFullYear(), d.getMonth() + 1, d.getDate());
-                    const pad = (n) => String(n).padStart(2, '0');
-                    this.editingId = 0;
-                    this.form = {
-                        concept: e.concept || '',
-                        amount: Number(e.amount) || 0,
-                        category: e.category || '',
-                        note: e.note || '',
-                        expense_date: next.getFullYear() + '-' + pad(next.getMonth() + 1) + '-' + pad(next.getDate()),
-                        location_id: e.location_id || 0
+                    // Ofrece registrar el gasto recurrente por varios meses de una
+                    // vez (1, 3, 6 o 12): se rellena el formulario con la fecha del
+                    // mes siguiente y al pulsar Guardar se crea un gasto por mes.
+                    const startDate = this.addMonths(e.date_raw || '', 1);
+                    const apply = (months) => {
+                        this.editingId = 0;
+                        this.repeatMonths = months;
+                        this.form = {
+                            concept: e.concept || '',
+                            amount: Number(e.amount) || 0,
+                            category: e.category || '',
+                            note: e.note || '',
+                            expense_date: startDate,
+                            location_id: e.location_id || 0
+                        };
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                        if (window.Swal) {
+                            Swal.fire({ toast: true, position: 'top-end', icon: 'info',
+                                title: months > 1 ? ('Se registrará en ' + months + ' meses: ajústalo y guarda') : 'Gasto duplicado: ajústalo y guarda',
+                                showConfirmButton: false, timer: 2400 });
+                        }
                     };
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                    if (window.Swal) {
-                        Swal.fire({ toast: true, position: 'top-end', icon: 'info', title: 'Gasto duplicado: ajústalo y guarda', showConfirmButton: false, timer: 2200 });
-                    }
+                    if (!window.Swal) { apply(1); return; }
+                    Swal.fire({
+                        title: 'Repetir gasto',
+                        html: '¿Por cuántos meses quieres registrar este gasto?<br><small class="ws-muted">Se creará un gasto por mes a partir del próximo; podrás ajustarlos antes de guardar.</small>',
+                        input: 'range',
+                        inputAttributes: { min: '1', max: '12', step: '1' },
+                        inputValue: 1,
+                        showCancelButton: true,
+                        confirmButtonText: 'Continuar',
+                        cancelButtonText: 'Cancelar',
+                        didOpen: () => {
+                            const r = Swal.getInput();
+                            if (r) {
+                                const out = document.createElement('div');
+                                out.style.cssText = 'margin-top:8px;font-weight:600;color:#0f766e';
+                                r.addEventListener('input', () => {
+                                    const v = Number(r.value) || 1;
+                                    out.textContent = v === 1 ? '1 mes' : v + ' meses';
+                                });
+                                out.textContent = '1 mes';
+                                r.parentNode.appendChild(out);
+                            }
+                        }
+                    }).then((res) => { if (res.isConfirmed) { apply(Number(res.value) || 1); } });
                 },
                 api(action, extra, cb) {
                     const body = new URLSearchParams();
@@ -2052,27 +2092,59 @@
                 },
                 save() {
                     if (!this.form.concept.trim() || !(Number(this.form.amount) > 0) || !this.form.expense_date) { return; }
+                    // Edición normal: un solo gasto.
+                    if (this.editingId || this.repeatMonths <= 1) {
+                        this._saveOne(this.form.expense_date, (json) => {
+                            if (json && json.success) {
+                                this.resetForm();
+                                this.load();
+                                window.Swal ? Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Gasto guardado', showConfirmButton: false, timer: 2000 })
+                                            : alert('Gasto guardado');
+                            } else {
+                                window.Swal ? Swal.fire({ icon: 'error', title: 'Error', text: (json && json.data && json.data.msg) || 'No se pudo guardar.' })
+                                            : alert((json && json.data && json.data.msg) || 'No se pudo guardar.');
+                            }
+                        });
+                        return;
+                    }
+                    // Duplicado por varios meses: guardar un gasto por cada mes.
+                    const months = Math.max(1, Math.min(24, Math.floor(this.repeatMonths) || 1));
+                    const dates = [];
+                    for (let i = 0; i < months; i++) { dates.push(this.addMonths(this.form.expense_date, i)); }
                     this.saving = true;
+                    let done = 0, failed = 0;
+                    const next = () => {
+                        if (done >= dates.length) {
+                            this.saving = false;
+                            this.resetForm();
+                            this.load();
+                            if (failed === 0) {
+                                window.Swal ? Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: months + ' gastos guardados', showConfirmButton: false, timer: 2400 })
+                                            : alert(months + ' gastos guardados');
+                            } else {
+                                window.Swal ? Swal.fire({ icon: 'warning', title: 'Parcial', text: (months - failed) + ' de ' + months + ' gastos guardados. Revisa los meses siguientes.' })
+                                            : alert((months - failed) + ' de ' + months + ' gastos guardados.');
+                            }
+                            return;
+                        }
+                        this._saveOne(dates[done], (json) => {
+                            done++;
+                            if (!(json && json.success)) { failed++; }
+                            next();
+                        });
+                    };
+                    next();
+                },
+                _saveOne(dateStr, cb) {
                     this.api('ws_expense_save', {
                         id: this.editingId || 0,
                         concept: this.form.concept,
                         amount: String(this.form.amount),
                         category: this.form.category,
                         note: this.form.note,
-                        expense_date: this.form.expense_date,
+                        expense_date: dateStr,
                         location_id: this.form.location_id || 0
-                    }, (json) => {
-                        this.saving = false;
-                        if (json && json.success) {
-                            this.resetForm();
-                            this.load();
-                            window.Swal ? Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Gasto guardado', showConfirmButton: false, timer: 2000 })
-                                        : alert('Gasto guardado');
-                        } else {
-                            window.Swal ? Swal.fire({ icon: 'error', title: 'Error', text: (json && json.data && json.data.msg) || 'No se pudo guardar.' })
-                                        : alert((json && json.data && json.data.msg) || 'No se pudo guardar.');
-                        }
-                    });
+                    }, cb);
                 },
                 remove(e) {
                     const doRemove = () => {
