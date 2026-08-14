@@ -71,6 +71,8 @@ function ws_db_tables() {
             show_equiv TINYINT(1) NOT NULL DEFAULT 1,
             supplier_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
             min_stock DECIMAL(12,2) NOT NULL DEFAULT 0,
+            production_date DATE NULL,
+            expiry_date DATE NULL,
             fraction_parent BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
             fraction_qty DECIMAL(12,2) NOT NULL DEFAULT 0,
             active TINYINT(1) NOT NULL DEFAULT 1,
@@ -744,6 +746,33 @@ function ws_db_migrate() {
             if ( ! in_array( 'location_id', $rev_cols, true ) ) {
                 $wpdb->query( "ALTER TABLE {$rev_t} ADD COLUMN location_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0 AFTER product_id" );
                 $wpdb->query( "ALTER TABLE {$rev_t} ADD KEY location_id (location_id)" );
+            }
+        }
+    }
+
+    // Fechas de caducidad de productos: `production_date` (fecha de producción)
+    // y `expiry_date` (fecha de vencimiento). Se aplican a la tabla por defecto
+    // Y a la de cada negocio con slug propio, igual que el fraccionamiento.
+    $ws_expiry_suffixes = array( '' );
+    if ( class_exists( 'WS_Business' ) && $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', WS_Business::table() ) ) === WS_Business::table() ) {
+        foreach ( WS_Business::all() as $ws_xb ) {
+            $x_slug = (string) ( $ws_xb->slug ?? '' );
+            if ( '' !== $x_slug ) {
+                $ws_expiry_suffixes[] = ws_biz_table_suffix( $x_slug );
+            }
+        }
+    }
+    foreach ( $ws_expiry_suffixes as $ws_exp_suffix ) {
+        $xpt = ws_table_for( $ws_exp_suffix, 'products' );
+        if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $xpt ) ) === $xpt ) {
+            $xp_cols = $wpdb->get_col( "SHOW COLUMNS FROM {$xpt}", 0 );
+            foreach ( array(
+                'production_date' => "ALTER TABLE {$xpt} ADD COLUMN production_date DATE NULL AFTER min_stock",
+                'expiry_date'     => "ALTER TABLE {$xpt} ADD COLUMN expiry_date DATE NULL AFTER production_date",
+            ) as $xp_col => $xp_sql ) {
+                if ( ! in_array( $xp_col, $xp_cols, true ) ) {
+                    $wpdb->query( $xp_sql );
+                }
             }
         }
     }

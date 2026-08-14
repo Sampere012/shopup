@@ -214,6 +214,58 @@ function ws_generate_notifications( $user_id = 0 ) {
         }
     }
 
+    // --- Productos vencidos / por vencer (products_view) ---
+    // Avisa por notificación (campana + el asistente la entrega como mensaje
+    // del chat) cuando un producto activo venció o vence en los próximos 7
+    // días. Las condiciones resueltas se marcan como leídas automáticamente.
+    if ( WS_Capabilities::can( 'products_view', $user_id ) ) {
+        $today = gmdate( 'Y-m-d', current_time( 'timestamp' ) );
+        $soon  = gmdate( 'Y-m-d', current_time( 'timestamp' ) + 7 * DAY_IN_SECONDS );
+        $expired_count = (int) $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM {$t_products} WHERE active=1 AND expiry_date IS NOT NULL AND expiry_date < %s",
+            $today
+        ) );
+        if ( $expired_count > 0 ) {
+            $expired = $wpdb->get_results( $wpdb->prepare(
+                "SELECT name, expiry_date FROM {$t_products} WHERE active=1 AND expiry_date IS NOT NULL AND expiry_date < %s ORDER BY expiry_date ASC LIMIT 5",
+                $today
+            ) );
+            $names = array();
+            foreach ( $expired as $xp ) {
+                $names[] = '«' . $xp->name . '» (' . mysql2date( 'd/m/Y', $xp->expiry_date ) . ')';
+            }
+            $msg = sprintf( __( '%d producto(s) VENCIDO(S): %s', 'workshop' ), $expired_count, implode( ', ', $names ) );
+            if ( $expired_count > count( $names ) ) {
+                $msg .= sprintf( __( ' y %d más.', 'workshop' ), $expired_count - count( $names ) );
+            }
+            ws_notification_sync( $user_id, 'product_expired', __( 'Productos vencidos', 'workshop' ), $msg, $panel( 'products' ), 'products_expired', true );
+        } else {
+            ws_notification_sync( $user_id, 'product_expired', __( 'Productos vencidos', 'workshop' ), '', '', 'products_expired', false );
+        }
+
+        $expiring_count = (int) $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM {$t_products} WHERE active=1 AND expiry_date IS NOT NULL AND expiry_date BETWEEN %s AND %s",
+            $today, $soon
+        ) );
+        if ( $expiring_count > 0 ) {
+            $expiring = $wpdb->get_results( $wpdb->prepare(
+                "SELECT name, expiry_date FROM {$t_products} WHERE active=1 AND expiry_date IS NOT NULL AND expiry_date BETWEEN %s AND %s ORDER BY expiry_date ASC LIMIT 5",
+                $today, $soon
+            ) );
+            $names = array();
+            foreach ( $expiring as $xq ) {
+                $names[] = '«' . $xq->name . '» (' . mysql2date( 'd/m/Y', $xq->expiry_date ) . ')';
+            }
+            $msg = sprintf( __( '%d producto(s) por vencer en los próximos 7 días: %s', 'workshop' ), $expiring_count, implode( ', ', $names ) );
+            if ( $expiring_count > count( $names ) ) {
+                $msg .= sprintf( __( ' y %d más.', 'workshop' ), $expiring_count - count( $names ) );
+            }
+            ws_notification_sync( $user_id, 'product_expiring', __( 'Productos por vencer', 'workshop' ), $msg, $panel( 'products' ), 'products_expiring', true );
+        } else {
+            ws_notification_sync( $user_id, 'product_expiring', __( 'Productos por vencer', 'workshop' ), '', '', 'products_expiring', false );
+        }
+    }
+
     // --- Pedidos pendientes (orders_view) ---
     if ( WS_Capabilities::can( 'orders_view', $user_id ) ) {
         $pending = (int) $wpdb->get_var( $wpdb->prepare(

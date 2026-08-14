@@ -2107,6 +2107,10 @@ function ws_chatbot_app_context() {
     $sale_row  = $wpdb->get_row( $wpdb->prepare( "SELECT COUNT(*) c, COALESCE(SUM(total),0) t FROM {$T('pos_sales')} WHERE created_at >= %s AND status = 'completed'", $today ) );
     $low_stock = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$T('stock')} st JOIN {$T('products')} p ON p.id = st.product_id WHERE st.qty > 0 AND st.qty <= p.min_stock" );
     $agotados  = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$T('stock')} st WHERE st.qty <= 0" );
+    $today     = gmdate( 'Y-m-d', current_time( 'timestamp' ) );
+    $soon      = gmdate( 'Y-m-d', current_time( 'timestamp' ) + 7 * DAY_IN_SECONDS );
+    $expired   = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$T('products')} WHERE active=1 AND expiry_date IS NOT NULL AND expiry_date < %s", $today ) );
+    $expiring  = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$T('products')} WHERE active=1 AND expiry_date IS NOT NULL AND expiry_date BETWEEN %s AND %s", $today, $soon ) );
     $customers = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$T('customers')}" );
     $workers   = count( ws_chatbot_team_members() );
     $cash_open = false;
@@ -2121,6 +2125,8 @@ function ws_chatbot_app_context() {
         'products'      => $products,
         'low_stock'     => $low_stock,
         'agotados'      => $agotados,
+        'products_expired'  => $expired,
+        'products_expiring' => $expiring,
         'pending_orders'=> $pending,
         'sales_today'   => (int) $sale_row->c,
         'sales_today_total' => (float) $sale_row->t,
@@ -2152,8 +2158,8 @@ function ws_chatbot_context_text() {
     $lines[] = 'Usuario: ' . ( $c['user']['role_label'] ? $c['user']['role_label'] : 'visitante' );
     if ( isset( $c['business'] ) ) {
         $b = $c['business'];
-        $lines[] = sprintf( 'Negocio: %s (plan %s) — %d productos, %d con stock bajo, %d agotados, %d pedidos pendientes, %d ventas hoy por %s %s, %d clientes, %d trabajadores, caja %s.' ,
-            $b['name'], $b['plan'], $b['products'], $b['low_stock'], $b['agotados'], $b['pending_orders'], $b['sales_today'], number_format_i18n( $b['sales_today_total'], 2 ), $b['currency'], $b['customers'], $b['workers'], $b['cash_open'] ? 'abierta' : 'cerrada' );
+        $lines[] = sprintf( 'Negocio: %s (plan %s) — %d productos, %d con stock bajo, %d agotados, %d vencidos, %d por vencer (7 días), %d pedidos pendientes, %d ventas hoy por %s %s, %d clientes, %d trabajadores, caja %s.' ,
+            $b['name'], $b['plan'], $b['products'], $b['low_stock'], $b['agotados'], $b['products_expired'], $b['products_expiring'], $b['pending_orders'], $b['sales_today'], number_format_i18n( $b['sales_today_total'], 2 ), $b['currency'], $b['customers'], $b['workers'], $b['cash_open'] ? 'abierta' : 'cerrada' );
     }
     // Identidad del usuario para la IA: quién es, qué puede y qué no (según
     // el rol y la matriz de permisos real, no supuestos).
@@ -2209,7 +2215,23 @@ function ws_chatbot_build_report( $type, $days = 1 ) {
         $products  = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$T('products')}" );
         $low       = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$T('stock')} st JOIN {$T('products')} p ON p.id = st.product_id WHERE st.qty > 0 AND st.qty <= p.min_stock" );
         $agotados  = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$T('stock')} st WHERE st.qty <= 0" );
-        $stock     = sprintf( 'Stock: %d productos · %d bajo stock · %d agotados', $products, $low, $agotados );
+        $r_today   = gmdate( 'Y-m-d', current_time( 'timestamp' ) );
+        $r_soon    = gmdate( 'Y-m-d', current_time( 'timestamp' ) + 7 * DAY_IN_SECONDS );
+        $vexpired  = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$T('products')} WHERE active=1 AND expiry_date IS NOT NULL AND expiry_date < %s", $r_today ) );
+        $vexpiring = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$T('products')} WHERE active=1 AND expiry_date IS NOT NULL AND expiry_date BETWEEN %s AND %s", $r_today, $r_soon ) );
+        $stock     = sprintf( 'Stock: %d productos · %d bajo stock · %d agotados · %d vencidos · %d por vencer', $products, $low, $agotados, $vexpired, $vexpiring );
+        if ( $vexpired > 0 || $vexpiring > 0 ) {
+            $xnames = array();
+            foreach ( (array) $wpdb->get_results( $wpdb->prepare(
+                "SELECT name, expiry_date FROM {$T('products')} WHERE active=1 AND expiry_date IS NOT NULL AND expiry_date <= %s ORDER BY expiry_date ASC LIMIT 5",
+                $r_soon
+            ) ) as $xp2 ) {
+                $xnames[] = '• ' . $xp2->name . ' — vence ' . wp_date( 'd/m/Y', strtotime( (string) $xp2->expiry_date ) );
+            }
+            if ( $xnames ) {
+                $stock .= $nl . 'Caducidades:' . $nl . implode( $nl, $xnames );
+            }
+        }
     }
     if ( 'orders' === $type || 'summary' === $type ) {
         $pend   = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$T('orders')} WHERE status = %s", 'pending' ) );

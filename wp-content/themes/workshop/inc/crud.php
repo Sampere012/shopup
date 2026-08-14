@@ -84,6 +84,7 @@ class WS_CRUD {
             'name' => 'p.name', 'barcode' => 'p.barcode', 'supplier_name' => 's.name',
             'cost_price' => 'p.cost_price', 'sale_price' => 'p.sale_price',
             'transfer_pct' => 'p.transfer_pct', 'min_stock' => 'p.min_stock',
+            'production_date' => 'p.production_date', 'expiry_date' => 'p.expiry_date',
         );
         $col = isset( $map[ $key ] ) ? $map[ $key ] : 'p.name';
         return $col . ' ' . ( 'DESC' === strtoupper( $dir ) ? 'DESC' : 'ASC' );
@@ -124,6 +125,16 @@ class WS_CRUD {
             $suffix++;
         }
         $category_id = (int) ( $data['category_id'] ?? 0 );
+        // Fechas de producción/vencimiento (YYYY-MM-DD o vacío). Se guardan
+        // como DATE (NULL si no se indican) para la tabla de productos y los
+        // avisos de caducidad.
+        $production_date = isset( $data['production_date'] ) ? sanitize_text_field( (string) $data['production_date'] ) : '';
+        $expiry_date     = isset( $data['expiry_date'] ) ? sanitize_text_field( (string) $data['expiry_date'] ) : '';
+        $production_date = self::clean_product_date( $production_date );
+        $expiry_date     = self::clean_product_date( $expiry_date );
+        if ( $production_date && $expiry_date && $expiry_date < $production_date ) {
+            return new WP_Error( 'dates', __( 'La fecha de vencimiento no puede ser anterior a la de producción.', 'workshop' ) );
+        }
         $fields = array(
             'name'          => sanitize_text_field( $data['name'] ?? '' ),
             'barcode'       => $unique,
@@ -137,6 +148,8 @@ class WS_CRUD {
             'show_equiv'    => isset( $data['show_equiv'] ) ? (int) filter_var( $data['show_equiv'], FILTER_VALIDATE_BOOLEAN ) : 1,
             'supplier_id'   => (int) ( $data['supplier_id'] ?? 0 ),
             'min_stock'     => (float) ( $data['min_stock'] ?? 0 ),
+            'production_date' => ( '' === $production_date ) ? null : $production_date,
+            'expiry_date'     => ( '' === $expiry_date ) ? null : $expiry_date,
             'fraction_parent' => (int) ( $data['fraction_parent'] ?? 0 ),
             'fraction_qty'    => (float) ( $data['fraction_qty'] ?? 0 ),
             'active'        => isset( $data['active'] ) ? (int) filter_var( $data['active'], FILTER_VALIDATE_BOOLEAN ) : 1,
@@ -203,6 +216,24 @@ class WS_CRUD {
         }
 
         return (int) $id;
+    }
+
+    /**
+     * Normaliza una fecha de producto (YYYY-MM-DD). Devuelve '' si está vacía
+     * o no es una fecha real (evita guardar valores basura en columnas DATE).
+     */
+    protected static function clean_product_date( $raw ) {
+        $raw = trim( (string) $raw );
+        if ( '' === $raw ) {
+            return '';
+        }
+        if ( ! preg_match( '/^(\d{4})-(\d{2})-(\d{2})$/', $raw, $m ) ) {
+            return '';
+        }
+        if ( ! checkdate( (int) $m[2], (int) $m[3], (int) $m[1] ) ) {
+            return '';
+        }
+        return $raw;
     }
 
     /**

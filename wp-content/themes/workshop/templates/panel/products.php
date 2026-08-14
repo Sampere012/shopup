@@ -114,6 +114,8 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
                         <th class="ws-th-sort" @click="sort('sale_price')"><?php esc_html_e( 'Venta', 'workshop' ); ?> <i class="fa-solid" :class="sortIcon('sale_price')"></i></th>
                         <th class="ws-th-sort" @click="sort('transfer_pct')"><?php esc_html_e( '% Transf.', 'workshop' ); ?> <i class="fa-solid" :class="sortIcon('transfer_pct')"></i></th>
                         <th class="ws-th-sort" @click="sort('min_stock')"><?php esc_html_e( 'Stock mín.', 'workshop' ); ?> <i class="fa-solid" :class="sortIcon('min_stock')"></i></th>
+                        <th class="ws-th-sort" @click="sort('production_date')" title="<?php esc_attr_e( 'Fecha de producción', 'workshop' ); ?>"><?php esc_html_e( 'Fecha P.', 'workshop' ); ?> <i class="fa-solid" :class="sortIcon('production_date')"></i></th>
+                        <th class="ws-th-sort" @click="sort('expiry_date')" title="<?php esc_attr_e( 'Fecha de vencimiento', 'workshop' ); ?>"><?php esc_html_e( 'Fecha V.', 'workshop' ); ?> <i class="fa-solid" :class="sortIcon('expiry_date')"></i></th>
                         <th></th>
                     </tr>
                 </thead>
@@ -139,6 +141,15 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
                             <td class="ws-strong" x-text="money(p.sale_price, p.currency)"></td>
                             <td x-text="p.transfer_pct + '%'"></td>
                             <td x-text="p.min_stock"></td>
+                            <td>
+                                <span x-show="p.production_date" x-text="fmtDate(p.production_date)" class="ws-muted"></span>
+                                <span x-show="!p.production_date" class="ws-muted">—</span>
+                            </td>
+                            <td>
+                                <span x-show="p.expiry_date && !p.expired" x-text="fmtDate(p.expiry_date)" :class="p.expiring ? 'ws-badge ws-badge-warn' : 'ws-muted'"></span>
+                                <span x-show="p.expiry_date && p.expired" class="ws-badge ws-badge-danger" title="<?php esc_attr_e( 'Producto vencido', 'workshop' ); ?>"><i class="fa-solid fa-triangle-exclamation"></i> <span x-text="fmtDate(p.expiry_date)"></span></span>
+                                <span x-show="!p.expiry_date" class="ws-muted">—</span>
+                            </td>
                             <td class="ws-actions">
                                 <template x-if="canEdit"><button class="ws-icon-btn" title="Editar" @click="openForm(p)"><i class="fa-solid fa-pen"></i></button></template>
                                 <template x-if="canCreate"><button class="ws-icon-btn" title="Clonar" @click="clone(p)"><i class="fa-solid fa-clone"></i></button></template>
@@ -146,7 +157,7 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
                             </td>
                         </tr>
                     </template>
-                    <tr x-show="total === 0"><td colspan="7"><p class="ws-empty"><?php esc_html_e( 'Sin resultados.', 'workshop' ); ?></p></td></tr>
+                    <tr x-show="total === 0"><td colspan="9"><p class="ws-empty"><?php esc_html_e( 'Sin resultados.', 'workshop' ); ?></p></td></tr>
                 </tbody>
             </table>
             <div class="ws-pagination" x-show="total > pageSize">
@@ -319,6 +330,16 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
                     <label class="ws-field">
                         <span><?php esc_html_e( 'Stock mínimo', 'workshop' ); ?></span>
                         <input type="number" step="0.01" min="0" x-model="form.min_stock">
+                    </label>
+                    <label class="ws-field">
+                        <span><?php esc_html_e( 'Fecha de producción', 'workshop' ); ?></span>
+                        <input type="date" x-model="form.production_date">
+                        <p class="ws-muted" style="font-size:.8em;margin:4px 0 0"><?php esc_html_e( 'Opcional. Ej.: cuándo se fabricó o envasó el producto.', 'workshop' ); ?></p>
+                    </label>
+                    <label class="ws-field">
+                        <span><?php esc_html_e( 'Fecha de vencimiento', 'workshop' ); ?></span>
+                        <input type="date" x-model="form.expiry_date">
+                        <p class="ws-muted" style="font-size:.8em;margin:4px 0 0"><?php esc_html_e( 'Opcional. Te avisamos por notificación y por el bot cuando esté por vencer o haya vencido.', 'workshop' ); ?></p>
                     </label>
                     <div class="ws-span-2" x-show="canFraction" x-cloak>
                         <div class="ws-fraction-box">

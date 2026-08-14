@@ -760,8 +760,15 @@
                     .then(r => r.json()).then(r => { if (r.success) { this.products = r.data.products; this.total = r.data.total; this.page = r.data.page; } });
             },
             money(v, c) { return money(v, c || this.currency); },
+            // Formatea YYYY-MM-DD (input date / BD) a DD/MM/YYYY para la tabla.
+            fmtDate(v) {
+                if (!v) return '';
+                const p = String(v).split('-');
+                if (p.length !== 3) return v;
+                return p[2] + '/' + p[1] + '/' + p[0];
+            },
             openForm(p) {
-                this.form = p ? Object.assign({}, p) : { name: '', barcode: '', category_id: 0, description: '', image: '', cost_price: 0, sale_price: 0, transfer_pct: 0, currency: this.currency, show_equiv: 1, supplier_id: 0, min_stock: 0, fraction_parent: 0, fraction_qty: 0 };
+                this.form = p ? Object.assign({}, p) : { name: '', barcode: '', category_id: 0, description: '', image: '', cost_price: 0, sale_price: 0, transfer_pct: 0, currency: this.currency, show_equiv: 1, supplier_id: 0, min_stock: 0, production_date: '', expiry_date: '', fraction_parent: 0, fraction_qty: 0 };
                 if (this.form.category_id === undefined) this.form.category_id = 0;
                 if (!this.form.currency) this.form.currency = this.currency;
                 if (this.form.show_equiv === undefined) this.form.show_equiv = 1;

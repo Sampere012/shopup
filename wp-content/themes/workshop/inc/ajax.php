@@ -130,6 +130,11 @@ function ws_ajax_products_list() {
                 'supplier_id'  => (int) $p->supplier_id,
                 'supplier_name'=> $p->supplier_name,
                 'min_stock'    => (float) $p->min_stock,
+                'production_date' => (string) ( $p->production_date ?? '' ),
+                'expiry_date'     => (string) ( $p->expiry_date ?? '' ),
+                // Estado de caducidad para la tabla: vencido o por vencer (≤7 días).
+                'expired'      => ( ! empty( $p->expiry_date ) && strtotime( (string) $p->expiry_date . ' 00:00:00' ) < strtotime( 'today midnight' ) ) ? 1 : 0,
+                'expiring'     => ( ! empty( $p->expiry_date ) ) ? ( ( strtotime( (string) $p->expiry_date . ' 00:00:00' ) >= strtotime( 'today midnight' ) && strtotime( (string) $p->expiry_date . ' 23:59:59' ) <= strtotime( 'today midnight +7 days' ) ) ? 1 : 0 ) : 0,
                 'fraction_parent' => (int) ( $p->fraction_parent ?? 0 ),
                 'fraction_qty'    => (float) ( $p->fraction_qty ?? 0 ),
                 'active'       => (int) $p->active,

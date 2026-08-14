@@ -118,7 +118,7 @@ function ws_chatbot_tools_schema() {
             'type'     => 'function',
             'function' => array(
                 'name'        => 'biz_snapshot',
-                'description' => 'Devuelve los números clave EN VIVO del negocio actual: productos totales, con stock bajo y agotados, pedidos pendientes, ventas y monto de hoy, clientes, trabajadores, categorías, gastos y utilidad del mes actual, y si la caja está abierta.',
+                'description' => 'Devuelve los números clave EN VIVO del negocio actual: productos totales, con stock bajo y agotados, vencidos y por vencer (próximos 7 días), pedidos pendientes, ventas y monto de hoy, clientes, trabajadores, categorías, gastos y utilidad del mes actual, y si la caja está abierta.',
                 'parameters'  => array(
                     'type'                 => 'object',
                     'properties'           => (object) array(),
@@ -525,6 +525,10 @@ function ws_chatbot_tools_snapshot() {
     $pending   = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$T('orders')} WHERE status = %s", 'pending' ) );
     $low_stock = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$T('stock')} st JOIN {$T('products')} p ON p.id = st.product_id WHERE st.qty > 0 AND st.qty <= p.min_stock" );
     $agotados  = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$T('stock')} st WHERE st.qty <= 0" );
+    $today     = gmdate( 'Y-m-d', current_time( 'timestamp' ) );
+    $soon      = gmdate( 'Y-m-d', current_time( 'timestamp' ) + 7 * DAY_IN_SECONDS );
+    $vexpired  = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$T('products')} WHERE active=1 AND expiry_date IS NOT NULL AND expiry_date < %s", $today ) );
+    $vexpiring = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$T('products')} WHERE active=1 AND expiry_date IS NOT NULL AND expiry_date BETWEEN %s AND %s", $today, $soon ) );
     $customers = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$T('customers')}" );
     $today     = gmdate( 'Y-m-d 00:00:00', current_time( 'timestamp' ) );
     $sale_row  = $wpdb->get_row( $wpdb->prepare( "SELECT COUNT(*) c, COALESCE(SUM(total),0) t FROM {$T('pos_sales')} WHERE created_at >= %s AND status = 'completed'", $today ) );
@@ -547,6 +551,8 @@ function ws_chatbot_tools_snapshot() {
         'categories'          => $categories,
         'products_low_stock'  => $low_stock,
         'products_out'        => $agotados,
+        'products_expired'    => $vexpired,
+        'products_expiring'   => $vexpiring,
         'pending_orders'      => $pending,
         'sales_today'         => (int) $sale_row->c,
         'sales_today_total'   => (float) $sale_row->t,
