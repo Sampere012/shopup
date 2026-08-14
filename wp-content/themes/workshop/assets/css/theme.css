@@ -913,7 +913,9 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-calendar { padding: 8px 0; }
 .ws-stock-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
 .ws-stock-filters { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.ws-stock-filters select { padding: 9px 12px; border: 1px solid var(--ws-border); border-radius: 9px; font-size: .9em; background: #fff; font-family: inherit; }
+.ws-stock-filters select, .ws-stock-filters input[type="date"] { padding: 9px 12px; border: 1px solid var(--ws-border); border-radius: 9px; font-size: .9em; background: #fff; font-family: inherit; color: inherit; }
+.ws-report-date { display: inline-flex; align-items: center; gap: 6px; font-size: .85em; color: var(--ws-muted); }
+.ws-report-date input[type="date"] { padding: 8px 10px; border: 1px solid var(--ws-border); border-radius: 9px; font-size: .9em; background: #fff; font-family: inherit; color: inherit; }
 .ws-locations-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; }
 .ws-location-mini { background: #fafbfc; border: 1px solid var(--ws-border); border-radius: 12px; padding: 16px; transition: border-color .15s, box-shadow .15s; }
 .ws-location-mini:hover { border-color: var(--ws-primary-light); box-shadow: var(--ws-shadow); }
@@ -2361,6 +2363,8 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-cash-cuadre-name b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-cash-cuadre-name span { font-size: .74rem; color: var(--ws-muted); }
 .ws-cash-cuadre-input input { width: 86px; padding: 4px 8px; border: 1px solid var(--ws-border); border-radius: 6px; font-size: .85rem; }
+.ws-count-input { width: 110px; max-width: 100%; padding: 6px 8px; border: 1px solid var(--ws-border); border-radius: 6px; font-size: .85rem; font-family: inherit; background: #fff; color: inherit; }
+.ws-count-input:focus { outline: none; border-color: var(--ws-primary); box-shadow: 0 0 0 3px rgba(79, 70, 229, .12); }
 .ws-cash-cuadre-diff { width: 74px; text-align: right; }
 .ws-cash-cuadre-summary { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; font-size: .8rem; color: var(--ws-muted); }
 .ws-cash-cuadre-summary b { color: var(--ws-heading); }

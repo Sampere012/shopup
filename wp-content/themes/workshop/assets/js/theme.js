@@ -1248,8 +1248,10 @@
             search: '',
             typeFilter: '',
             locationFilter: '',
+            dateFrom: '',
+            dateTo: '',
             load() {
-                fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ action: 'ws_movements_list', ws_nonce: WS.nonce, type: this.typeFilter, location_id: this.locationFilter, search: this.search, sort: this.sortKey, dir: this.sortDir, page: this.page, pageSize: this.pageSize }) })
+                fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ action: 'ws_movements_list', ws_nonce: WS.nonce, type: this.typeFilter, location_id: this.locationFilter, date_from: this.dateFrom, date_to: this.dateTo, search: this.search, sort: this.sortKey, dir: this.sortDir, page: this.page, pageSize: this.pageSize }) })
                     .then(r => r.json()).then(r => { if (r.success) { this.movements = r.data.movements; this.total = r.data.total; this.page = r.data.page; } });
             },
             typeLabel(t) {

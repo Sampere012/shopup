@@ -8,9 +8,13 @@
 defined( 'ABSPATH' ) || exit;
 
 $can_view = ws_can( 'pos_view' );
+
+$locations = ws_user_locations();
 ?>
 
-<div class="ws-module-pos-sales" x-data="wsPOSSales()">
+<div class="ws-module-pos-sales" x-data="wsPOSSales(<?php echo esc_attr( wp_json_encode( array(
+    'locations' => array_map( fn( $l ) => array( 'id' => (int) $l->id, 'name' => $l->name ), $locations ),
+) ) ); ?>)">
     <div class="ws-module-header">
         <div class="ws-header-left">
             <h2><?php esc_html_e( 'Ventas POS', 'workshop' ); ?></h2>
@@ -43,6 +47,10 @@ $can_view = ws_can( 'pos_view' );
                    placeholder="<?php esc_attr_e( 'Buscar venta...', 'workshop' ); ?>">
         </div>
         <div class="ws-filters">
+            <select x-model="locationFilter" @change="loadSales()" aria-label="<?php esc_attr_e( 'Ubicación', 'workshop' ); ?>">
+                <option value=""><?php esc_html_e( 'Todas las ubicaciones', 'workshop' ); ?></option>
+                <template x-for="l in locations" :key="l.id"><option :value="l.id" x-text="l.name"></option></template>
+            </select>
             <input type="date" x-model="dateFrom" @change="loadSales()">
             <input type="date" x-model="dateTo" @change="loadSales()">
             <select x-model="statusFilter" @change="loadSales()">
@@ -241,6 +249,10 @@ $can_view = ws_can( 'pos_view' );
     <!-- Pestaña: Arqueo de caja -->
     <div class="ws-module-toolbar" x-show="tab === 'cash'" x-cloak>
         <div class="ws-filters">
+            <select x-model="locationFilter" @change="loadCashHistory()" aria-label="<?php esc_attr_e( 'Ubicación', 'workshop' ); ?>">
+                <option value=""><?php esc_html_e( 'Todas las ubicaciones', 'workshop' ); ?></option>
+                <template x-for="l in locations" :key="l.id"><option :value="l.id" x-text="l.name"></option></template>
+            </select>
             <input type="date" x-model="cashDateFrom" @change="loadCashHistory()">
             <input type="date" x-model="cashDateTo" @change="loadCashHistory()">
             <select x-model="cashStatusFilter" @change="loadCashHistory()">
@@ -374,12 +386,14 @@ const $ = (path, data) => fetch(WS.ajaxUrl, {
 }).then(r => r.json());
 
 document.addEventListener('alpine:init', () => {
-    Alpine.data('wsPOSSales', () => ({
+    Alpine.data('wsPOSSales', (opts) => ({
         sales: [],
         selectedSale: null,
         selectedSaleItems: [],
         loading: false,
         showDetailsModal: false,
+        locations: (opts && opts.locations) || [],
+        locationFilter: '',
         search: '',
         dateFrom: '',
         dateTo: '',
@@ -424,6 +438,7 @@ document.addEventListener('alpine:init', () => {
             this.cashLoading = true;
             try {
                 const response = await $('ws_pos_cash_history', {
+                    location_id: this.locationFilter,
                     date_from: this.cashDateFrom,
                     date_to: this.cashDateTo,
                     status: this.cashStatusFilter
@@ -472,6 +487,7 @@ document.addEventListener('alpine:init', () => {
             this.loading = true;
             try {
                 const response = await $('ws_pos_sales_get', {
+                    location_id: this.locationFilter,
                     search: this.search,
                     date_from: this.dateFrom,
                     date_to: this.dateTo,
@@ -489,6 +505,7 @@ document.addEventListener('alpine:init', () => {
         async loadStats() {
             try {
                 const response = await $('ws_pos_stats', {
+                    location_id: this.locationFilter,
                     date_from: this.dateFrom,
                     date_to: this.dateTo
                 });

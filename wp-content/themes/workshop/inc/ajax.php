@@ -792,14 +792,25 @@ function ws_ajax_movements_list() {
     $type      = sanitize_key( $_POST['type'] ?? '' );
     $location  = (int) ( $_POST['location_id'] ?? 0 );
     $search    = sanitize_text_field( $_POST['search'] ?? '' );
+    $date_from = sanitize_text_field( $_POST['date_from'] ?? '' );
+    $date_to   = sanitize_text_field( $_POST['date_to'] ?? '' );
+    $date_from = preg_match( '/^\d{4}-\d{2}-\d{2}$/', $date_from ) ? $date_from : '';
+    $date_to   = preg_match( '/^\d{4}-\d{2}-\d{2}$/', $date_to ) ? $date_to : '';
+    if ( $date_from && $date_to && $date_from > $date_to ) {
+        $tmp       = $date_from;
+        $date_from = $date_to;
+        $date_to   = $tmp;
+    }
     $loc_ids   = array_map( fn( $l ) => (int) $l->id, ws_user_locations() );
     $loc_ids   = ( $location && in_array( $location, $loc_ids, true ) ) ? array( $location ) : $loc_ids;
 
-    ws_send_list( 'movements', function ( $args ) use ( $type, $loc_ids, $search ) {
+    ws_send_list( 'movements', function ( $args ) use ( $type, $loc_ids, $search, $date_from, $date_to ) {
         $rows = WS_Stock::movements( array_merge( array(
             'type'         => $type,
             'location_ids' => $loc_ids,
             'search'       => $search,
+            'from'         => $date_from,
+            'to'           => $date_to,
         ), $args ) );
         $out = array();
         foreach ( $rows as $m ) {
@@ -818,11 +829,13 @@ function ws_ajax_movements_list() {
             );
         }
         return $out;
-    }, function () use ( $type, $loc_ids, $search ) {
+    }, function () use ( $type, $loc_ids, $search, $date_from, $date_to ) {
         return WS_Stock::count_movements( array(
             'type'         => $type,
             'location_ids' => $loc_ids,
             'search'       => $search,
+            'from'         => $date_from,
+            'to'           => $date_to,
         ) );
     }, array() );
 }
@@ -2025,8 +2038,12 @@ add_action( 'wp_ajax_ws_pos_sales_get', 'ws_ajax_pos_sales_get' );
 function ws_ajax_pos_sales_get() {
     ws_guard( 'pos_view' );
 
+    $allowed_ids = ws_user_location_ids();
+    $location_id = (int) ( $_POST['location_id'] ?? 0 );
+    $location_id = ( $location_id && in_array( $location_id, $allowed_ids, true ) ) ? $location_id : 0;
+
     $args = array(
-        'location_id' => (int) ( $_POST['location_id'] ?? 0 ),
+        'location_id' => $location_id,
         'seller_id' => (int) ( $_POST['seller_id'] ?? 0 ),
         'search' => sanitize_text_field( $_POST['search'] ?? '' ),
         'status' => sanitize_key( $_POST['status'] ?? '' ),
@@ -2331,7 +2348,9 @@ function ws_ajax_pos_stats() {
     ws_guard( 'pos_view' );
 
     $seller_id   = (int) ( $_POST['seller_id'] ?? 0 );
+    $allowed_ids = ws_user_location_ids();
     $location_id = (int) ( $_POST['location_id'] ?? 0 );
+    $location_id = ( $location_id && in_array( $location_id, $allowed_ids, true ) ) ? $location_id : 0;
     $date_from   = sanitize_text_field( $_POST['date_from'] ?? '' );
     $date_to     = sanitize_text_field( $_POST['date_to'] ?? '' );
 
@@ -2483,7 +2502,9 @@ add_action( 'wp_ajax_ws_pos_cash_history', 'ws_ajax_pos_cash_history' );
 function ws_ajax_pos_cash_history() {
     ws_guard( 'pos_view' );
 
+    $allowed_ids = ws_user_location_ids();
     $location_id = (int) ( $_POST['location_id'] ?? 0 );
+    $location_id = ( $location_id && in_array( $location_id, $allowed_ids, true ) ) ? $location_id : 0;
     $status      = sanitize_key( $_POST['status'] ?? '' );
     $date_from   = sanitize_text_field( $_POST['date_from'] ?? '' );
     $date_to     = sanitize_text_field( $_POST['date_to'] ?? '' );

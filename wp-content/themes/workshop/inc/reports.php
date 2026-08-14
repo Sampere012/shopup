@@ -36,6 +36,11 @@ function ws_reports_periods() {
  * La ubicación seleccionada solo se acepta si está entre las que tiene
  * asignadas el usuario. Si no hay ubicación válida se usan todas.
  *
+ * El rango de fechas personalizado (ws_from / ws_to, formato YYYY-MM-DD)
+ * tiene prioridad sobre el período preseleccionado (ws_period): si llega un
+ * rango se usa tal cual; si no, se usa el período por defecto (últimos 14
+ * días) o el seleccionado. Siempre se devuelve period_start y period_end.
+ *
  * @param bool $from_post Leer de $_POST (exportación) o de $_GET (página).
  * @return array
  */
@@ -55,9 +60,33 @@ function ws_reports_filters( $from_post = false ) {
 		$use_ids  = $loc_ids;
 	}
 
-	$period = isset( $source['ws_period'] ) ? (int) $source['ws_period'] : 14;
-	if ( ! array_key_exists( $period, ws_reports_periods() ) ) {
-		$period = 14;
+	// Rango de fechas personalizado (desde / hasta).
+	$from = isset( $source['ws_from'] ) ? sanitize_text_field( $source['ws_from'] ) : '';
+	$to   = isset( $source['ws_to'] ) ? sanitize_text_field( $source['ws_to'] ) : '';
+	$from = preg_match( '/^\d{4}-\d{2}-\d{2}$/', $from ) ? $from : '';
+	$to   = preg_match( '/^\d{4}-\d{2}-\d{2}$/', $to ) ? $to : '';
+	if ( $from && $to && $from > $to ) {
+		$tmp  = $from;
+		$from = $to;
+		$to   = $tmp;
+	}
+	if ( $from || $to ) {
+		$period        = 0;
+		$period_start  = $from ? $from : '1900-01-01';
+		$period_end    = $to ? $to : date( 'Y-m-d', current_time( 'timestamp' ) );
+		$label_from    = $from ? date( 'd/m/Y', strtotime( $from ) ) : __( 'Inicio del historial', 'workshop' );
+		$label_to      = $to ? date( 'd/m/Y', strtotime( $to ) ) : __( 'Hoy', 'workshop' );
+		$period_label  = $label_from . ' – ' . $label_to;
+	} else {
+		$period = isset( $source['ws_period'] ) ? (int) $source['ws_period'] : 14;
+		if ( ! array_key_exists( $period, ws_reports_periods() ) ) {
+			$period = 14;
+		}
+		$period_start = $period
+			? date( 'Y-m-d', strtotime( '-' . $period . ' days', current_time( 'timestamp' ) ) )
+			: '1900-01-01';
+		$period_end   = date( 'Y-m-d', current_time( 'timestamp' ) );
+		$period_label = ws_reports_periods()[ $period ];
 	}
 
 	return array(
@@ -65,10 +94,9 @@ function ws_reports_filters( $from_post = false ) {
 		'loc_ids'      => $use_ids,
 		'locations'    => $locations,
 		'period'       => $period,
-		'period_label' => ws_reports_periods()[ $period ],
-		'period_start' => $period
-			? date( 'Y-m-d', strtotime( '-' . $period . ' days', current_time( 'timestamp' ) ) )
-			: '1900-01-01',
+		'period_label' => $period_label,
+		'period_start' => $period_start,
+		'period_end'   => $period_end,
 	);
 }
 
@@ -85,6 +113,7 @@ function ws_reports_data( $filters ) {
 	$ph      = $loc_ids ? implode( ',', array_fill( 0, count( $loc_ids ), '%d' ) ) : '0';
 	$args    = $loc_ids ? $loc_ids : array( 0 );
 	$since   = $filters['period_start'];
+	$until   = $filters['period_end'];
 
 	$orders_table      = ws_table_name( 'orders' );
 	$movements_table   = ws_table_name( 'movements' );
@@ -100,9 +129,9 @@ function ws_reports_data( $filters ) {
 			"SELECT DATE(created_at) AS d, SUM(total) AS total, COUNT(*) AS n
 			 FROM {$orders_table}
 			 WHERE location_id IN ({$ph}) AND status IN ('accepted','completed')
-			   AND created_at >= %s
+			   AND created_at >= %s AND created_at <= %s
 			 GROUP BY DATE(created_at) ORDER BY d ASC",
-			...array_merge( $args, array( $since ) )
+			...array_merge( $args, array( $since, $until ) )
 		) );
 	}
 
@@ -112,9 +141,9 @@ function ws_reports_data( $filters ) {
 		$by_type = $wpdb->get_results( $wpdb->prepare(
 			"SELECT type, COUNT(*) AS n, COALESCE(SUM(qty),0) AS qty
 			 FROM {$movements_table}
-			 WHERE location_id IN ({$ph}) AND created_at >= %s
+			 WHERE location_id IN ({$ph}) AND created_at >= %s AND created_at <= %s
 			 GROUP BY type ORDER BY n DESC",
-			...array_merge( $args, array( $since ) )
+			...array_merge( $args, array( $since, $until ) )
 		) );
 	}
 
@@ -128,10 +157,10 @@ function ws_reports_data( $filters ) {
 			 FROM {$order_items_table} oi
 			 INNER JOIN {$orders_table} o ON o.id = oi.order_id
 			 WHERE o.location_id IN ({$ph}) AND o.status IN ('accepted','completed')
-			   AND o.created_at >= %s
+			   AND o.created_at >= %s AND o.created_at <= %s
 			 GROUP BY oi.product_id, oi.product_name
 			 ORDER BY qty DESC",
-			...array_merge( $args, array( $since ) )
+			...array_merge( $args, array( $since, $until ) )
 		) );
 	}
 
@@ -144,9 +173,9 @@ function ws_reports_data( $filters ) {
 			 FROM {$orders_table} o
 			 LEFT JOIN {$locations_table} l ON l.id = o.location_id
 			 WHERE o.location_id IN ({$ph}) AND o.status IN ('accepted','completed')
-			   AND o.created_at >= %s
+			   AND o.created_at >= %s AND o.created_at <= %s
 			 ORDER BY o.created_at DESC",
-			...array_merge( $args, array( $since ) )
+			...array_merge( $args, array( $since, $until ) )
 		) );
 	}
 
@@ -168,8 +197,8 @@ function ws_reports_data( $filters ) {
 		$pos_summary = $wpdb->get_row( $wpdb->prepare(
 			"SELECT COUNT(*) AS orders, COALESCE(SUM(total),0) AS total, COALESCE(AVG(total),0) AS average
 			 FROM {$pos_sales_table}
-			 WHERE location_id IN ({$ph}) AND status <> 'cancelled' AND created_at >= %s",
-			...array_merge( $args, array( $since ) )
+			 WHERE location_id IN ({$ph}) AND status <> 'cancelled' AND created_at >= %s AND created_at <= %s",
+			...array_merge( $args, array( $since, $until ) )
 		) );
 
 		$pos_sales = $wpdb->get_results( $wpdb->prepare(
@@ -179,9 +208,9 @@ function ws_reports_data( $filters ) {
 			 FROM {$pos_sales_table} ps
 			 LEFT JOIN {$locations_table} l ON l.id = ps.location_id
 			 LEFT JOIN {$wpdb->users} u ON u.ID = ps.seller_id
-			 WHERE ps.location_id IN ({$ph}) AND ps.status <> 'cancelled' AND ps.created_at >= %s
+			 WHERE ps.location_id IN ({$ph}) AND ps.status <> 'cancelled' AND ps.created_at >= %s AND ps.created_at <= %s
 			 ORDER BY ps.created_at DESC",
-			...array_merge( $args, array( $since ) )
+			...array_merge( $args, array( $since, $until ) )
 		) );
 
 		$pos_products = $wpdb->get_results( $wpdb->prepare(
@@ -189,10 +218,10 @@ function ws_reports_data( $filters ) {
 			        COUNT(DISTINCT ps.id) AS transactions, SUM(psi.subtotal) AS total
 			 FROM {$pos_items_table} psi
 			 INNER JOIN {$pos_sales_table} ps ON ps.id = psi.sale_id
-			 WHERE ps.location_id IN ({$ph}) AND ps.status <> 'cancelled' AND ps.created_at >= %s
+			 WHERE ps.location_id IN ({$ph}) AND ps.status <> 'cancelled' AND ps.created_at >= %s AND ps.created_at <= %s
 			 GROUP BY psi.product_id, psi.product_name
 			 ORDER BY qty DESC",
-			...array_merge( $args, array( $since ) )
+			...array_merge( $args, array( $since, $until ) )
 		) );
 	}
 
@@ -253,6 +282,7 @@ function ws_reports_utilities( $filters ) {
 
 	$loc_ids = $filters['loc_ids'];
 	$since   = $filters['period_start'];
+	$until   = $filters['period_end'];
 	$ph      = $loc_ids ? implode( ',', array_fill( 0, count( $loc_ids ), '%d' ) ) : '0';
 	$args    = $loc_ids ? $loc_ids : array( 0 );
 	$loc_set = $loc_ids ? array_flip( array_map( 'intval', $loc_ids ) ) : array();
@@ -276,16 +306,16 @@ function ws_reports_utilities( $filters ) {
 		$order_inc = $wpdb->get_results( $wpdb->prepare(
 			"SELECT DATE_FORMAT(created_at, '%Y-%m') AS ym, location_id, SUM(total) AS total
 			 FROM {$orders_t}
-			 WHERE location_id IN ({$ph}) AND status IN ('accepted','completed') AND created_at >= %s
+			 WHERE location_id IN ({$ph}) AND status IN ('accepted','completed') AND created_at >= %s AND created_at <= %s
 			 GROUP BY ym, location_id",
-			...array_merge( $args, array( $since ) )
+			...array_merge( $args, array( $since, $until ) )
 		) );
 		$pos_inc = $wpdb->get_results( $wpdb->prepare(
 			"SELECT DATE_FORMAT(created_at, '%Y-%m') AS ym, location_id, SUM(total) AS total
 			 FROM {$pos_t}
-			 WHERE location_id IN ({$ph}) AND status = 'completed' AND created_at >= %s
+			 WHERE location_id IN ({$ph}) AND status = 'completed' AND created_at >= %s AND created_at <= %s
 			 GROUP BY ym, location_id",
-			...array_merge( $args, array( $since ) )
+			...array_merge( $args, array( $since, $until ) )
 		) );
 		foreach ( array_merge( $order_inc, $pos_inc ) as $row ) {
 			$loc_id = (int) $row->location_id;
@@ -305,9 +335,9 @@ function ws_reports_utilities( $filters ) {
 					        SUM((i.price - i.cost_price) * i.qty) AS profit
 					 FROM {$pos_items_t} i
 					 INNER JOIN {$pos_t} s ON s.id = i.sale_id
-					 WHERE s.location_id IN ({$ph}) AND s.status = 'completed' AND s.created_at >= %s
+					 WHERE s.location_id IN ({$ph}) AND s.status = 'completed' AND s.created_at >= %s AND s.created_at <= %s
 					 GROUP BY ym, s.location_id",
-					...array_merge( $args, array( $since ) )
+					...array_merge( $args, array( $since, $until ) )
 				) );
 				foreach ( $pos_profit as $row ) {
 					$loc_id = (int) $row->location_id;
@@ -332,9 +362,9 @@ function ws_reports_utilities( $filters ) {
 				 FROM {$order_items_t} oi
 				 INNER JOIN {$orders_t} o ON o.id = oi.order_id
 				 LEFT JOIN {$products_t} p ON p.id = oi.product_id
-				 WHERE o.location_id IN ({$ph}) AND o.status IN ('accepted','completed') AND o.created_at >= %s
+				 WHERE o.location_id IN ({$ph}) AND o.status IN ('accepted','completed') AND o.created_at >= %s AND o.created_at <= %s
 				 GROUP BY ym, o.location_id",
-				...array_merge( $args, array( $since ) )
+				...array_merge( $args, array( $since, $until ) )
 			) );
 			foreach ( $order_profit as $row ) {
 				$loc_id = (int) $row->location_id;
@@ -357,8 +387,8 @@ function ws_reports_utilities( $filters ) {
 	if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $exp_t ) ) ) === $exp_t ) {
 		$exp_rows = $wpdb->get_results( $wpdb->prepare(
 			"SELECT DATE_FORMAT(expense_date, '%Y-%m') AS ym, location_id, SUM(amount) AS total
-			 FROM {$exp_t} WHERE expense_date >= %s GROUP BY ym, location_id",
-			$since
+			 FROM {$exp_t} WHERE expense_date >= %s AND expense_date <= %s GROUP BY ym, location_id",
+			$since, $until
 		) );
 		foreach ( $exp_rows as $row ) {
 			$ym    = (string) $row->ym;

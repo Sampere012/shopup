@@ -35,6 +35,8 @@ $currency  = ws_currency_symbol();
                     <option value=""><?php esc_html_e( 'Todas las ubicaciones', 'workshop' ); ?></option>
                     <template x-for="l in locations" :key="l.id"><option :value="l.id" x-text="l.name"></option></template>
                 </select>
+                <input type="date" x-model="dateFrom" @change="onFilter()" aria-label="<?php esc_attr_e( 'Desde', 'workshop' ); ?>" title="<?php esc_attr_e( 'Desde', 'workshop' ); ?>">
+                <input type="date" x-model="dateTo" @change="onFilter()" aria-label="<?php esc_attr_e( 'Hasta', 'workshop' ); ?>" title="<?php esc_attr_e( 'Hasta', 'workshop' ); ?>">
             </div>
         </div>
 

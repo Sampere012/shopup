@@ -235,7 +235,7 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                             <tr>
                                 <td><strong x-text="c.name"></strong><small class="ws-muted" x-show="c.barcode" x-text="c.barcode"></small></td>
                                 <td x-text="c.virtual_qty"></td>
-                                <td><input type="number" step="0.01" min="0" x-model.number="c.physical" style="max-width:110px"></td>
+                                <td><input type="number" step="0.01" min="0" x-model.number="c.physical" class="ws-count-input"></td>
                                 <td>
                                     <span class="ws-badge" :class="countDiff(c) > 0.004 ? 'ws-badge-completed' : (countDiff(c) < -0.004 ? 'ws-badge-cancelled' : 'ws-badge-pending')" x-text="countDiffText(c)"></span>
                                 </td>

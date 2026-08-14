@@ -12,8 +12,8 @@ if ( ! $role ) {
     $role = get_query_var( 'ws_role' ) ? (string) get_query_var( 'ws_role' ) : 'owner';
 }
 
-// Filtros desde la URL (ws_loc = ubicación, ws_period = días). Los datos se
-// comparten con la exportación a Excel (inc/reports.php).
+// Filtros desde la URL (ws_loc = ubicación, ws_from/ws_to = rango de fechas).
+// Los datos se comparten con la exportación a Excel (inc/reports.php).
 $filters = ws_reports_filters( false );
 $data    = ws_reports_data( $filters );
 $utils   = ws_reports_utilities( $filters );
@@ -21,9 +21,12 @@ $utils   = ws_reports_utilities( $filters );
 $sales    = $data['sales'];
 $by_type  = $data['by_type'];
 $top      = $data['top'];
-$periods  = ws_reports_periods();
 $currency = ws_currency_symbol( $filters['location_id'] ? (int) $filters['location_id'] : 0 );
 $base_url = ws_panel_url( $role, 'reports' );
+
+// Valores para los campos de fecha (vacío en "todo el historial").
+$date_from = $filters['period_start'] > '1900-01-01' ? $filters['period_start'] : '';
+$date_to   = $filters['period_end'];
 
 // Contexto de negocio para la exportación vía AJAX (negocios con slug).
 $ws_biz_slug = '';
@@ -40,11 +43,17 @@ if ( $ws_biz && ! empty( $ws_biz->slug ) ) {
                 <option value="<?php echo (int) $l->id; ?>" <?php selected( $filters['location_id'], (int) $l->id ); ?>><?php echo esc_html( $l->name ); ?></option>
             <?php endforeach; ?>
         </select>
-        <select id="ws-reports-period" aria-label="<?php esc_attr_e( 'Período', 'workshop' ); ?>">
-            <?php foreach ( $periods as $pd => $plabel ) : ?>
-                <option value="<?php echo (int) $pd; ?>" <?php selected( $filters['period'], (int) $pd ); ?>><?php echo esc_html( $plabel ); ?></option>
-            <?php endforeach; ?>
-        </select>
+        <label class="ws-report-date">
+            <input type="date" id="ws-reports-from" value="<?php echo esc_attr( $date_from ); ?>" aria-label="<?php esc_attr_e( 'Desde', 'workshop' ); ?>">
+            <span><?php esc_html_e( 'desde', 'workshop' ); ?></span>
+        </label>
+        <label class="ws-report-date">
+            <input type="date" id="ws-reports-to" value="<?php echo esc_attr( $date_to ); ?>" aria-label="<?php esc_attr_e( 'Hasta', 'workshop' ); ?>">
+            <span><?php esc_html_e( 'hasta', 'workshop' ); ?></span>
+        </label>
+        <button type="button" class="ws-btn" id="ws-reports-reset" title="<?php esc_attr_e( 'Últimos 14 días', 'workshop' ); ?>">
+            <i class="fa-solid fa-rotate-left"></i>
+        </button>
     </div>
     <button type="button" class="ws-btn ws-btn-primary" id="ws-reports-export">
         <i class="fa-solid fa-file-excel"></i> <?php esc_html_e( 'Exportar Excel', 'workshop' ); ?>
@@ -210,13 +219,28 @@ if ( $ws_biz && ! empty( $ws_biz->slug ) ) {
 
     function apply() {
         var loc = document.getElementById('ws-reports-loc').value;
-        var period = document.getElementById('ws-reports-period').value;
+        var from = document.getElementById('ws-reports-from').value;
+        var to = document.getElementById('ws-reports-to').value;
         var sep = base.indexOf('?') === -1 ? '?' : '&';
-        location.href = base + sep + 'ws_loc=' + encodeURIComponent(loc) + '&ws_period=' + encodeURIComponent(period);
+        var params = 'ws_loc=' + encodeURIComponent(loc);
+        if (from || to) {
+            params += '&ws_from=' + encodeURIComponent(from) + '&ws_to=' + encodeURIComponent(to);
+        } else {
+            params += '&ws_period=14';
+        }
+        location.href = base + sep + params;
     }
 
     document.getElementById('ws-reports-loc').addEventListener('change', apply);
-    document.getElementById('ws-reports-period').addEventListener('change', apply);
+    var fromEl = document.getElementById('ws-reports-from');
+    var toEl = document.getElementById('ws-reports-to');
+    fromEl.addEventListener('change', apply);
+    toEl.addEventListener('change', apply);
+    document.getElementById('ws-reports-reset').addEventListener('click', function () {
+        fromEl.value = '';
+        toEl.value = '';
+        apply();
+    });
 
     var btn = document.getElementById('ws-reports-export');
     if (btn) btn.addEventListener('click', function () {
@@ -230,7 +254,8 @@ if ( $ws_biz && ! empty( $ws_biz->slug ) ) {
             action: 'ws_reports_export',
             ws_nonce: WS.nonce,
             ws_loc: document.getElementById('ws-reports-loc').value,
-            ws_period: document.getElementById('ws-reports-period').value,
+            ws_from: fromEl.value,
+            ws_to: toEl.value,
             ws_biz: <?php echo wp_json_encode( $ws_biz_slug ); ?>
         });
 
