@@ -922,6 +922,15 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-store-modal-info .ws-combo-chip i { color: #a78bfa; font-size: .72em; }
 .ws-product-card.ws-is-combo .ws-combo-chip b,
 .ws-store-modal-info .ws-combo-chip b { color: #7c3aed; font-weight: 800; }
+/* 'ver más' del panel Contiene: abre el modal con todos los componentes. */
+.ws-combo-more {
+    display: inline-flex; align-items: center; gap: 5px;
+    border: 1px dashed rgba(124, 58, 237, .45); background: #fff; color: #7c3aed;
+    border-radius: 999px; padding: 3px 10px; font-size: .76em; font-weight: 700;
+    cursor: pointer; font-family: inherit; transition: background .12s, border-color .12s;
+}
+.ws-combo-more:hover { background: #eef2ff; border-color: #7c3aed; }
+.ws-combo-more i { font-size: .7em; }
 
 .ws-cart-overlay {
     position: fixed; inset: 0; z-index: 99985; background: rgba(10, 14, 38, .6); backdrop-filter: blur(3px);

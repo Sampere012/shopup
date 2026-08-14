@@ -206,7 +206,8 @@ get_header();
                                 <h3 x-text="p.name"></h3>
                                 <span class="ws-combo-badge" x-show="p.is_combo" title="<?php esc_attr_e( 'Este producto es un combo', 'workshop' ); ?>"><i class="fa-solid fa-layer-group"></i> <?php esc_html_e( 'Combo', 'workshop' ); ?></span>
                             </div>
-                            <span class="ws-product-category" x-show="p.category" x-text="p.category"></span>
+                            <!-- La categoría de un combo es 'Combo': ya lo indica la badge, no repetirlo debajo del nombre. -->
+                            <span class="ws-product-category" x-show="p.category && !p.is_combo" x-text="p.category"></span>
                             <div class="ws-product-row">
                                 <span class="ws-price" x-text="priceInfo(p).main"></span>
                                 <span class="ws-price-equiv" x-show="priceInfo(p).equiv" x-text="priceInfo(p).equiv"></span>
@@ -215,9 +216,13 @@ get_header();
                             </div>
                             <div class="ws-combo-items ws-store-combo-items" x-show="p.is_combo && (p.combo_items || []).length">
                                 <span class="ws-combo-items-label"><i class="fa-solid fa-cubes"></i> <?php esc_html_e( 'Contiene', 'workshop' ); ?></span>
-                                <template x-for="it in (p.combo_items || [])" :key="it.product_id">
+                                <!-- Solo los primeros 4 componentes para no estirar el card; el resto se ve en el modal. -->
+                                <template x-for="it in (p.combo_items || []).slice(0, 4)" :key="it.product_id">
                                     <span class="ws-combo-chip"><i class="fa-solid fa-box"></i><span x-text="it.name"></span><b x-text="'×' + it.qty"></b></span>
                                 </template>
+                                <button type="button" class="ws-combo-more" x-show="(p.combo_items || []).length > 4" @click.stop="openProduct(p)" :title="'<?php esc_attr_e( 'Ver todos los productos del combo', 'workshop' ); ?>'">
+                                    <i class="fa-solid fa-layer-group"></i> +<span x-text="(p.combo_items || []).length - 4"></span> <?php esc_html_e( 'ver más', 'workshop' ); ?>
+                                </button>
                             </div>
                             <div class="ws-product-actions">
                                 <button class="ws-btn ws-btn-ghost ws-btn-sm ws-btn-block" @click.stop="openProduct(p)">
