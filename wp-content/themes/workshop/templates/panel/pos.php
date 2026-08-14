@@ -113,16 +113,16 @@ if ( ! empty( $sub_data['is_trial'] ) && $sub_data['trial_days_left'] > 0 && $su
                                                 <div class="ws-product-name" x-text="product.name"></div>
                                                 <span class="ws-combo-badge" title="<?php esc_attr_e( 'Este producto es un combo', 'workshop' ); ?>"><i class="fa-solid fa-layer-group"></i> <?php esc_html_e( 'Combo', 'workshop' ); ?></span>
                                             </div>
-                                            <div class="ws-pos-combo-items" x-show="(product.combo_items || []).length">
-                                                <template x-for="it in (product.combo_items || []).slice(0, 4)" :key="it.product_id">
-                                                    <span class="ws-combo-chip" x-text="it.name + ' ×' + it.qty"></span>
-                                                </template>
-                                            </div>
                                             <div class="ws-product-price" x-text="formatPrice(product.sale_price)"></div>
                                             <div class="ws-product-stock" :class="product.stock > 0 ? 'ws-stock-ok' : 'ws-stock-low'">
                                                 <i class="fa-solid fa-box"></i>
                                                 <span x-text="product.stock"></span>
                                             </div>
+                                            <!-- Ojo: abre el modal con TODOS los componentes del combo
+                                                 (el card queda compacto: solo nombre, precio y stock). -->
+                                            <button type="button" class="ws-pos-combo-view" @click.stop="openComboDetail(product)" :disabled="product.stock <= 0" title="<?php esc_attr_e( 'Ver contenido del combo', 'workshop' ); ?>">
+                                                <i class="fa-solid fa-eye"></i> <?php esc_html_e( 'Ver combo', 'workshop' ); ?>
+                                            </button>
                                         </div>
                                     </div>
                                 </template>
@@ -432,6 +432,48 @@ if ( ! empty( $sub_data['is_trial'] ) && $sub_data['trial_days_left'] > 0 && $su
                         </button>
                     </div>
                 </template>
+    <!-- Modal: contenido completo de un combo (desde el ojo del card del POS) -->
+    <div class="ws-modal" x-show="comboDetail" x-cloak @keydown.escape.window="comboDetail = null">
+        <div class="ws-modal-backdrop" @click="comboDetail = null"></div>
+        <div class="ws-modal-box">
+            <div class="ws-modal-head">
+                <h3><i class="fa-solid fa-layer-group"></i> <span x-text="comboDetail?.name"></span></h3>
+                <button class="ws-cart-close" @click="comboDetail = null"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="ws-modal-body">
+                <template x-if="comboDetail">
+                    <div>
+                        <div class="ws-combo-detail-img">
+                            <img x-show="comboDetail.image" :src="comboDetail.image" :alt="comboDetail.name" loading="lazy">
+                            <i x-show="!comboDetail.image" class="fa-solid fa-layer-group"></i>
+                        </div>
+                        <div class="ws-combo-detail-meta">
+                            <span class="ws-combo-badge"><i class="fa-solid fa-layer-group"></i> <?php esc_html_e( 'Combo', 'workshop' ); ?></span>
+                            <strong class="ws-combo-detail-price" x-text="formatPrice(comboDetail.sale_price)"></strong>
+                            <span class="ws-product-stock" :class="comboDetail.stock > 0 ? 'ws-stock-ok' : 'ws-stock-low'">
+                                <i class="fa-solid fa-box"></i>
+                                <span x-text="comboDetail.stock"></span>
+                            </span>
+                        </div>
+                        <div class="ws-combo-detail-items">
+                            <h4><?php esc_html_e( 'Contiene', 'workshop' ); ?></h4>
+                            <template x-for="it in (comboDetail.combo_items || [])" :key="it.product_id">
+                                <div class="ws-combo-detail-item">
+                                    <i class="fa-solid fa-box"></i>
+                                    <span x-text="it.name"></span>
+                                    <b x-text="'× ' + it.qty"></b>
+                                </div>
+                            </template>
+                            <p class="ws-empty" x-show="!(comboDetail.combo_items || []).length"><?php esc_html_e( 'Este combo no tiene productos definidos.', 'workshop' ); ?></p>
+                        </div>
+                    </div>
+                </template>
+            </div>
+            <div class="ws-modal-foot">
+                <button type="button" class="ws-btn ws-btn-secondary" @click="comboDetail = null"><?php esc_html_e( 'Cerrar', 'workshop' ); ?></button>
+                <button type="button" class="ws-btn ws-btn-primary" @click="addComboToCart()" :disabled="comboDetail && comboDetail.stock <= 0">
+                    <i class="fa-solid fa-cart-plus"></i> <?php esc_html_e( 'Añadir al carrito', 'workshop' ); ?>
+                </button>
             </div>
         </div>
     </div>
@@ -771,6 +813,18 @@ document.addEventListener('alpine:init', () => {
         // que contiene varios) y no mezclados al final de la lista.
         get posCombos() { return this.filteredProducts.filter(p => p.is_combo); },
         get posProducts() { return this.filteredProducts.filter(p => !p.is_combo); },
+
+        // Detalle del combo: el card del POS es compacto (nombre, precio y
+        // stock); el ojo abre este modal con TODOS los componentes.
+        comboDetail: null,
+        openComboDetail(product) {
+            this.comboDetail = product;
+        },
+        addComboToCart() {
+            if (!this.comboDetail) return;
+            this.addToCart(this.comboDetail);
+            this.comboDetail = null;
+        },
 
         get filteredCustomers() {
             if (!this.customerSearch) return this.customers;

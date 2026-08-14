@@ -420,7 +420,32 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-pos-section { margin-bottom: 20px; }
 .ws-pos-section-title { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; font-size: .95rem; font-weight: 700; color: var(--ws-text); }
 .ws-pos-section-title small { font-weight: 400; color: var(--ws-muted); }
-.ws-pos-combo-items { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 8px; }
+/* Botón ojo del card de combo en el POS: abre el modal con los componentes. */
+.ws-pos-combo-view {
+    margin-top: 8px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+    border: 1px dashed rgba(124, 58, 237, .5); background: #f5f3ff; color: var(--ws-primary);
+    border-radius: 999px; padding: 5px 12px; font-size: .78em; font-weight: 600; font-family: inherit;
+    transition: background .15s, border-color .15s;
+}
+.ws-pos-combo-view:hover { background: #ede9fe; border-color: var(--ws-primary); }
+.ws-pos-combo-view:disabled { opacity: .5; cursor: not-allowed; }
+/* Modal de detalle del combo (POS). */
+.ws-combo-detail-img {
+    width: 100%; height: 180px; border-radius: 12px; overflow: hidden; margin-bottom: 12px;
+    background: linear-gradient(135deg, #eef2ff, #f5f3ff); display: flex; align-items: center; justify-content: center;
+    color: var(--ws-primary-light); font-size: 3rem;
+}
+.ws-combo-detail-img img { width: 100%; height: 100%; object-fit: cover; }
+.ws-combo-detail-meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.ws-combo-detail-price { font-size: 1.25rem; font-weight: 800; color: var(--ws-primary); }
+.ws-combo-detail-items h4 { margin: 0 0 8px; font-size: .82em; text-transform: uppercase; letter-spacing: .4px; color: var(--ws-muted); }
+.ws-combo-detail-item {
+    display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--ws-border);
+    border-radius: 10px; margin-bottom: 6px; background: #fff;
+}
+.ws-combo-detail-item i { color: var(--ws-primary-light); }
+.ws-combo-detail-item span { flex: 1; font-size: .9em; }
+.ws-combo-detail-item b { color: var(--ws-primary); }
 .ws-product-card.ws-product-combo { border-color: rgba(124, 58, 237, .45); }
 
 /* ---------- Toolbar / search ---------- */
