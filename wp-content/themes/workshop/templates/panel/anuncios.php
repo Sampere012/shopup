@@ -78,24 +78,24 @@ $ws_ann_types    = array(
                     </select>
                 </label>
                 <?php endif; ?>
-                <label class="ws-field ws-ann-pin-check">
+                <div class="ws-field ws-ann-pin-check">
                     <span><?php esc_html_e( 'Fijar como banner', 'workshop' ); ?></span>
                     <label class="ws-check">
                         <input type="checkbox" x-model="form.pinned">
                         <span><i class="fa-solid fa-thumbtack"></i> <?php esc_html_e( 'Mostrar anclado en el panel', 'workshop' ); ?></span>
                     </label>
-                </label>
-                <label class="ws-field" x-show="form.pinned">
+                </div>
+                <div class="ws-field">
                     <span><?php esc_html_e( 'Duración fija (días)', 'workshop' ); ?></span>
                     <input type="number" min="1" max="365" x-model.number="form.pinnedDays" placeholder="7">
-                </label>
-                <label class="ws-field" x-show="form.pinned">
+                </div>
+                <div class="ws-field">
                     <span><?php esc_html_e( 'No cerrable por trabajadores', 'workshop' ); ?></span>
                     <label class="ws-check">
                         <input type="checkbox" x-model="form.dismissible">
                         <span><i class="fa-solid fa-lock"></i> <?php esc_html_e( 'Solo el admin puede cerrar este banner', 'workshop' ); ?></span>
                     </label>
-                </label>
+                </div>
                 <label class="ws-field">
                     <span><?php esc_html_e( 'Visible desde', 'workshop' ); ?></span>
                     <input type="datetime-local" x-model="form.showFrom">
@@ -131,6 +131,11 @@ $ws_ann_types    = array(
                         <strong x-text="a.title"></strong>
                         <p x-text="a.message"></p>
                         <em x-text="a.date"></em>
+                        <span class="ws-ann-sched">
+                            <span class="ws-ann-tag" x-show="a.show_from"><i class="fa-solid fa-calendar-day"></i> <?php esc_html_e( 'Desde', 'workshop' ); ?> <b x-text="fmtDate(a.show_from)"></b></span>
+                            <span class="ws-ann-tag" x-show="a.show_until"><i class="fa-solid fa-calendar-xmark"></i> <?php esc_html_e( 'Hasta', 'workshop' ); ?> <b x-text="fmtDate(a.show_until)"></b></span>
+                            <span class="ws-ann-tag ws-ann-tag-pin" x-show="a.pinned_until"><i class="fa-solid fa-clock"></i> <?php esc_html_e( 'Fijo hasta', 'workshop' ); ?> <b x-text="fmtDate(a.pinned_until)"></b></span>
+                        </span>
                         <span class="ws-ann-tag ws-ann-tag-site" x-show="a.scope === 'site'"><i class="fa-solid fa-globe"></i> <?php esc_html_e( 'Todo el sitio', 'workshop' ); ?></span>
                         <span class="ws-ann-tag ws-ann-tag-pin" x-show="a.pinned"><i class="fa-solid fa-thumbtack"></i> <?php esc_html_e( 'Anclado', 'workshop' ); ?></span>
                         <span class="ws-ann-tag" x-show="!a.active"><i class="fa-solid fa-eye-slash"></i> <?php esc_html_e( 'Inactivo', 'workshop' ); ?></span>
@@ -139,7 +144,7 @@ $ws_ann_types    = array(
                         <div class="ws-ann-item-actions">
                             <button type="button" class="ws-btn ws-btn-sm ws-btn-secondary" @click="edit(a)" title="<?php esc_attr_e( 'Editar', 'workshop' ); ?>"><i class="fa-solid fa-pen"></i></button>
                             <button type="button" class="ws-btn ws-btn-sm ws-btn-secondary" @click="toggle(a, 'pinned')" :title="a.pinned ? '<?php esc_attr_e( 'Desfijar', 'workshop' ); ?>' : '<?php esc_attr_e( 'Fijar como banner', 'workshop' ); ?>'">
-                                <i class="fa-solid" :class="a.pinned ? 'fa-thumbtack-slash' : 'fa-thumbtack'"></i>
+                                <i class="fa-solid fa-thumbtack" :class="a.pinned ? 'ws-ann-unpin' : ''"></i>
                             </button>
                             <button type="button" class="ws-btn ws-btn-sm ws-btn-secondary" @click="toggle(a, 'active')" :title="a.active ? '<?php esc_attr_e( 'Desactivar', 'workshop' ); ?>' : '<?php esc_attr_e( 'Activar', 'workshop' ); ?>'">
                                 <i class="fa-solid" :class="a.active ? 'fa-eye-slash' : 'fa-eye'"></i>
@@ -173,6 +178,17 @@ document.addEventListener('alpine:init', function () {
             editingId: 0,
             saving: false,
             form: { title: '', message: '', type: 'info', pinned: false, pinnedDays: 7, dismissible: true, showFrom: '', showUntil: '' },
+
+            fmtDate: function (v) {
+                if (!v) return '';
+                var d = new Date(v);
+                if (isNaN(d.getTime())) return String(v);
+                var dd = String(d.getDate()).padStart(2, '0');
+                var mm = String(d.getMonth() + 1).padStart(2, '0');
+                var hh = String(d.getHours()).padStart(2, '0');
+                var mi = String(d.getMinutes()).padStart(2, '0');
+                return dd + '/' + mm + '/' + d.getFullYear() + ' ' + hh + ':' + mi;
+            },
 
             resetForm: function () {
                 this.editingId = 0;

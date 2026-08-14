@@ -365,6 +365,23 @@ function ws_db_tables() {
             KEY status (status)
         ) {charset};",
 
+        // Cuadre de inventario del cierre de caja: conteo FÍSICO ingresado al
+        // cerrar vs. el stock VIRTUAL que maneja la app. Se compara producto
+        // por producto (sobrante/faltante) y queda auditado por cierre.
+        'pos_cash_counts' => "CREATE TABLE {prefix}ws_pos_cash_counts (
+            id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            register_id BIGINT(20) UNSIGNED NOT NULL,
+            product_id BIGINT(20) UNSIGNED NOT NULL,
+            product_name VARCHAR(255) NOT NULL DEFAULT '',
+            virtual_qty DECIMAL(12,2) NOT NULL DEFAULT 0,
+            physical_qty DECIMAL(12,2) NOT NULL DEFAULT 0,
+            diff DECIMAL(12,2) NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY register_id (register_id),
+            KEY product_id (product_id)
+        ) {charset};",
+
         'queue' => "CREATE TABLE {prefix}ws_queue (
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
             hook VARCHAR(255) NOT NULL,
@@ -782,6 +799,15 @@ function ws_db_migrate() {
     if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $ct2 ) ) !== $ct2 ) {
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         $sql = ws_db_tables()['pos_cash'];
+        $sql = str_replace( '{prefix}', $wpdb->prefix, $sql );
+        $sql = str_replace( '{charset}', $wpdb->get_charset_collate(), $sql );
+        dbDelta( $sql );
+    }
+    // Cuadre de inventario del cierre (conteo físico vs. stock virtual).
+    $ct3 = $wpdb->prefix . WS_TABLE_PREFIX . 'pos_cash_counts';
+    if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $ct3 ) ) !== $ct3 ) {
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        $sql = ws_db_tables()['pos_cash_counts'];
         $sql = str_replace( '{prefix}', $wpdb->prefix, $sql );
         $sql = str_replace( '{charset}', $wpdb->get_charset_collate(), $sql );
         dbDelta( $sql );

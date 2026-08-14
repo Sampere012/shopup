@@ -213,6 +213,11 @@ get_header();
             // dueño fija desde ShopUp → Anuncios. Se ven en todo el panel.
             if ( function_exists( 'ws_announcements_pinned' ) ) :
                 foreach ( ws_announcements_pinned() as $ws_ann ) :
+                    // Solo se muestran los anuncios dentro de su ventana de
+                    // vigencia (desde/hasta y fijado hasta), si la tienen.
+                    if ( function_exists( 'ws_announcement_is_visible' ) && ! ws_announcement_is_visible( $ws_ann ) ) {
+                        continue;
+                    }
                     $ws_ann_kind = 'warning' === $ws_ann->type ? 'warn' : $ws_ann->type;
                     if ( ! in_array( $ws_ann_kind, array( 'danger', 'info', 'warn' ), true ) ) {
                         $ws_ann_kind = 'info';

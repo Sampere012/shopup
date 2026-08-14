@@ -1128,7 +1128,16 @@
             ...tableState('movements'),
             init() { this.restoreTableState(); this.load(); },
             locations: opts.locations || [],
+            currency: opts.currency || '€',
+            canEntry: opts.canEntry,
+            canExit: opts.canExit,
+            canVenta: opts.canVenta,
+            sellers: opts.sellers || [],
             movements: [],
+            products: [],
+            addOpen: false,
+            saving: false,
+            form: {},
             search: '',
             typeFilter: '',
             locationFilter: '',
@@ -1137,8 +1146,66 @@
                     .then(r => r.json()).then(r => { if (r.success) { this.movements = r.data.movements; this.total = r.data.total; this.page = r.data.page; } });
             },
             typeLabel(t) {
-                const m = { entrada: 'Entrada', salida: 'Salida', baja: 'Baja', transferencia: 'Transferencia', pedido: 'Pedido' };
+                const m = { entrada: 'Entrada', salida: 'Salida', baja: 'Baja', transferencia: 'Transferencia', pedido: 'Pedido', venta: 'Venta' };
                 return m[t] || t;
+            },
+            get canAnyMove() { return this.canEntry || this.canExit || this.canVenta; },
+            openAdd() {
+                this.form = { kind: 'entrada', customType: '', direction: 'entrada', product_id: 0, location_id: 0, seller_id: 0, qty: 0, price: 0, reference: '', note: '' };
+                this.addOpen = true;
+                this.loadProducts();
+            },
+            loadProducts() {
+                if (this.products.length) return;
+                fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ action: 'ws_cache_products', ws_nonce: WS.nonce }) })
+                    .then(r => r.json()).then(r => { if (r.success) this.products = (r.data && r.data.data) || []; });
+            },
+            onKindChange() {
+                if (this.form.kind === 'entrada') this.form.direction = 'entrada';
+                if (this.form.kind === 'salida' || this.form.kind === 'baja') this.form.direction = 'salida';
+                if (this.form.kind !== 'venta' && this.form.price) this.form.price = 0;
+                if (this.form.kind === 'venta' && this.form.product_id) this.onProductChange();
+            },
+            onProductChange() {
+                const p = this.products.find(x => Number(x.id) === Number(this.form.product_id));
+                if (p) this.form.price = Number(p.sale_price) || 0;
+            },
+            doAdd() {
+                if (this.saving) return;
+                if (this.form.kind === 'otro' && !this.form.customType.trim()) { toast('error', 'Error', 'Escribe el tipo de movimiento personalizado.'); return; }
+                if (!this.form.product_id || !this.form.location_id || Number(this.form.qty) <= 0) { toast('error', 'Error', 'Completa producto, ubicación y cantidad.'); return; }
+                if (this.form.kind === 'venta' && (!this.form.seller_id || Number(this.form.price) < 0)) { toast('error', 'Error', 'Completa vendedor y precio.'); return; }
+                this.saving = true;
+                const isVenta = this.form.kind === 'venta';
+                const body = new URLSearchParams({ action: isVenta ? 'ws_movement_venta' : 'ws_movement_add', ws_nonce: WS.nonce });
+                if (isVenta) {
+                    body.append('product_id', this.form.product_id);
+                    body.append('location_id', this.form.location_id);
+                    body.append('seller_id', this.form.seller_id || 0);
+                    body.append('qty', this.form.qty);
+                    body.append('price', this.form.price);
+                    body.append('reference', this.form.reference || '');
+                    body.append('note', this.form.note || '');
+                } else {
+                    body.append('direction', this.form.direction);
+                    body.append('type', this.form.kind === 'otro' ? this.form.customType : this.form.kind);
+                    body.append('product_id', this.form.product_id);
+                    body.append('location_id', this.form.location_id);
+                    body.append('qty', this.form.qty);
+                    body.append('reference', this.form.reference || '');
+                    body.append('note', this.form.note || '');
+                }
+                fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body })
+                    .then(r => r.json()).then(r => {
+                        this.saving = false;
+                        if (r.success) {
+                            toast('success', isVenta ? 'Venta registrada' : 'Movimiento registrado');
+                            this.addOpen = false;
+                            this.load();
+                        } else {
+                            toast('error', 'Error', r.data && r.data.msg);
+                        }
+                    }).catch(() => { this.saving = false; toast('error', 'Error', 'Sin conexión.'); });
             }
         }));
 

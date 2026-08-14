@@ -500,6 +500,135 @@ function ws_ajax_stock_batch_transfer() {
     wp_send_json_success( array( 'count' => $result ) );
 }
 
+/* ---------------- Movimiento libre / personalizado ---------------- */
+
+/**
+ * Registra un movimiento de stock de TIPO PERSONALIZADO (entrada o salida)
+ * con su descripción: el tipo es un texto libre (p.ej. "merma", "ajuste",
+ * "devolución de cliente") que queda en el historial como tal. La dirección
+ * (entrada/salida) decide si el stock aumenta o disminuye.
+ */
+add_action( 'wp_ajax_ws_movement_add', 'ws_ajax_movement_add' );
+function ws_ajax_movement_add() {
+    $direction = sanitize_key( $_POST['direction'] ?? '' );
+    if ( ! in_array( $direction, array( 'entrada', 'salida' ), true ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Dirección de movimiento inválida.', 'workshop' ) ) );
+    }
+    ws_guard( 'entrada' === $direction ? 'stock_entry' : 'stock_exit' );
+
+    $type  = sanitize_text_field( $_POST['type'] ?? '' );
+    $type  = mb_substr( trim( $type ), 0, 30 );
+    if ( '' === $type ) {
+        $type = 'entrada' === $direction ? 'entrada' : 'salida';
+    }
+
+    $product_id  = (int) ( $_POST['product_id'] ?? 0 );
+    $location_id = (int) ( $_POST['location_id'] ?? 0 );
+    $qty         = (float) ( $_POST['qty'] ?? 0 );
+    $ref         = sanitize_text_field( $_POST['reference'] ?? '' );
+    $note        = sanitize_text_field( $_POST['note'] ?? '' );
+
+    if ( ! $product_id || ! in_array( $location_id, ws_user_location_ids(), true ) || $qty <= 0 ) {
+        wp_send_json_error( array( 'msg' => __( 'Datos incompletos.', 'workshop' ) ) );
+    }
+
+    $result = ( 'entrada' === $direction )
+        ? WS_Stock::increase( $product_id, $location_id, $qty, $type, $ref, $note )
+        : WS_Stock::decrease( $product_id, $location_id, $qty, $type, $ref, $note );
+    if ( is_wp_error( $result ) ) {
+        wp_send_json_error( array( 'msg' => $result->get_error_message() ) );
+    }
+    ws_log_audit( 'movement_' . $type, 'movement', $product_id, array( 'location' => $location_id, 'qty' => $qty, 'direction' => $direction ) );
+    wp_send_json_success( array( 'qty' => WS_Stock::qty( $product_id, $location_id ) ) );
+}
+
+/* ---------------- Venta registrada desde stock (movimientos) ---------------- */
+
+/**
+ * Movimiento de tipo "venta": el almacenero registra la venta desde el stock
+ * (Movimientos) y la app la guarda TANTO en el historial normal (tipo 'venta')
+ * como en las ventas POS, indicando el PV y el vendedor. NO exige caja abierta
+ * (register_id = 0): el cuadre se hace por stock, no por el cierre de caja.
+ */
+add_action( 'wp_ajax_ws_movement_venta', 'ws_ajax_movement_venta' );
+function ws_ajax_movement_venta() {
+    // Nonce + permiso: venta desde stock está permitida con pos_sell o con
+    // stock_exit (el almacenero puede registrar la venta sin caja abierta).
+    ws_guard( 'stock_exit', 'pos_sell' );
+
+    $product_id  = (int) ( $_POST['product_id'] ?? 0 );
+    $location_id = (int) ( $_POST['location_id'] ?? 0 );
+    $seller_id   = (int) ( $_POST['seller_id'] ?? 0 );
+    $qty         = (float) ( $_POST['qty'] ?? 0 );
+    $price       = (float) ( $_POST['price'] ?? 0 );
+    $ref         = sanitize_text_field( $_POST['reference'] ?? '' );
+    $note        = sanitize_text_field( $_POST['note'] ?? '' );
+
+    if ( ! $product_id || ! $location_id || $qty <= 0 ) {
+        wp_send_json_error( array( 'msg' => __( 'Datos incompletos.', 'workshop' ) ) );
+    }
+    if ( ! in_array( $location_id, ws_user_location_ids(), true ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Ubicación inválida.', 'workshop' ) ) );
+    }
+    if ( ! $seller_id ) {
+        $seller_id = get_current_user_id();
+    }
+
+    global $wpdb;
+    $p = $wpdb->get_row( $wpdb->prepare( "SELECT name, currency, sale_price FROM " . ws_table_name( 'products' ) . " WHERE id=%d", $product_id ) );
+    if ( ! $p ) {
+        wp_send_json_error( array( 'msg' => __( 'Producto no encontrado.', 'workshop' ) ) );
+    }
+    if ( $price <= 0 ) {
+        $price = (float) $p->sale_price;
+    }
+
+    $wpdb->query( 'START TRANSACTION' );
+    $stock_res = WS_Stock::decrease_in_tx(
+        $product_id, $location_id, $qty, 'venta',
+        $ref ? $ref : 'Venta desde stock',
+        $note, $seller_id
+    );
+    if ( is_wp_error( $stock_res ) ) {
+        $wpdb->query( 'ROLLBACK' );
+        wp_send_json_error( array( 'msg' => $stock_res->get_error_message() ) );
+    }
+
+    $subtotal = round( $qty * $price, 2 );
+    $data = array(
+        'location_id'     => $location_id,
+        'seller_id'       => $seller_id,
+        'currency'        => $p->currency,
+        'subtotal'        => $subtotal,
+        'discount'        => 0,
+        'total'           => $subtotal,
+        'payment_method'  => 'cash',
+        'cash_amount'     => $subtotal,
+        'transfer_amount' => 0,
+        'transfer_number' => '',
+        'status'          => 'completed',
+        'register_id'     => 0, // Sin caja: la venta no depende del cierre de caja.
+        'client_ref'      => '',
+        'items'           => array( array(
+            'product_id'   => $product_id,
+            'product_name' => $p->name,
+            'qty'          => $qty,
+            'price'        => $price,
+            'discount'     => 0,
+            'subtotal'     => $subtotal,
+        ) ),
+    );
+    $sale_id = WS_POS::save_sale( $data );
+    if ( ! $sale_id ) {
+        $wpdb->query( 'ROLLBACK' );
+        wp_send_json_error( array( 'msg' => __( 'No se pudo guardar la venta.', 'workshop' ) ) );
+    }
+    $wpdb->query( 'COMMIT' );
+
+    ws_log_audit( 'stock_venta', 'movement', $product_id, array( 'location' => $location_id, 'qty' => $qty, 'sale_id' => $sale_id ) );
+    wp_send_json_success( array( 'qty' => WS_Stock::qty( $product_id, $location_id ), 'sale_id' => $sale_id ) );
+}
+
 /* ---------------- Stock list ---------------- */
 
 add_action( 'wp_ajax_ws_stock_list', 'ws_ajax_stock_list' );
@@ -574,6 +703,7 @@ function ws_ajax_movements_list() {
                 'dest_name'       => $m->dest_name ?? '',
                 'qty'             => (float) $m->qty,
                 'reference'       => $m->reference,
+                'note'            => (string) ( $m->note ?? '' ),
                 'user_name'       => $m->user_name,
                 'date'            => mysql2date( 'd/m/Y H:i', $m->created_at ),
             );
@@ -2164,6 +2294,7 @@ function ws_ajax_pos_cash_close() {
     $location_id    = (int) ( $_POST['location_id'] ?? 0 );
     $closing_amount = (float) ( $_POST['closing_amount'] ?? 0 );
     $note           = sanitize_text_field( $_POST['note'] ?? '' );
+    $cuadre         = isset( $_POST['cuadre'] ) ? json_decode( wp_unslash( $_POST['cuadre'] ), true ) : array();
 
     if ( ! $location_id || ! in_array( $location_id, ws_user_location_ids(), true ) ) {
         wp_send_json_error( array( 'msg' => __( 'Ubicación inválida.', 'workshop' ) ) );
@@ -2174,8 +2305,69 @@ function ws_ajax_pos_cash_close() {
         wp_send_json_error( array( 'msg' => $result->get_error_message() ) );
     }
 
-    ws_log_audit( 'pos_cash_close', 'pos_cash', (int) $result['id'], array( 'location' => $location_id, 'expected' => $result['expected'], 'actual' => $result['closing_amount'] ) );
+    // Cuadre de inventario: conteo físico vs. stock virtual. Se guarda por
+    // producto para auditar el cierre (sobrantes/faltantes detectados).
+    $cuadre_summary = array( 'count' => 0, 'sobrante' => 0, 'faltante' => 0 );
+    if ( is_array( $cuadre ) && ! empty( $cuadre ) && class_exists( 'WS_Stock' ) ) {
+        global $wpdb;
+        $counts_table = ws_table_name( 'pos_cash_counts' );
+        $virtual = array();
+        foreach ( WS_Stock::stock_rows( array( 'location_id' => $location_id, 'limit' => 500 ) ) as $r ) {
+            $virtual[ (int) $r->product_id ] = array( 'name' => $r->name, 'qty' => (float) $r->qty );
+        }
+        $count = 0;
+        foreach ( $cuadre as $pid => $phys ) {
+            $pid = (int) $pid;
+            $phys = (float) $phys;
+            if ( ! $pid || ! isset( $virtual[ $pid ] ) ) {
+                continue;
+            }
+            $virt = $virtual[ $pid ]['qty'];
+            $diff = round( $phys - $virt, 2 );
+            $wpdb->insert( $counts_table, array(
+                'register_id'  => (int) $result['id'],
+                'product_id'   => $pid,
+                'product_name' => sanitize_text_field( $virtual[ $pid ]['name'] ),
+                'virtual_qty'  => $virt,
+                'physical_qty' => $phys,
+                'diff'         => $diff,
+            ), array( '%d', '%d', '%s', '%f', '%f', '%f' ) );
+            if ( $diff > 0.004 ) {
+                $cuadre_summary['sobrante']++;
+            } elseif ( $diff < -0.004 ) {
+                $cuadre_summary['faltante']++;
+            }
+            $count++;
+        }
+        $cuadre_summary['count'] = $count;
+    }
+    $result['cuadre'] = $cuadre_summary;
+
+    ws_log_audit( 'pos_cash_close', 'pos_cash', (int) $result['id'], array( 'location' => $location_id, 'expected' => $result['expected'], 'actual' => $result['closing_amount'], 'cuadre' => $cuadre_summary ) );
     wp_send_json_success( array( 'data' => $result ) );
+}
+
+/**
+ * Stock VIRTUAL de una ubicación para el cuadre del cierre de caja: devuelve
+ * producto, nombre y stock actual que maneja la app para compararlo con el
+ * conteo físico que ingresa el usuario al cerrar.
+ */
+add_action( 'wp_ajax_ws_pos_cash_stock', 'ws_ajax_pos_cash_stock' );
+function ws_ajax_pos_cash_stock() {
+    ws_guard( 'pos_sell' );
+    $location_id = (int) ( $_POST['location_id'] ?? 0 );
+    if ( ! $location_id || ! in_array( $location_id, ws_user_location_ids(), true ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Ubicación inválida.', 'workshop' ) ) );
+    }
+    $out = array();
+    foreach ( WS_Stock::stock_rows( array( 'location_id' => $location_id, 'limit' => 500 ) ) as $r ) {
+        $out[] = array(
+            'product_id' => (int) $r->product_id,
+            'name'       => $r->name,
+            'qty'        => (float) $r->qty,
+        );
+    }
+    wp_send_json_success( array( 'data' => $out ) );
 }
 
 add_action( 'wp_ajax_ws_pos_cash_history', 'ws_ajax_pos_cash_history' );

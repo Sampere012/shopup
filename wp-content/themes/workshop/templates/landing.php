@@ -47,6 +47,11 @@ get_header();
                 if ( ! (int) $ws_ann->active || ! (int) $ws_ann->pinned ) {
                     continue;
                 }
+                // Vigencia programada (desde/hasta y fijado hasta): solo se
+                // muestra el banner dentro de su ventana de tiempo.
+                if ( function_exists( 'ws_announcement_is_visible' ) && ! ws_announcement_is_visible( $ws_ann ) ) {
+                    continue;
+                }
                 $ws_ann_kind = 'warning' === $ws_ann->type ? 'warn' : $ws_ann->type;
                 if ( ! in_array( $ws_ann_kind, array( 'danger', 'info', 'warn' ), true ) ) {
                     $ws_ann_kind = 'info';

@@ -369,7 +369,7 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-field > span { font-size: .85em; font-weight: 600; color: var(--ws-text); }
 .ws-field input[type="text"], .ws-field input[type="email"], .ws-field input[type="password"],
 .ws-field input[type="number"], .ws-field input[type="date"], .ws-field input[type="time"],
-.ws-field input[type="url"], .ws-field input[type="tel"], .ws-field input[type="search"],
+.ws-field input[type="datetime-local"], .ws-field input[type="url"], .ws-field input[type="tel"], .ws-field input[type="search"],
 .ws-field select, .ws-field textarea {
     width: 100%; padding: 10px 12px; border: 1px solid var(--ws-border); border-radius: 10px;
     font-size: 14px; font-family: inherit; background: #fff; color: var(--ws-text); transition: border-color .15s, box-shadow .15s;
@@ -479,6 +479,7 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-move-baja { background: #f3e8ff; color: #6b21a8; }
 .ws-move-transferencia { background: #dbeafe; color: #1e40af; }
 .ws-move-pedido { background: #fef3c7; color: #92400e; }
+.ws-move-venta { background: #e0e7ff; color: #3730a3; }
 
 /* ---------- KPI ---------- */
 .ws-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 18px; margin-bottom: 24px; }
@@ -2348,7 +2349,20 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-pos-cash-btn.ws-cash-closed { background: #fee2e2; color: #991b1b; }
 .ws-cash-info { display: grid; gap: 6px; padding: 12px 14px; background: #f8fafc; border: 1px solid var(--ws-border); border-radius: 10px; margin-bottom: 14px; font-size: .9em; }
 .ws-cash-info span { color: var(--ws-muted); }
-.ws-modal-cash { max-width: 420px; }
+.ws-modal-cash { max-width: 480px; }
+.ws-cash-cuadre { margin-top: 14px; padding: 12px 14px; background: #f8fafc; border: 1px solid var(--ws-border); border-radius: 10px; }
+.ws-cash-cuadre-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; }
+.ws-cash-cuadre-table { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; }
+.ws-cash-cuadre-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px; background: #fff; border: 1px solid var(--ws-border); border-radius: 8px; font-size: .85rem; }
+.ws-cash-cuadre-row.ws-cuadre-faltante { border-color: #fca5a5; background: #fef2f2; }
+.ws-cash-cuadre-row.ws-cuadre-sobrante { border-color: #86efac; background: #f0fdf4; }
+.ws-cash-cuadre-name { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ws-cash-cuadre-name b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-cash-cuadre-name span { font-size: .74rem; color: var(--ws-muted); }
+.ws-cash-cuadre-input input { width: 86px; padding: 4px 8px; border: 1px solid var(--ws-border); border-radius: 6px; font-size: .85rem; }
+.ws-cash-cuadre-diff { width: 74px; text-align: right; }
+.ws-cash-cuadre-summary { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; font-size: .8rem; color: var(--ws-muted); }
+.ws-cash-cuadre-summary b { color: var(--ws-heading); }
 .ws-badge-fraction { background: #ede9fe; color: #6b21a8; margin: 2px 0; }
 
 /* ---------- POS: insignia de modo offline ---------- */
@@ -2572,6 +2586,9 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-ann-item-body p { margin: 0; font-size: .92rem; color: #475569; white-space: pre-line; }
 .ws-ann-item-body em { font-size: .8rem; color: var(--ws-muted, #94a3b8); font-style: normal; }
 .ws-ann-tag { display: inline-flex; align-items: center; gap: .3rem; width: fit-content; margin-top: .35rem; padding: 2px 8px; border-radius: 999px; font-size: .74rem; font-weight: 600; background: #f1f5f9; color: #64748b; }
+.ws-ann-unpin { position: relative; display: inline-block; }
+.ws-ann-unpin::after { content: ''; position: absolute; left: -3px; right: -3px; top: 50%; height: 2px; background: currentColor; transform: rotate(-45deg); border-radius: 2px; }
+.ws-ann-sched { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .35rem; }
 .ws-ann-tag-pin { background: #eef2ff; color: #4f46e5; }
 .ws-ann-item-actions { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: .4rem; }
 .ws-banner-close { flex: 0 0 auto; width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 8px; background: transparent; color: inherit; cursor: pointer; opacity: .7; }

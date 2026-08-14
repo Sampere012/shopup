@@ -347,6 +347,44 @@ if ( ! empty( $sub_data['is_trial'] ) && $sub_data['trial_days_left'] > 0 && $su
                             <label><?php esc_html_e( 'Nota de cierre (opcional)', 'workshop' ); ?></label>
                             <input type="text" x-model="cashClosingNote" placeholder="<?php esc_attr_e( 'Arqueo, incidencias...', 'workshop' ); ?>">
                         </div>
+
+                        <!-- Cuadre de inventario: conteo físico vs. stock virtual -->
+                        <div class="ws-cash-cuadre">
+                            <div class="ws-cash-cuadre-head">
+                                <strong><i class="fa-solid fa-list-check"></i> <?php esc_html_e( 'Cuadre de inventario', 'workshop' ); ?></strong>
+                                <span class="ws-muted"><?php esc_html_e( 'Conteo físico vs. stock de la app', 'workshop' ); ?></span>
+                            </div>
+                            <template x-if="cuadreLoading">
+                                <p class="ws-empty"><i class="fa-solid fa-spinner fa-spin"></i> <?php esc_html_e( 'Cargando stock…', 'workshop' ); ?></p>
+                            </template>
+                            <template x-if="!cuadreLoading && cuadre.length === 0">
+                                <p class="ws-empty"><?php esc_html_e( 'Sin productos con stock en esta ubicación.', 'workshop' ); ?></p>
+                            </template>
+                            <template x-if="!cuadreLoading && cuadre.length > 0">
+                                <div class="ws-cash-cuadre-table">
+                                    <template x-for="row in cuadre" :key="row.product_id">
+                                        <div class="ws-cash-cuadre-row" :class="{ 'ws-cuadre-faltante': cuadreDiff(row) < -0.004, 'ws-cuadre-sobrante': cuadreDiff(row) > 0.004 }">
+                                            <div class="ws-cash-cuadre-name"><b x-text="row.name"></b><span><?php esc_html_e( 'Virtual', 'workshop' ); ?>: <b x-text="row.qty"></b></span></div>
+                                            <div class="ws-cash-cuadre-input">
+                                                <input type="number" step="0.01" min="0" x-model.number="row.physical" :placeholder="row.qty">
+                                            </div>
+                                            <div class="ws-cash-cuadre-diff">
+                                                <span class="ws-muted"><?php esc_html_e( 'Dif.', 'workshop' ); ?>:</span>
+                                                <b :class="cuadreDiff(row) > 0.004 ? 'ws-text-success' : (cuadreDiff(row) < -0.004 ? 'ws-text-danger' : '')" x-text="cuadreDiffText(row)"></b>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
+                            <template x-if="cuadre.length > 0">
+                                <div class="ws-cash-cuadre-summary">
+                                    <span><i class="fa-solid fa-circle-check ws-text-success"></i> <?php esc_html_e( 'Cuadrado', 'workshop' ); ?>: <b x-text="cuadreOkCount()"></b></span>
+                                    <span><i class="fa-solid fa-plus-circle ws-text-success"></i> <?php esc_html_e( 'Sobrantes', 'workshop' ); ?>: <b x-text="cuadreSobrantes()"></b></span>
+                                    <span><i class="fa-solid fa-minus-circle ws-text-danger"></i> <?php esc_html_e( 'Faltantes', 'workshop' ); ?>: <b x-text="cuadreFaltantes()"></b></span>
+                                </div>
+                            </template>
+                        </div>
+
                         <button class="ws-btn ws-btn-primary ws-btn-full" @click="closeCash()" :disabled="cashSaving">
                             <i class="fa-solid fa-lock"></i>
                             <?php esc_html_e( 'Cerrar caja', 'workshop' ); ?>
@@ -401,6 +439,9 @@ document.addEventListener('alpine:init', () => {
         cashOpeningNote: '',
         cashClosingAmount: 0,
         cashClosingNote: '',
+        // Cuadre de inventario del cierre (físico vs. virtual)
+        cuadre: [],
+        cuadreLoading: false,
 
         init() {
             this.loadLocations();
@@ -470,7 +511,34 @@ document.addEventListener('alpine:init', () => {
 
         openCashModal() {
             this.showCashModal = true;
+            if (this.cashOpen) {
+                this.loadCuadre();
+            }
         },
+
+        // Carga el stock VIRTUAL de la ubicación para el cuadre del cierre.
+        async loadCuadre() {
+            if (!this.currentLocationId || this.cuadreLoading) return;
+            this.cuadreLoading = true;
+            try {
+                const response = await $('ws_pos_cash_stock', { location_id: this.currentLocationId });
+                if (response.success) {
+                    this.cuadre = (response.data.data || []).map(r => Object.assign({}, r, { physical: r.qty }));
+                }
+            } catch (error) {
+                console.error('Error cargando cuadre:', error);
+            }
+            this.cuadreLoading = false;
+        },
+
+        cuadreDiff(row) { return (Number(row.physical) || 0) - Number(row.qty); },
+        cuadreDiffText(row) {
+            const d = this.cuadreDiff(row);
+            return d > 0 ? '+' + d : d;
+        },
+        cuadreOkCount() { return this.cuadre.filter(r => Math.abs(this.cuadreDiff(r)) <= 0.004).length; },
+        cuadreSobrantes() { return this.cuadre.filter(r => this.cuadreDiff(r) > 0.004).length; },
+        cuadreFaltantes() { return this.cuadre.filter(r => this.cuadreDiff(r) < -0.004).length; },
 
         async openCash() {
             this.cashSaving = true;
@@ -504,25 +572,37 @@ document.addEventListener('alpine:init', () => {
             const closing = Number(this.cashClosingAmount) || 0;
             this.cashSaving = true;
             try {
+                const cuadreData = {};
+                this.cuadre.forEach(r => { cuadreData[r.product_id] = Number(r.physical) || 0; });
                 const response = await $('ws_pos_cash_close', {
                     location_id: this.currentLocationId,
                     closing_amount: closing,
-                    note: this.cashClosingNote
+                    note: this.cashClosingNote,
+                    cuadre: JSON.stringify(cuadreData)
                 });
                 if (response.success) {
                     const d = response.data.data;
                     this.cashOpen = false;
                     this.cashInfo = null;
                     this.showCashModal = false;
+                    const c = d.cuadre || {};
+                    let cuadreHtml = '';
+                    if (c.count) {
+                        cuadreHtml = '<br><i class="fa-solid fa-list-check"></i> <?php esc_html_e( 'Cuadre de inventario', 'workshop' ); ?>: ' +
+                            c.count + ' <?php esc_html_e( 'productos', 'workshop' ); ?> · ' +
+                            '<span style="color:#16a34a">' + (c.sobrante || 0) + ' <?php esc_html_e( 'sobrantes', 'workshop' ); ?></span> · ' +
+                            '<span style="color:#dc2626">' + (c.faltante || 0) + ' <?php esc_html_e( 'faltantes', 'workshop' ); ?></span>';
+                    }
                     Swal.fire({
                         icon: 'success',
                         title: '<?php esc_html_e( 'Caja cerrada', 'workshop' ); ?>',
                         html: '<?php esc_html_e( 'Ventas de la jornada', 'workshop' ); ?>: <b>' + this.formatPrice(d.sales_total) + '</b><br>' +
                               '<?php esc_html_e( 'Esperado', 'workshop' ); ?>: <b>' + this.formatPrice(d.expected) + '</b><br>' +
                               '<?php esc_html_e( 'Cuadrado', 'workshop' ); ?>: <b>' + this.formatPrice(d.closing_amount) + '</b><br>' +
-                              '<?php esc_html_e( 'Diferencia', 'workshop' ); ?>: <b>' + this.formatPrice(d.difference) + '</b>',
+                              '<?php esc_html_e( 'Diferencia', 'workshop' ); ?>: <b>' + this.formatPrice(d.difference) + '</b>' + cuadreHtml,
                         confirmButtonText: 'OK'
                     });
+                    this.cuadre = [];
                 } else {
                     Swal.fire({ icon: 'error', title: '<?php esc_html_e( 'Error', 'workshop' ); ?>', text: response.data?.msg || '' });
                 }
