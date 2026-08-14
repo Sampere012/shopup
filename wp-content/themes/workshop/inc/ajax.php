@@ -684,7 +684,12 @@ function ws_ajax_store_toggle() {
     global $wpdb;
     // El ítem sigue en el inventario; solo cambia si se muestra en la tienda.
     $table = ( 'combo' === $kind ) ? ws_table_name( 'combos' ) : ws_table_name( 'products' );
-    $wpdb->update( $table, array( 'store_visible' => $visible ? 1 : 0 ), array( 'id' => $id ) );
+    // false = error real (p. ej. columna store_visible ausente); 0 = sin
+    // cambios (el valor ya era el pedido), que NO es un error.
+    $updated = $wpdb->update( $table, array( 'store_visible' => $visible ? 1 : 0 ), array( 'id' => $id ) );
+    if ( false === $updated ) {
+        wp_send_json_error( array( 'msg' => __( 'No se pudo guardar la visibilidad en la tienda (¿falta la columna store_visible?). Recarga la página para migrar la base de datos.', 'workshop' ) ) );
+    }
     ws_log_audit( 'store_visibility', $kind, $id, array( 'store_visible' => $visible ) );
     wp_send_json_success( array( 'store_visible' => $visible ) );
 }
