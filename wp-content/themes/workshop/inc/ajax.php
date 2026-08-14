@@ -460,28 +460,136 @@ function ws_ajax_stock_transfer() {
 
 add_action( 'wp_ajax_ws_stock_batch_move', 'ws_ajax_stock_batch_move' );
 function ws_ajax_stock_batch_move() {
-    $type = sanitize_key( $_POST['type'] ?? '' );
+    $type      = sanitize_text_field( $_POST['type'] ?? '' );
+    $direction = sanitize_key( $_POST['direction'] ?? '' );
     $map  = array(
         'entrada' => 'stock_entry',
         'salida'  => 'stock_exit',
         'baja'    => 'stock_writeoff',
     );
-    if ( ! isset( $map[ $type ] ) ) {
+    if ( isset( $map[ $type ] ) ) {
+        ws_guard( $map[ $type ] );
+    } elseif ( '' !== $type ) {
+        // Tipo personalizado: la dirección decide si aumenta o disminuye stock.
+        if ( ! in_array( $direction, array( 'entrada', 'salida' ), true ) ) {
+            wp_send_json_error( array( 'msg' => __( 'Dirección de movimiento inválida.', 'workshop' ) ) );
+        }
+        ws_guard( 'entrada' === $direction ? 'stock_entry' : 'stock_exit' );
+    } else {
         wp_send_json_error( array( 'msg' => __( 'Tipo de movimiento inválido.', 'workshop' ) ) );
     }
-    ws_guard( $map[ $type ] );
 
     $location_id = (int) ( $_POST['location_id'] ?? 0 );
     $items       = isset( $_POST['items'] ) ? (array) json_decode( wp_unslash( $_POST['items'] ), true ) : array();
     $ref         = sanitize_text_field( $_POST['reference'] ?? '' );
     $note        = sanitize_text_field( $_POST['note'] ?? '' );
 
-    $result = WS_Stock::batch_move( $type, $location_id, $items, $ref, $note );
+    $result = WS_Stock::batch_move( $type, $location_id, $items, $ref, $note, 0, $direction );
     if ( is_wp_error( $result ) ) {
         wp_send_json_error( array( 'msg' => $result->get_error_message() ) );
     }
-    ws_log_audit( 'stock_' . $type, 'movement', 0, array( 'location' => $location_id, 'items' => $result ) );
+    ws_log_audit( 'stock_' . $type, 'movement', 0, array( 'location' => $location_id, 'direction' => $direction, 'items' => $result ) );
     wp_send_json_success( array( 'count' => $result ) );
+}
+
+/**
+ * Venta múltiple registrada desde stock (asistente de Stock): descuenta stock
+ * de varios productos y crea UNA venta POS con todos los items (caja no
+ * abierta, register_id = 0). Igual que ws_movement_venta pero en lote, para
+ * registrar 100 productos de una sola vez.
+ */
+add_action( 'wp_ajax_ws_stock_batch_venta', 'ws_ajax_stock_batch_venta' );
+function ws_ajax_stock_batch_venta() {
+    ws_guard( 'stock_exit', 'pos_sell' );
+
+    $location_id = (int) ( $_POST['location_id'] ?? 0 );
+    $seller_id   = (int) ( $_POST['seller_id'] ?? 0 );
+    $items       = isset( $_POST['items'] ) ? json_decode( wp_unslash( $_POST['items'] ), true ) : array();
+    $ref         = sanitize_text_field( $_POST['reference'] ?? '' );
+    $note        = sanitize_text_field( $_POST['note'] ?? '' );
+
+    if ( ! $location_id || ! in_array( $location_id, ws_user_location_ids(), true ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Ubicación inválida.', 'workshop' ) ) );
+    }
+    if ( ! is_array( $items ) || empty( $items ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Selecciona al menos un producto.', 'workshop' ) ) );
+    }
+    if ( ! $seller_id ) {
+        $seller_id = get_current_user_id();
+    }
+
+    global $wpdb;
+    $sale_items = array();
+    $currency   = '€';
+    $total      = 0.0;
+
+    $wpdb->query( 'START TRANSACTION' );
+    foreach ( $items as $it ) {
+        $pid = (int) ( $it['product_id'] ?? 0 );
+        $qty = (float) ( $it['qty'] ?? 0 );
+        if ( ! $pid || $qty <= 0 ) {
+            continue;
+        }
+        $p = $wpdb->get_row( $wpdb->prepare( "SELECT name, currency, sale_price, cost_price FROM " . ws_table_name( 'products' ) . " WHERE id=%d", $pid ) );
+        if ( ! $p ) {
+            $wpdb->query( 'ROLLBACK' );
+            wp_send_json_error( array( 'msg' => sprintf( __( 'Producto #%d no encontrado.', 'workshop' ), $pid ) ) );
+        }
+        $price = (float) ( $it['price'] ?? 0 );
+        if ( $price <= 0 ) {
+            $price = (float) $p->sale_price;
+        }
+        $currency = $p->currency;
+
+        $stock_res = WS_Stock::decrease_in_tx( $pid, $location_id, $qty, 'venta', $ref ? $ref : 'Venta desde stock', $note, $seller_id );
+        if ( is_wp_error( $stock_res ) ) {
+            $wpdb->query( 'ROLLBACK' );
+            wp_send_json_error( array( 'msg' => $stock_res->get_error_message() ) );
+        }
+
+        $subtotal = round( $qty * $price, 2 );
+        $total    += $subtotal;
+        $sale_items[] = array(
+            'product_id'   => $pid,
+            'product_name' => $p->name,
+            'qty'          => $qty,
+            'price'        => $price,
+            'cost_price'   => (float) $p->cost_price,
+            'discount'     => 0,
+            'subtotal'     => $subtotal,
+        );
+    }
+    if ( empty( $sale_items ) ) {
+        $wpdb->query( 'ROLLBACK' );
+        wp_send_json_error( array( 'msg' => __( 'Selecciona al menos un producto.', 'workshop' ) ) );
+    }
+
+    $total = round( $total, 2 );
+    $data  = array(
+        'location_id'     => $location_id,
+        'seller_id'       => $seller_id,
+        'currency'        => $currency,
+        'subtotal'        => $total,
+        'discount'        => 0,
+        'total'           => $total,
+        'payment_method'  => 'cash',
+        'cash_amount'     => $total,
+        'transfer_amount' => 0,
+        'transfer_number' => '',
+        'status'          => 'completed',
+        'register_id'     => 0, // Sin caja: la venta no depende del cierre de caja.
+        'client_ref'      => '',
+        'items'           => $sale_items,
+    );
+    $sale_id = WS_POS::save_sale( $data );
+    if ( ! $sale_id ) {
+        $wpdb->query( 'ROLLBACK' );
+        wp_send_json_error( array( 'msg' => __( 'No se pudo guardar la venta.', 'workshop' ) ) );
+    }
+    $wpdb->query( 'COMMIT' );
+
+    ws_log_audit( 'stock_venta', 'movement', 0, array( 'location' => $location_id, 'items' => count( $sale_items ), 'sale_id' => $sale_id ) );
+    wp_send_json_success( array( 'sale_id' => $sale_id, 'count' => count( $sale_items ) ) );
 }
 
 add_action( 'wp_ajax_ws_stock_batch_transfer', 'ws_ajax_stock_batch_transfer' );
@@ -2465,6 +2573,192 @@ function ws_ajax_pos_cash_counts_get() {
             'summary'     => array( 'count' => count( $out ), 'sobrante' => $sobrante, 'faltante' => $faltante ),
         ),
     ) );
+}
+
+/* ---------------- Cuadre de inventario independiente (sin caja) ---------------- */
+
+/**
+ * Stock VIRTUAL de una ubicación para el cuadre de inventario: devuelve todos
+ * los productos con su stock actual según la app, para que el usuario ingrese
+ * el conteo FÍSICO y compare. Permite stock_view (no exige caja abierta).
+ */
+add_action( 'wp_ajax_ws_stock_count_virtual', 'ws_ajax_stock_count_virtual' );
+function ws_ajax_stock_count_virtual() {
+    ws_guard( 'stock_view' );
+    $location_id = (int) ( $_POST['location_id'] ?? 0 );
+    if ( ! $location_id || ! in_array( $location_id, ws_user_location_ids(), true ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Ubicación inválida.', 'workshop' ) ) );
+    }
+    $out = array();
+    foreach ( WS_Stock::stock_rows( array( 'location_id' => $location_id, 'limit' => 1000 ) ) as $r ) {
+        $out[] = array(
+            'product_id' => (int) $r->product_id,
+            'name'       => $r->name,
+            'barcode'    => $r->barcode,
+            'qty'        => (float) $r->qty,
+            'sale_price' => (float) $r->sale_price,
+            'currency'   => $r->currency ?? '',
+        );
+    }
+    wp_send_json_success( array( 'data' => $out ) );
+}
+
+/**
+ * Guarda un CUADRE de inventario independiente: el conteo físico ingresado por
+ * el usuario vs. el stock virtual de la app, producto por producto. Si el
+ * usuario lo pide (adjust = 1), la app CORRIGE el stock para que coincida con
+ * lo físico (entrada/salida automática de ajuste por producto con diferencia).
+ */
+add_action( 'wp_ajax_ws_stock_count_save', 'ws_ajax_stock_count_save' );
+function ws_ajax_stock_count_save() {
+    ws_guard( 'stock_view' );
+
+    $location_id = (int) ( $_POST['location_id'] ?? 0 );
+    $adjust      = ! empty( $_POST['adjust'] );
+    $note        = sanitize_text_field( $_POST['note'] ?? '' );
+    $items       = isset( $_POST['items'] ) ? json_decode( wp_unslash( $_POST['items'] ), true ) : array();
+
+    if ( ! $location_id || ! in_array( $location_id, ws_user_location_ids(), true ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Ubicación inválida.', 'workshop' ) ) );
+    }
+    if ( ! is_array( $items ) || empty( $items ) ) {
+        wp_send_json_error( array( 'msg' => __( 'No hay productos para cuadrar.', 'workshop' ) ) );
+    }
+
+    global $wpdb;
+    $table = ws_table_name( 'stock_counts' );
+
+    // Reconstruir el stock virtual actual (fuente de verdad del cuadre).
+    $virtual = array();
+    foreach ( WS_Stock::stock_rows( array( 'location_id' => $location_id, 'limit' => 1000 ) ) as $r ) {
+        $virtual[ (int) $r->product_id ] = array( 'name' => $r->name, 'qty' => (float) $r->qty );
+    }
+
+    $stored   = array();
+    $cuadrados = 0;
+    $sobrante  = 0;
+    $faltante  = 0;
+    $ajustados = 0;
+
+    foreach ( $items as $it ) {
+        $pid  = (int) ( $it['product_id'] ?? 0 );
+        $phys = (float) ( $it['physical'] ?? 0 );
+        if ( ! $pid || ! isset( $virtual[ $pid ] ) ) {
+            continue;
+        }
+        $virt = $virtual[ $pid ]['qty'];
+        $diff = round( $phys - $virt, 2 );
+        $stored[] = array(
+            'product_id'   => $pid,
+            'name'         => $virtual[ $pid ]['name'],
+            'virtual_qty'  => $virt,
+            'physical_qty' => $phys,
+            'diff'         => $diff,
+        );
+        if ( $diff > 0.004 ) {
+            $sobrante++;
+        } elseif ( $diff < -0.004 ) {
+            $faltante++;
+        } else {
+            $cuadrados++;
+        }
+
+        // Ajuste automático: alinear el stock virtual al conteo físico.
+        if ( $adjust && abs( $diff ) > 0.004 ) {
+            $ref = 'Cuadre #' . wp_generate_uuid4();
+            $res = $diff > 0
+                ? WS_Stock::increase( $pid, $location_id, $diff, 'ajuste', $ref, $note ? $note : 'Ajuste por cuadre de inventario' )
+                : WS_Stock::decrease( $pid, $location_id, abs( $diff ), 'ajuste', $ref, $note ? $note : 'Ajuste por cuadre de inventario' );
+            if ( ! is_wp_error( $res ) ) {
+                $ajustados++;
+            }
+        }
+    }
+
+    $summary = sprintf( '%d cuadrados · %d sobrantes · %d faltantes', $cuadrados, $sobrante, $faltante );
+    $wpdb->insert( $table, array(
+        'location_id' => $location_id,
+        'user_id'     => get_current_user_id(),
+        'items'       => wp_json_encode( $stored ),
+        'summary'     => $summary,
+        'adjusted'    => $adjust ? 1 : 0,
+        'note'        => $note,
+    ), array( '%d', '%d', '%s', '%s', '%d', '%s' ) );
+
+    ws_log_audit( 'stock_count', 'stock', $location_id, array(
+        'total'    => count( $stored ),
+        'summary'  => $summary,
+        'adjusted' => $ajustados,
+    ) );
+
+    wp_send_json_success( array(
+        'data' => array(
+            'id'        => (int) $wpdb->insert_id,
+            'summary'   => $summary,
+            'cuadrados' => $cuadrados,
+            'sobrante'  => $sobrante,
+            'faltante'  => $faltante,
+            'ajustados' => $ajustados,
+            'adjusted'  => $adjust,
+        ),
+    ) );
+}
+
+/**
+ * Historial de cuadres de inventario guardados (con su detalle), para auditar
+ * cómo evoluciona el inventario físico vs. virtual en cada ubicación.
+ */
+add_action( 'wp_ajax_ws_stock_counts_list', 'ws_ajax_stock_counts_list' );
+function ws_ajax_stock_counts_list() {
+    ws_guard( 'stock_view' );
+
+    $location_id = (int) ( $_POST['location_id'] ?? 0 );
+    $limit       = isset( $_POST['limit'] ) ? (int) $_POST['limit'] : 50;
+    $offset      = isset( $_POST['offset'] ) ? (int) $_POST['offset'] : 0;
+
+    global $wpdb;
+    $table = ws_table_name( 'stock_counts' );
+    if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $table ) ) ) !== $table ) {
+        wp_send_json_success( array( 'data' => array(), 'total' => 0 ) );
+    }
+
+    $where  = array( '1=1' );
+    $params = array();
+    if ( $location_id ) {
+        $where[]  = 'location_id = %d';
+        $params[] = $location_id;
+    }
+    $total = (int) $wpdb->get_var( $wpdb->prepare(
+        'SELECT COUNT(*) FROM ' . $table . ' WHERE ' . implode( ' AND ', $where ),
+        $params
+    ) );
+    $rows = $wpdb->get_results( $wpdb->prepare(
+        'SELECT * FROM ' . $table . ' WHERE ' . implode( ' AND ', $where ) . ' ORDER BY id DESC LIMIT %d OFFSET %d',
+        array_merge( $params, array( $limit, $offset ) )
+    ) );
+
+    $loc_names = array();
+    foreach ( ws_user_locations() as $l ) {
+        $loc_names[ (int) $l->id ] = $l->name;
+    }
+
+    $out = array();
+    foreach ( $rows as $r ) {
+        $items = json_decode( (string) $r->items, true );
+        $items = is_array( $items ) ? $items : array();
+        $out[] = array(
+            'id'          => (int) $r->id,
+            'location_id' => (int) $r->location_id,
+            'location_name' => $loc_names[ (int) $r->location_id ] ?? '',
+            'summary'     => (string) $r->summary,
+            'adjusted'    => (bool) $r->adjusted,
+            'note'        => (string) $r->note,
+            'created_at'  => mysql2date( 'Y-m-d H:i:s', $r->created_at ),
+            'items'       => $items,
+        );
+    }
+
+    wp_send_json_success( array( 'data' => $out, 'total' => $total ) );
 }
 
 /* ---------------- Cache Offline AJAX ---------------- */

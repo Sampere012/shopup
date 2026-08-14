@@ -174,13 +174,22 @@ class WS_Stock {
     }
 
     /**
-     * Movimiento múltiple (entrada/salida/baja) atómico.
+     * Movimiento múltiple (entrada/salida/baja o tipo personalizado) atómico.
      * $items = array de array( 'product_id' => int, 'qty' => float ).
+     * $direction ('entrada'|'salida') solo se usa cuando $type es un tipo
+     * personalizado (p.ej. "merma", "ajuste"): decide si aumenta o disminuye.
+     * Para entrada/salida/baja la dirección se deduce del propio tipo.
      */
-    public static function batch_move( $type, $location_id, $items, $ref = '', $note = '', $user_id = 0 ) {
+    public static function batch_move( $type, $location_id, $items, $ref = '', $note = '', $user_id = 0, $direction = '' ) {
         global $wpdb;
         $location_id = (int) $location_id;
-        if ( ! in_array( $type, array( 'entrada', 'salida', 'baja' ), true ) || ! $location_id || empty( $items ) ) {
+        $type        = mb_substr( trim( (string) $type ), 0, 30 );
+        if ( in_array( $type, array( 'entrada', 'salida', 'baja' ), true ) ) {
+            $direction = ( 'entrada' === $type ) ? 'entrada' : 'salida';
+        } elseif ( '' === $type ) {
+            $type = ( 'entrada' === $direction ) ? 'entrada' : 'salida';
+        }
+        if ( ! in_array( $direction, array( 'entrada', 'salida' ), true ) || ! $location_id || empty( $items ) ) {
             return new WP_Error( 'invalid', __( 'Datos de movimiento inválidos.', 'workshop' ) );
         }
         $wpdb->query( 'START TRANSACTION' );
@@ -191,7 +200,7 @@ class WS_Stock {
             if ( ! $pid || $qty <= 0 ) {
                 continue;
             }
-            $result = ( 'entrada' === $type )
+            $result = ( 'entrada' === $direction )
                 ? self::increase_in_tx( $pid, $location_id, $qty, $type, $ref, $note, $user_id )
                 : self::decrease_in_tx( $pid, $location_id, $qty, $type, $ref, $note, $user_id );
             if ( is_wp_error( $result ) ) {

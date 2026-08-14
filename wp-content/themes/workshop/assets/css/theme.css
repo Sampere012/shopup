@@ -946,6 +946,7 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-wiz-stock { color: var(--ws-muted); font-size: .85rem; white-space: nowrap; }
 .ws-wiz-stock b { color: var(--ws-text); }
 .ws-wiz-qty input { width: 90px; padding: 7px 10px; border: 1px solid var(--ws-border); border-radius: 9px; font-family: inherit; font-size: .9rem; text-align: center; }
+.ws-wiz-price input { width: 110px; padding: 7px 10px; border: 1px solid var(--ws-border); border-radius: 9px; font-family: inherit; font-size: .9rem; text-align: center; }
 .ws-wiz-count { margin-left: auto; font-size: .85rem; color: var(--ws-muted); }
 .ws-wiz-summary .ws-muted { margin: 0 0 12px; }
 .ws-mb { margin-bottom: 12px; }

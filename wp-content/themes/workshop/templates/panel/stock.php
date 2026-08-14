@@ -12,7 +12,17 @@ $can_entry    = ws_can( 'stock_entry' );
 $can_exit     = ws_can( 'stock_exit' );
 $can_writeoff = ws_can( 'stock_writeoff' );
 $can_transfer = ws_can( 'stock_transfer' );
+$can_venta    = ws_can( 'pos_sell' ) || $can_exit;
 $currency     = ws_currency_symbol();
+$sellers      = array();
+if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
+    foreach ( ws_announcement_business_users( ws_current_business_id() ) as $uid ) {
+        $u = get_userdata( $uid );
+        if ( $u ) {
+            $sellers[] = array( 'id' => (int) $uid, 'name' => $u->display_name );
+        }
+    }
+}
 ?>
 <div x-data="wsStock(<?php echo esc_attr( wp_json_encode( array(
     'locations'    => array_map( fn( $l ) => array( 'id' => (int) $l->id, 'name' => $l->name, 'type' => $l->type ), $locations ),
@@ -21,6 +31,8 @@ $currency     = ws_currency_symbol();
     'canExit'      => $can_exit,
     'canWriteoff'  => $can_writeoff,
     'canTransfer'  => $can_transfer,
+    'canVenta'     => $can_venta,
+    'sellers'      => $sellers,
 ) ) ); ?>)">
 
     <div class="ws-card">
@@ -34,7 +46,8 @@ $currency     = ws_currency_symbol();
                     <option value=""><?php esc_html_e( 'Todas las ubicaciones', 'workshop' ); ?></option>
                     <template x-for="l in locations" :key="l.id"><option :value="l.id" x-text="l.name + (l.type === 'pv' ? ' (PV)' : '')"></option></template>
                 </select>
-                <label class="ws-check"><input type="checkbox" x-model="lowOnly" @change="onFilter()"><span><?php esc_html_e( 'Solo stock bajo', 'workshop' ); ?></span></label>
+                <label class="ws-check"><input type="checkbox" x-model="lowOnly" @change="onFilter()"><span><?php esc_html_e( 'Solo stock bajo', 'workshop' ); ?></span></label>                                <button class="ws-btn ws-btn-secondary" @click="openCount()" title="<?php esc_attr_e( 'Compara el stock físico (lo que cuentas) con el virtual (lo que dice la app)', 'workshop' ); ?>"><i class="fa-solid fa-list-check"></i> <?php esc_html_e( 'Cuadre de inventario', 'workshop' ); ?></button>
+                                <button class="ws-btn ws-btn-icon-only ws-btn-secondary" @click="openCountsHistory()" title="<?php esc_attr_e( 'Historial de cuadres', 'workshop' ); ?>"><i class="fa-solid fa-clock-rotate-left"></i></button>
                 <template x-if="canAnyMove">
                     <button class="ws-btn ws-btn-primary" @click="openWizard"><i class="fa-solid fa-plus"></i> <?php esc_html_e( 'Nuevo movimiento', 'workshop' ); ?></button>
                 </template>
@@ -169,6 +182,153 @@ $currency     = ws_currency_symbol();
         </div>
     </div>
 
+    <!-- Modal Cuadre de inventario (físico vs virtual, sin caja) -->
+    <div class="ws-modal" x-show="countOpen" x-cloak @keydown.escape.window="countOpen=false">
+        <div class="ws-modal-backdrop" @click="countOpen=false"></div>
+        <div class="ws-modal-box ws-modal-wide">
+            <div class="ws-modal-head">
+                <h3><i class="fa-solid fa-list-check"></i> <?php esc_html_e( 'Cuadre de inventario', 'workshop' ); ?></h3>
+                <button class="ws-cart-close" @click="countOpen=false"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="ws-modal-body">
+                <p class="ws-muted" style="margin-top:0"><?php esc_html_e( 'Escribe el stock FÍSICO (lo que contaste) de cada producto; la app lo compara con el VIRTUAL (lo que dice la app) y te marca sobrantes y faltantes. Puedes corregir el stock automáticamente para que quede al 100%.', 'workshop' ); ?></p>
+                <div class="ws-form-grid" style="margin-bottom:12px">
+                    <label class="ws-field">
+                        <span><?php esc_html_e( 'Ubicación *', 'workshop' ); ?></span>
+                        <select x-model="count.location_id" @change="loadCountVirtual()" required>
+                            <option value="">— <?php esc_html_e( 'Seleccionar', 'workshop' ); ?> —</option>
+                            <template x-for="l in locations" :key="l.id"><option :value="l.id" x-text="l.name + (l.type === 'pv' ? ' (PV)' : '')"></option></template>
+                        </select>
+                    </label>
+                    <label class="ws-field">
+                        <span><?php esc_html_e( 'Nota (opcional)', 'workshop' ); ?></span>
+                        <input type="text" x-model="count.note" placeholder="<?php esc_attr_e( 'Ej.: conteo semanal', 'workshop' ); ?>">
+                    </label>
+                </div>
+
+                <div class="ws-cash-cuadre-summary" style="margin-bottom:12px">
+                    <span><i class="fa-solid fa-circle-check ws-text-success"></i> <?php esc_html_e( 'Cuadrados', 'workshop' ); ?>: <b x-text="countStats.cuadrados"></b></span>
+                    <span><i class="fa-solid fa-plus-circle ws-text-success"></i> <?php esc_html_e( 'Sobrantes', 'workshop' ); ?>: <b x-text="countStats.sobrante"></b></span>
+                    <span><i class="fa-solid fa-minus-circle ws-text-danger"></i> <?php esc_html_e( 'Faltantes', 'workshop' ); ?>: <b x-text="countStats.faltante"></b></span>
+                </div>
+
+                <div x-show="countLoading" class="ws-empty"><i class="fa-solid fa-spinner fa-spin"></i> <?php esc_html_e( 'Cargando stock virtual…', 'workshop' ); ?></div>
+                <div class="ws-search ws-mb" x-show="!countLoading">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                    <input type="search" placeholder="<?php esc_attr_e( 'Buscar producto…', 'workshop' ); ?>" x-model="countSearch">
+                </div>
+                <div x-show="!countLoading && countFiltered.length === 0">
+                    <p class="ws-empty"><?php esc_html_e( 'No hay productos en esta ubicación.', 'workshop' ); ?></p>
+                    <button type="button" class="ws-btn ws-btn-secondary" @click="loadCountVirtual()"><i class="fa-solid fa-rotate"></i> <?php esc_html_e( 'Recargar', 'workshop' ); ?></button>
+                </div>
+                <table class="ws-items-table" x-show="!countLoading && countFiltered.length > 0">
+                    <thead>
+                        <tr>
+                            <th><?php esc_html_e( 'Producto', 'workshop' ); ?></th>
+                            <th><?php esc_html_e( 'Virtual (app)', 'workshop' ); ?></th>
+                            <th><?php esc_html_e( 'Físico (contado)', 'workshop' ); ?></th>
+                            <th><?php esc_html_e( 'Dif.', 'workshop' ); ?></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="c in countFiltered" :key="c.product_id">
+                            <tr>
+                                <td><strong x-text="c.name"></strong><small class="ws-muted" x-show="c.barcode" x-text="c.barcode"></small></td>
+                                <td x-text="c.virtual_qty"></td>
+                                <td><input type="number" step="0.01" min="0" x-model.number="c.physical" style="max-width:110px"></td>
+                                <td>
+                                    <span class="ws-badge" :class="countDiff(c) > 0.004 ? 'ws-badge-completed' : (countDiff(c) < -0.004 ? 'ws-badge-cancelled' : 'ws-badge-pending')" x-text="countDiffText(c)"></span>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+                <label class="ws-check" style="margin-top:12px">
+                    <input type="checkbox" x-model="count.adjust">
+                    <span><strong><?php esc_html_e( 'Corregir stock automáticamente', 'workshop' ); ?></strong> — <?php esc_html_e( 'la app ajusta el inventario a lo físico (entrada/salida de ajuste por producto con diferencia).', 'workshop' ); ?></span>
+                </label>
+            </div>
+            <div class="ws-modal-foot">
+                <button type="button" class="ws-btn ws-btn-secondary" @click="countOpen=false"><?php esc_html_e( 'Cancelar', 'workshop' ); ?></button>
+                <button type="button" class="ws-btn ws-btn-primary" @click="saveCount()" :disabled="countSaving || countItems.length === 0">
+                    <i class="fa-solid" :class="countSaving ? 'fa-spinner fa-spin' : 'fa-floppy-disk'"></i>
+                    <span x-text="countSaving ? '<?php esc_attr_e( 'Guardando…', 'workshop' ); ?>' : '<?php esc_attr_e( 'Guardar cuadre', 'workshop' ); ?>'"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Historial de cuadres -->
+    <div class="ws-modal" x-show="countsHistOpen" x-cloak @keydown.escape.window="countsHistOpen=false">
+        <div class="ws-modal-backdrop" @click="countsHistOpen=false"></div>
+        <div class="ws-modal-box ws-modal-wide">
+            <div class="ws-modal-head">
+                <h3><i class="fa-solid fa-clock-rotate-left"></i> <?php esc_html_e( 'Historial de cuadres', 'workshop' ); ?></h3>
+                <button class="ws-cart-close" @click="countsHistOpen=false"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="ws-modal-body">
+                <template x-if="countsHistLoading">
+                    <p class="ws-empty"><i class="fa-solid fa-spinner fa-spin"></i> <?php esc_html_e( 'Cargando…', 'workshop' ); ?></p>
+                </template>
+                <template x-if="!countsHistLoading && countsHist.length === 0">
+                    <p class="ws-empty"><?php esc_html_e( 'Aún no hay cuadres guardados.', 'workshop' ); ?></p>
+                </template>
+                <template x-for="h in countsHist" :key="h.id">
+                    <div class="ws-card" style="margin-bottom:10px;padding:12px">
+                        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+                            <strong>#<span x-text="h.id"></span> · <span x-text="h.location_name"></span></strong>
+                            <span class="ws-muted" x-text="h.created_at"></span>
+                        </div>
+                        <div class="ws-muted" x-text="h.summary"></div>
+                        <div x-show="h.note" class="ws-muted" x-text="'✎ ' + h.note"></div>
+                        <div style="margin-top:8px">
+                            <span class="ws-badge ws-badge-completed" x-show="h.adjusted"><i class="fa-solid fa-wand-magic-sparkles"></i> <?php esc_html_e( 'Stock corregido', 'workshop' ); ?></span>
+                            <button type="button" class="ws-btn ws-btn-secondary" style="margin-left:6px" @click="viewCountDetail(h)"><i class="fa-solid fa-eye"></i> <?php esc_html_e( 'Ver detalle', 'workshop' ); ?></button>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal detalle de un cuadre guardado -->
+    <div class="ws-modal" x-show="countDetailOpen" x-cloak @keydown.escape.window="countDetailOpen=false">
+        <div class="ws-modal-backdrop" @click="countDetailOpen=false"></div>
+        <div class="ws-modal-box ws-modal-lg">
+            <div class="ws-modal-head">
+                <h3><i class="fa-solid fa-list-check"></i> <?php esc_html_e( 'Detalle del cuadre', 'workshop' ); ?> #<span x-text="countDetail.id"></span></h3>
+                <button class="ws-cart-close" @click="countDetailOpen=false"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="ws-modal-body">
+                <template x-if="countDetail.items.length === 0">
+                    <p class="ws-empty"><?php esc_html_e( 'Sin productos en este cuadre.', 'workshop' ); ?></p>
+                </template>
+                <table class="ws-items-table" x-show="countDetail.items.length > 0">
+                    <thead>
+                        <tr>
+                            <th><?php esc_html_e( 'Producto', 'workshop' ); ?></th>
+                            <th><?php esc_html_e( 'Virtual (app)', 'workshop' ); ?></th>
+                            <th><?php esc_html_e( 'Físico (contado)', 'workshop' ); ?></th>
+                            <th><?php esc_html_e( 'Diferencia', 'workshop' ); ?></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="c in countDetail.items" :key="c.product_id">
+                            <tr>
+                                <td x-text="c.name"></td>
+                                <td x-text="c.virtual_qty"></td>
+                                <td x-text="c.physical_qty"></td>
+                                <td>
+                                    <span class="ws-badge" :class="c.diff > 0.004 ? 'ws-badge-completed' : (c.diff < -0.004 ? 'ws-badge-cancelled' : 'ws-badge-pending')" x-text="(c.diff > 0 ? '+' : '') + c.diff"></span>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal Nuevo movimiento (asistente) -->
     <div class="ws-modal" x-show="wizOpen" x-cloak @keydown.escape.window="wizOpen=false">
         <div class="ws-modal-backdrop" @click="wizOpen=false"></div>
@@ -188,10 +348,37 @@ $currency     = ws_currency_symbol();
                             <template x-if="canExit"><option value="salida"><?php esc_html_e( 'Salida', 'workshop' ); ?></option></template>
                             <template x-if="canWriteoff"><option value="baja"><?php esc_html_e( 'Baja', 'workshop' ); ?></option></template>
                             <template x-if="canTransfer"><option value="traslado"><?php esc_html_e( 'Traslado', 'workshop' ); ?></option></template>
+                            <template x-if="canVenta"><option value="venta"><?php esc_html_e( 'Venta (registra en Ventas POS)', 'workshop' ); ?></option></template>
+                            <option value="otro"><?php esc_html_e( 'Otro (personalizado)', 'workshop' ); ?></option>
                         </select>
                     </label>
-                    <label class="ws-field" x-show="wizType !== 'traslado'">
+                    <label class="ws-field" x-show="wizType === 'otro'">
+                        <span><?php esc_html_e( 'Tipo personalizado *', 'workshop' ); ?></span>
+                        <input type="text" x-model="wizCustomType" maxlength="30" placeholder="<?php esc_attr_e( 'Ej. merma, ajuste, devolución…', 'workshop' ); ?>">
+                    </label>
+                    <label class="ws-field" x-show="wizType === 'otro'">
+                        <span><?php esc_html_e( 'Dirección *', 'workshop' ); ?></span>
+                        <select x-model="wizDirection">
+                            <option value="entrada"><?php esc_html_e( 'Entrada (aumenta stock)', 'workshop' ); ?></option>
+                            <option value="salida"><?php esc_html_e( 'Salida (disminuye stock)', 'workshop' ); ?></option>
+                        </select>
+                    </label>
+                    <label class="ws-field" x-show="wizType === 'venta'">
+                        <span><?php esc_html_e( 'Vendedor *', 'workshop' ); ?></span>
+                        <select x-model="wizSeller" required>
+                            <option value="">— <?php esc_html_e( 'Seleccionar', 'workshop' ); ?> —</option>
+                            <template x-for="s in sellers" :key="s.id"><option :value="s.id" x-text="s.name"></option></template>
+                        </select>
+                    </label>
+                    <label class="ws-field" x-show="wizType !== 'traslado' && wizType !== 'venta'">
                         <span><?php esc_html_e( 'Ubicación *', 'workshop' ); ?></span>
+                        <select x-model="wizLocation" required>
+                            <option value="">— <?php esc_html_e( 'Seleccionar', 'workshop' ); ?> —</option>
+                            <template x-for="l in locations" :key="l.id"><option :value="l.id" x-text="l.name + (l.type === 'pv' ? ' (PV)' : '')"></option></template>
+                        </select>
+                    </label>
+                    <label class="ws-field" x-show="wizType === 'venta'">
+                        <span><?php esc_html_e( 'PV / Ubicación *', 'workshop' ); ?></span>
                         <select x-model="wizLocation" required>
                             <option value="">— <?php esc_html_e( 'Seleccionar', 'workshop' ); ?> —</option>
                             <template x-for="l in locations" :key="l.id"><option :value="l.id" x-text="l.name + (l.type === 'pv' ? ' (PV)' : '')"></option></template>
@@ -241,9 +428,12 @@ $currency     = ws_currency_symbol();
                                 <strong x-text="p.name"></strong>
                                 <small x-text="p.barcode"></small>
                             </span>
-                            <span class="ws-wiz-stock" x-show="wizType !== 'entrada'"><?php esc_html_e( 'Stock:', 'workshop' ); ?> <b x-text="p.stock"></b></span>
+                            <span class="ws-wiz-stock" x-show="wizDecreases"><?php esc_html_e( 'Stock:', 'workshop' ); ?> <b x-text="p.stock"></b></span>
+                            <span class="ws-wiz-price" x-show="wizType === 'venta' && p.selected">
+                                <input type="number" step="0.01" min="0" x-model.number="p.price" @change="wizPrice(p)" placeholder="<?php esc_attr_e( 'Precio', 'workshop' ); ?>">
+                            </span>
                             <span class="ws-wiz-qty" x-show="p.selected">
-                                <input type="number" step="0.01" min="0.01" x-model.number="p.qty" @change="wizQty(p)" :max="wizType !== 'entrada' ? p.stock : null">
+                                <input type="number" step="0.01" min="0.01" x-model.number="p.qty" @change="wizQty(p)" :max="wizDecreases ? p.stock : null">
                             </span>
                         </label>
                     </template>
@@ -258,12 +448,12 @@ $currency     = ws_currency_symbol();
             <!-- Paso 3: confirmar -->
             <div x-show="wizStep === 3">
                 <div class="ws-wiz-summary">
-                    <p class="ws-muted"><strong x-text="typeLabel(wizType)"></strong> <template x-if="wizType === 'traslado'"><span x-text="' · ' + locationName(wizFrom) + ' → ' + locationName(wizTo)"></span></template><template x-else><span x-text="' · ' + locationName(wizLocation)"></span></template></p>
+                    <p class="ws-muted"><strong x-text="typeLabel(wizType)"></strong> <template x-if="wizType === 'traslado'"><span x-text="' · ' + locationName(wizFrom) + ' → ' + locationName(wizTo)"></span></template><template x-else><span x-text="' · ' + locationName(wizLocation)"></span></template><template x-if="wizType === 'venta'"><span x-text="' · ' + sellerName(wizSeller)"></span></template></p>
                     <table class="ws-table">
-                        <thead><tr><th><?php esc_html_e( 'Producto', 'workshop' ); ?></th><th><?php esc_html_e( 'Cantidad', 'workshop' ); ?></th></tr></thead>
+                        <thead><tr><th><?php esc_html_e( 'Producto', 'workshop' ); ?></th><th x-show="wizType === 'venta'"><?php esc_html_e( 'Precio', 'workshop' ); ?></th><th><?php esc_html_e( 'Cantidad', 'workshop' ); ?></th><th x-show="wizType === 'venta'"><?php esc_html_e( 'Total', 'workshop' ); ?></th></tr></thead>
                         <tbody>
                             <template x-for="i in wizItems" :key="i.product_id">
-                                <tr><td x-text="i.name"></td><td class="ws-strong" x-text="i.qty"></td></tr>
+                                <tr><td x-text="i.name"></td><td x-show="wizType === 'venta'" x-text="money(i.price, currency)"></td><td class="ws-strong" x-text="i.qty"></td><td x-show="wizType === 'venta'" class="ws-strong" x-text="money((Number(i.qty) || 0) * (Number(i.price) || 0), currency)"></td></tr>
                             </template>
                         </tbody>
                     </table>

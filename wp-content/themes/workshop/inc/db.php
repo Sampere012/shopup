@@ -383,6 +383,25 @@ function ws_db_tables() {
             KEY product_id (product_id)
         ) {charset};",
 
+        // Cuadre de inventario INDEPENDIENTE (sin caja): el conteo físico de la
+        // ubicación vs. el stock virtual que maneja la app. Se guarda el detalle
+        // completo (producto, virtual, físico, diferencia) en JSON por fila, con
+        // resumen de cuadrados/sobrantes/faltantes para el historial. Sirve para
+        // auditar el inventario en cualquier momento, no solo al cerrar caja.
+        'stock_counts' => "CREATE TABLE {prefix}ws_stock_counts (
+            id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            location_id BIGINT(20) UNSIGNED NOT NULL,
+            user_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
+            items LONGTEXT NULL,
+            summary VARCHAR(120) NOT NULL DEFAULT '',
+            adjusted TINYINT(1) NOT NULL DEFAULT 0,
+            note VARCHAR(255) NOT NULL DEFAULT '',
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY location_id (location_id),
+            KEY created_at (created_at)
+        ) {charset};",
+
         'queue' => "CREATE TABLE {prefix}ws_queue (
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
             hook VARCHAR(255) NOT NULL,
@@ -835,6 +854,34 @@ function ws_db_migrate() {
         $sql = str_replace( '{prefix}', $wpdb->prefix, $sql );
         $sql = str_replace( '{charset}', $wpdb->get_charset_collate(), $sql );
         dbDelta( $sql );
+    }
+    // Cuadre de inventario INDEPENDIENTE (sin caja): tabla por defecto y por
+    // negocio con slug (igual que los demás módulos, dbDelta no altera las
+    // tablas ya creadas).
+    require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+    $ws_count_suffixes = array( '' );
+    if ( class_exists( 'WS_Business' ) && $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', WS_Business::table() ) ) === WS_Business::table() ) {
+        foreach ( WS_Business::all() as $ws_cn ) {
+            $n_slug = (string) ( $ws_cn->slug ?? '' );
+            if ( '' !== $n_slug ) {
+                $ws_count_suffixes[] = ws_biz_table_suffix( $n_slug );
+            }
+        }
+    }
+    foreach ( $ws_count_suffixes as $ws_count_suffix ) {
+        $cnt_t = ws_table_for( $ws_count_suffix, 'stock_counts' );
+        if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $cnt_t ) ) !== $cnt_t ) {
+            // Mismo patrón que ws_create_business_tables: el negocio por defecto
+            // usa {prefix} = $wpdb->prefix (wp_ → wp_ws_stock_counts); los demás
+            // usan wp_ws_{sufijo}_ (→ wp_ws_{sufijo}_ws_stock_counts).
+            $sql = ws_db_tables()['stock_counts'];
+            $cnt_prefix = '' !== $ws_count_suffix
+                ? $wpdb->prefix . WS_TABLE_PREFIX . $ws_count_suffix . '_'
+                : $wpdb->prefix;
+            $sql = str_replace( '{prefix}', $cnt_prefix, $sql );
+            $sql = str_replace( '{charset}', $wpdb->get_charset_collate(), $sql );
+            dbDelta( $sql );
+        }
     }
 
     // Módulos nuevos: Categorías (árbol con subcategorías) y Gastos (control

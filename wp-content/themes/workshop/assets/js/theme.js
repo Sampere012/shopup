@@ -982,6 +982,8 @@
             canExit: opts.canExit,
             canWriteoff: opts.canWriteoff,
             canTransfer: opts.canTransfer,
+            canVenta: opts.canVenta,
+            sellers: opts.sellers || [],
             rows: [],
             search: '',
             locationId: '',
@@ -998,18 +1000,38 @@
             wizLocation: '',
             wizFrom: '',
             wizTo: '',
+            wizCustomType: '',
+            wizDirection: 'entrada',
+            wizSeller: 0,
             wizProducts: [],
             wizItems: [],
             wizSearch: '',
             wizRef: '',
             wizNote: '',
             wizLoading: false,
+            // Cuadre de inventario independiente (físico vs virtual, sin caja)
+            countOpen: false,
+            countLoading: false,
+            countSaving: false,
+            countSearch: '',
+            countItems: [],
+            count: { location_id: '', note: '', adjust: false },
+            countsHistOpen: false,
+            countsHistLoading: false,
+            countsHist: [],
+            countDetailOpen: false,
+            countDetail: { id: 0, items: [] },
             init() { this.restoreTableState(); this.load(); },
             load() {
                 fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ action: 'ws_stock_list', ws_nonce: WS.nonce, location_id: this.locationId, search: this.search, low_only: this.lowOnly ? 1 : 0, sort: this.sortKey, dir: this.sortDir, page: this.page, pageSize: this.pageSize }) })
                     .then(r => r.json()).then(r => { if (r.success) { this.rows = r.data.rows; this.total = r.data.total; this.page = r.data.page; } });
             },
-            get canAnyMove() { return this.canEntry || this.canExit || this.canWriteoff || this.canTransfer; },
+            get canAnyMove() { return this.canEntry || this.canExit || this.canWriteoff || this.canTransfer || this.canVenta; },
+            get wizDecreases() {
+                if (this.wizType === 'venta' || this.wizType === 'salida' || this.wizType === 'baja' || this.wizType === 'traslado') return true;
+                if (this.wizType === 'otro') return this.wizDirection === 'salida';
+                return false;
+            },
             get wizFiltered() {
                 const s = this.wizSearch.toLowerCase().trim();
                 if (!s) return this.wizProducts;
@@ -1018,8 +1040,9 @@
             get wizSelectedCount() { return this.wizItems.length; },
             get wizHasStockProducts() { return this.wizType === 'entrada' || this.wizProducts.some(p => p.stock > 0); },
             money(v, c) { return money(v, c || this.currency); },
-            typeLabel(t) { const m = { entrada: 'Entrada', salida: 'Salida', baja: 'Baja', traslado: 'Traslado' }; return m[t] || t; },
+            typeLabel(t) { const m = { entrada: 'Entrada', salida: 'Salida', baja: 'Baja', traslado: 'Traslado', venta: 'Venta', otro: (this.wizCustomType || 'Personalizado') }; return m[t] || t; },
             locationName(id) { const l = this.locations.find(l => l.id === Number(id)); return l ? l.name : '—'; },
+            sellerName(id) { const s = this.sellers.find(s => s.id === Number(id)); return s ? s.name : '—'; },
             openMove(type, row) {
                 this.moveType = type;
                 this.moveProduct = row;
@@ -1034,10 +1057,13 @@
             openWizard() {
                 this.wizOpen = true;
                 this.wizStep = 1;
-                this.wizType = this.canEntry ? 'entrada' : (this.canExit ? 'salida' : (this.canWriteoff ? 'baja' : 'traslado'));
+                this.wizType = this.canEntry ? 'entrada' : (this.canExit ? 'salida' : (this.canWriteoff ? 'baja' : (this.canVenta ? 'venta' : 'traslado')));
                 this.wizLocation = '';
                 this.wizFrom = '';
                 this.wizTo = '';
+                this.wizCustomType = '';
+                this.wizDirection = 'entrada';
+                this.wizSeller = 0;
                 this.wizProducts = [];
                 this.wizItems = [];
                 this.wizSearch = '';
@@ -1049,6 +1075,12 @@
                     if (this.wizType === 'traslado') {
                         if (!this.wizFrom || !this.wizTo) { toast('error', 'Selecciona origen y destino'); return; }
                         if (this.wizFrom === this.wizTo) { toast('error', 'Origen y destino deben ser distintos'); return; }
+                    } else if (this.wizType === 'otro') {
+                        if (!this.wizCustomType.trim()) { toast('error', 'Escribe el tipo de movimiento personalizado.'); return; }
+                        if (!this.wizLocation) { toast('error', 'Selecciona una ubicación'); return; }
+                    } else if (this.wizType === 'venta') {
+                        if (!this.wizSeller) { toast('error', 'Selecciona el vendedor'); return; }
+                        if (!this.wizLocation) { toast('error', 'Selecciona el PV / ubicación'); return; }
                     } else if (!this.wizLocation) {
                         toast('error', 'Selecciona una ubicación'); return;
                     }
@@ -1064,18 +1096,19 @@
                 this.wizLoading = true;
                 this.wizProducts = [];
                 this.wizItems = [];
-                if (this.wizType === 'entrada') {
+                const isEntrada = this.wizType === 'entrada' || (this.wizType === 'otro' && this.wizDirection === 'entrada');
+                if (isEntrada) {
                     $('ws_products_list', {}).then(r => {
                         this.wizLoading = false;
                         if (!r.success) { toast('error', 'Error', r.data && r.data.msg); return; }
-                        this.wizProducts = r.data.products.map(p => ({ product_id: p.id, name: p.name, barcode: p.barcode, image: p.image, stock: 0, sale_price: p.sale_price, qty: 1, selected: false }));
+                        this.wizProducts = r.data.products.map(p => ({ product_id: p.id, name: p.name, barcode: p.barcode, image: p.image, stock: 0, sale_price: p.sale_price, price: p.sale_price, qty: 1, selected: false }));
                     });
                 } else {
                     const loc = this.wizType === 'traslado' ? this.wizFrom : this.wizLocation;
                     $('ws_stock_list', { location_id: loc, search: '', low_only: 0 }).then(r => {
                         this.wizLoading = false;
                         if (!r.success) { toast('error', 'Error', r.data && r.data.msg); return; }
-                        this.wizProducts = r.data.rows.filter(p => p.qty > 0).map(p => ({ product_id: p.product_id, name: p.name, barcode: p.barcode, image: p.image, stock: p.qty, sale_price: p.sale_price, qty: 1, selected: false }));
+                        this.wizProducts = r.data.rows.filter(p => p.qty > 0).map(p => ({ product_id: p.product_id, name: p.name, barcode: p.barcode, image: p.image, stock: p.qty, sale_price: p.sale_price, price: p.sale_price, qty: 1, selected: false }));
                     });
                 }
             },
@@ -1086,22 +1119,31 @@
                 } else {
                     p.selected = true;
                     p.qty = 1;
+                    if (this.wizType === 'venta') p.price = Number(p.sale_price) || 0;
                     this.wizItems.push(p);
                 }
             },
+            wizPrice(p) { if (Number(p.price) < 0) p.price = 0; },
             wizQty(p) {
                 if (p.qty < 1) p.qty = 1;
-                if (this.wizType !== 'entrada' && p.qty > p.stock) p.qty = p.stock;
+                if (this.wizDecreases && p.qty > p.stock) p.qty = p.stock;
             },
             wizSubmit() {
-                const items = this.wizItems.map(i => ({ product_id: i.product_id, qty: i.qty }));
+                const items = this.wizItems.map(i => ({ product_id: i.product_id, qty: i.qty, price: this.wizType === 'venta' ? (Number(i.price) || 0) : 0 }));
                 if (this.wizType === 'traslado') {
                     $('ws_stock_batch_transfer', { from_location: this.wizFrom, to_location: this.wizTo, note: this.wizNote, items: JSON.stringify(items) }).then(res => {
                         if (res.success) { toast('success', 'Transferencia realizada'); this.wizOpen = false; this.load(); }
                         else { toast('error', 'Error', res.data && res.data.msg); }
                     });
+                } else if (this.wizType === 'venta') {
+                    $('ws_stock_batch_venta', { location_id: this.wizLocation, seller_id: this.wizSeller, reference: this.wizRef, note: this.wizNote, items: JSON.stringify(items) }).then(res => {
+                        if (res.success) { toast('success', 'Venta registrada'); this.wizOpen = false; this.load(); }
+                        else { toast('error', 'Error', res.data && res.data.msg); }
+                    });
                 } else {
-                    $('ws_stock_batch_move', { type: this.wizType, location_id: this.wizLocation, reference: this.wizRef, note: this.wizNote, items: JSON.stringify(items) }).then(res => {
+                    const type = this.wizType === 'otro' ? this.wizCustomType : this.wizType;
+                    const direction = this.wizType === 'otro' ? this.wizDirection : '';
+                    $('ws_stock_batch_move', { type, direction, location_id: this.wizLocation, reference: this.wizRef, note: this.wizNote, items: JSON.stringify(items) }).then(res => {
                         if (res.success) { toast('success', 'Movimiento registrado'); this.wizOpen = false; this.load(); }
                         else { toast('error', 'Error', res.data && res.data.msg); }
                     });
@@ -1120,24 +1162,89 @@
                 fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body })
                     .then(r => r.json())
                     .then(res => { if (res.success) { toast('success', 'Transferencia realizada'); this.transferOpen = false; this.load(); } else { toast('error', 'Error', res.data && res.data.msg); } });
+            },
+            /* ---------- Cuadre de inventario (físico vs virtual, sin caja) ---------- */
+            get countFiltered() {
+                const s = this.countSearch.toLowerCase().trim();
+                if (!s) return this.countItems;
+                return this.countItems.filter(c => c.name.toLowerCase().includes(s) || (c.barcode || '').toLowerCase().includes(s));
+            },
+            get countStats() {
+                let cuadrados = 0, sobrante = 0, faltante = 0;
+                this.countItems.forEach(c => {
+                    const d = this.countDiff(c);
+                    if (d > 0.004) sobrante++;
+                    else if (d < -0.004) faltante++;
+                    else cuadrados++;
+                });
+                return { cuadrados, sobrante, faltante };
+            },
+            countDiff(c) { return (Number(c.physical) || 0) - Number(c.virtual_qty); },
+            countDiffText(c) {
+                const d = this.countDiff(c);
+                return d > 0 ? '+' + d : d;
+            },
+            openCount() {
+                this.count = { location_id: this.locationId || '', note: '', adjust: false };
+                this.countItems = [];
+                this.countSearch = '';
+                this.countOpen = true;
+                if (this.count.location_id) this.loadCountVirtual();
+            },
+            loadCountVirtual() {
+                if (!this.count.location_id) return;
+                this.countLoading = true;
+                $('ws_stock_count_virtual', { location_id: this.count.location_id }).then(r => {
+                    this.countLoading = false;
+                    if (!r.success) { toast('error', 'Error', r.data && r.data.msg); return; }
+                    this.countItems = (r.data.data || []).map(p => ({ product_id: p.product_id, name: p.name, barcode: p.barcode, virtual_qty: p.qty, physical: p.qty }));
+                }).catch(() => { this.countLoading = false; toast('error', 'Error', 'Sin conexión.'); });
+            },
+            saveCount() {
+                if (!this.count.location_id) { toast('error', 'Selecciona una ubicación'); return; }
+                if (this.countSaving) return;
+                this.countSaving = true;
+                const items = this.countItems.map(c => ({ product_id: c.product_id, physical: Number(c.physical) || 0 }));
+                $('ws_stock_count_save', {
+                    location_id: this.count.location_id,
+                    adjust: this.count.adjust ? 1 : 0,
+                    note: this.count.note || '',
+                    items: JSON.stringify(items)
+                }).then(r => {
+                    this.countSaving = false;
+                    if (r.success) {
+                        const d = r.data.data || {};
+                        const msg = d.summary + (d.adjusted ? ' · stock corregido (' + d.ajustados + ' ajustes)' : '');
+                        toast('success', 'Cuadre guardado', msg);
+                        this.countOpen = false;
+                        this.load();
+                    } else {
+                        toast('error', 'Error', r.data && r.data.msg);
+                    }
+                }).catch(() => { this.countSaving = false; toast('error', 'Error', 'Sin conexión.'); });
+            },
+            openCountsHistory() {
+                this.countsHistOpen = true;
+                this.countsHistLoading = true;
+                this.countsHist = [];
+                $('ws_stock_counts_list', {}).then(r => {
+                    this.countsHistLoading = false;
+                    if (r.success) this.countsHist = r.data.data || [];
+                }).catch(() => { this.countsHistLoading = false; });
+            },
+            viewCountDetail(h) {
+                this.countDetail = { id: h.id, items: h.items || [] };
+                this.countDetailOpen = true;
             }
         }));
 
-        /* Movimientos */
+        /* Movimientos (solo historial: la creación se hace desde Stock) */
         Alpine.data('wsMovements', (opts) => ({
             ...tableState('movements'),
             init() { this.restoreTableState(); this.load(); },
             locations: opts.locations || [],
             currency: opts.currency || '€',
-            canEntry: opts.canEntry,
-            canExit: opts.canExit,
-            canVenta: opts.canVenta,
-            sellers: opts.sellers || [],
             movements: [],
-            products: [],
-            addOpen: false,
-            saving: false,
-            form: {},
             search: '',
             typeFilter: '',
             locationFilter: '',
@@ -1148,64 +1255,6 @@
             typeLabel(t) {
                 const m = { entrada: 'Entrada', salida: 'Salida', baja: 'Baja', transferencia: 'Transferencia', pedido: 'Pedido', venta: 'Venta' };
                 return m[t] || t;
-            },
-            get canAnyMove() { return this.canEntry || this.canExit || this.canVenta; },
-            openAdd() {
-                this.form = { kind: 'entrada', customType: '', direction: 'entrada', product_id: 0, location_id: 0, seller_id: 0, qty: 0, price: 0, reference: '', note: '' };
-                this.addOpen = true;
-                this.loadProducts();
-            },
-            loadProducts() {
-                if (this.products.length) return;
-                fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ action: 'ws_cache_products', ws_nonce: WS.nonce }) })
-                    .then(r => r.json()).then(r => { if (r.success) this.products = (r.data && r.data.data) || []; });
-            },
-            onKindChange() {
-                if (this.form.kind === 'entrada') this.form.direction = 'entrada';
-                if (this.form.kind === 'salida' || this.form.kind === 'baja') this.form.direction = 'salida';
-                if (this.form.kind !== 'venta' && this.form.price) this.form.price = 0;
-                if (this.form.kind === 'venta' && this.form.product_id) this.onProductChange();
-            },
-            onProductChange() {
-                const p = this.products.find(x => Number(x.id) === Number(this.form.product_id));
-                if (p) this.form.price = Number(p.sale_price) || 0;
-            },
-            doAdd() {
-                if (this.saving) return;
-                if (this.form.kind === 'otro' && !this.form.customType.trim()) { toast('error', 'Error', 'Escribe el tipo de movimiento personalizado.'); return; }
-                if (!this.form.product_id || !this.form.location_id || Number(this.form.qty) <= 0) { toast('error', 'Error', 'Completa producto, ubicación y cantidad.'); return; }
-                if (this.form.kind === 'venta' && (!this.form.seller_id || Number(this.form.price) < 0)) { toast('error', 'Error', 'Completa vendedor y precio.'); return; }
-                this.saving = true;
-                const isVenta = this.form.kind === 'venta';
-                const body = new URLSearchParams({ action: isVenta ? 'ws_movement_venta' : 'ws_movement_add', ws_nonce: WS.nonce });
-                if (isVenta) {
-                    body.append('product_id', this.form.product_id);
-                    body.append('location_id', this.form.location_id);
-                    body.append('seller_id', this.form.seller_id || 0);
-                    body.append('qty', this.form.qty);
-                    body.append('price', this.form.price);
-                    body.append('reference', this.form.reference || '');
-                    body.append('note', this.form.note || '');
-                } else {
-                    body.append('direction', this.form.direction);
-                    body.append('type', this.form.kind === 'otro' ? this.form.customType : this.form.kind);
-                    body.append('product_id', this.form.product_id);
-                    body.append('location_id', this.form.location_id);
-                    body.append('qty', this.form.qty);
-                    body.append('reference', this.form.reference || '');
-                    body.append('note', this.form.note || '');
-                }
-                fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body })
-                    .then(r => r.json()).then(r => {
-                        this.saving = false;
-                        if (r.success) {
-                            toast('success', isVenta ? 'Venta registrada' : 'Movimiento registrado');
-                            this.addOpen = false;
-                            this.load();
-                        } else {
-                            toast('error', 'Error', r.data && r.data.msg);
-                        }
-                    }).catch(() => { this.saving = false; toast('error', 'Error', 'Sin conexión.'); });
             }
         }));
 
