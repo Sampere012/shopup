@@ -945,6 +945,40 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
     .ws-stock-actions::-webkit-scrollbar { display: none; }
     .ws-stock-actions .ws-btn { white-space: nowrap; flex: 0 0 auto; }
 }
+
+/* ---------- Tarjetas de combos en Stock ---------- */
+.ws-combos-section { margin: 16px 0 4px; }
+.ws-combos-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.ws-combos-head h4 { margin: 0; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+.ws-combo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; margin-bottom: 20px; }
+.ws-combo-card {
+    display: flex; gap: 14px; padding: 14px;
+    background: #fff; border: 1px solid var(--ws-border); border-radius: 14px;
+    box-shadow: var(--ws-shadow); transition: transform .15s, box-shadow .15s;
+}
+.ws-combo-card:hover { transform: translateY(-2px); box-shadow: var(--ws-shadow-lg); }
+.ws-combo-img {
+    width: 82px; height: 82px; border-radius: 12px; overflow: hidden; flex-shrink: 0;
+    background: linear-gradient(135deg, #eef2ff, #f5f3ff); display: flex; align-items: center; justify-content: center; color: var(--ws-primary-light); font-size: 1.8rem;
+}
+.ws-combo-img img { width: 100%; height: 100%; object-fit: cover; }
+.ws-combo-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px; }
+.ws-combo-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ws-combo-title strong { font-size: 15px; line-height: 1.3; }
+.ws-combo-price { font-weight: 700; color: var(--ws-primary); font-size: 15px; }
+.ws-combo-items { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+.ws-combo-items-label { font-size: .68em; color: var(--ws-muted); text-transform: uppercase; letter-spacing: .4px; font-weight: 600; }
+.ws-combo-chip { font-size: .78em; background: #f3f4f6; border: 1px solid var(--ws-border); border-radius: 999px; padding: 2px 9px; }
+.ws-combo-locs { display: flex; flex-wrap: wrap; gap: 6px; }
+.ws-combo-loc {
+    display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+    border: 1px solid var(--ws-border); background: #fff; border-radius: 999px; padding: 3px 10px;
+    font-size: .78em; font-family: inherit; color: inherit; transition: border-color .12s, background .12s;
+}
+.ws-combo-loc:hover { border-color: var(--ws-primary-light); }
+.ws-combo-loc b { font-weight: 700; }
+.ws-combo-loc.is-active { border-color: var(--ws-primary); background: #eef2ff; color: var(--ws-primary); }
+.ws-combo-actions { display: flex; gap: 6px; margin-top: 2px; }
 .ws-report-date { display: inline-flex; align-items: center; gap: 6px; font-size: .85em; color: var(--ws-muted); }
 .ws-report-date input[type="date"] { padding: 8px 10px; border: 1px solid var(--ws-border); border-radius: 9px; font-size: .9em; background: #fff; font-family: inherit; color: inherit; }
 .ws-locations-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; }

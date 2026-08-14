@@ -63,6 +63,51 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
             </div>
         </div>
 
+        <!-- Combos: un card por combo (el combo es un producto que contiene
+             varios productos: imagen, componentes y stock por ubicación). -->
+        <div class="ws-combos-section" x-show="combos.length > 0" x-cloak>
+            <div class="ws-combos-head">
+                <h4><i class="fa-solid fa-layer-group"></i> <?php esc_html_e( 'Combos', 'workshop' ); ?> <small class="ws-muted" x-text="'(' + combos.length + ')'"></small></h4>
+            </div>
+            <div class="ws-combo-grid">
+                <template x-for="c in combos" :key="c.combo_id">
+                    <div class="ws-combo-card">
+                        <div class="ws-combo-img">
+                            <img x-show="c.image" :src="c.image" :alt="c.name" loading="lazy">
+                            <i x-show="!c.image" class="fa-solid fa-layer-group"></i>
+                        </div>
+                        <div class="ws-combo-body">
+                            <div class="ws-combo-title">
+                                <strong x-text="c.name"></strong>
+                                <span class="ws-combo-badge"><i class="fa-solid fa-layer-group"></i> <?php esc_html_e( 'Combo', 'workshop' ); ?></span>
+                            </div>
+                            <span class="ws-combo-price" x-text="money(c.sale_price, c.currency)"></span>
+                            <div class="ws-combo-items">
+                                <span class="ws-combo-items-label"><?php esc_html_e( 'Contiene:', 'workshop' ); ?></span>
+                                <template x-for="it in c.items" :key="it.product_id">
+                                    <span class="ws-combo-chip" x-text="it.name + ' × ' + it.qty"></span>
+                                </template>
+                            </div>
+                            <div class="ws-combo-locs" x-show="c.locs.length">
+                                <template x-for="l in c.locs" :key="l.location_id">
+                                    <button type="button" class="ws-combo-loc" :class="comboLoc(c) && comboLoc(c).location_id === l.location_id ? 'is-active' : ''" :title="'<?php esc_attr_e( 'Stock del combo en ', 'workshop' ); ?>' + l.location_name" @click="setComboLoc(c, l)">
+                                        <span x-text="l.location_name"></span>
+                                        <b x-text="l.qty"></b>
+                                    </button>
+                                </template>
+                            </div>
+                            <div class="ws-combo-actions">
+                                <template x-if="canEntry"><button class="ws-icon-btn" title="<?php esc_attr_e( 'Entrada', 'workshop' ); ?>" @click="openComboMove('entrada', c)"><i class="fa-solid fa-down-long"></i></button></template>
+                                <template x-if="canExit"><button class="ws-icon-btn" title="<?php esc_attr_e( 'Salida', 'workshop' ); ?>" @click="openComboMove('salida', c)"><i class="fa-solid fa-up-long"></i></button></template>
+                                <template x-if="canWriteoff"><button class="ws-icon-btn ws-danger" title="<?php esc_attr_e( 'Baja', 'workshop' ); ?>" @click="openComboMove('baja', c)"><i class="fa-solid fa-trash-can"></i></button></template>
+                                <template x-if="canTransfer"><button class="ws-icon-btn" title="<?php esc_attr_e( 'Transferencia', 'workshop' ); ?>" @click="openComboTransfer(c)"><i class="fa-solid fa-arrow-right-arrow-left"></i></button></template>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+
         <table class="ws-table">
             <thead>
                 <tr>
@@ -77,19 +122,18 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
             </thead>
             <tbody>
                 <template x-for="row in rows" :key="row.product_id + '-' + row.location_id">
-                    <tr :class="!row.is_combo && row.group_total <= row.min_stock ? 'ws-row-low' : ''">
+                    <tr :class="row.group_total <= row.min_stock ? 'ws-row-low' : ''">
                         <td>
                             <div class="ws-cell-product">
-                                <div class="ws-thumb"><img x-show="row.image" :src="row.image" :alt="row.name" loading="lazy"><i x-show="!row.image" class="fa-solid" :class="row.is_combo ? 'fa-layer-group' : 'fa-box'"></i></div>
+                                <div class="ws-thumb"><img x-show="row.image" :src="row.image" :alt="row.name" loading="lazy"><i x-show="!row.image" class="fa-solid fa-box"></i></div>
                                 <strong x-text="row.name"></strong>
-                                <span class="ws-combo-badge" x-show="row.is_combo" x-cloak title="<?php esc_attr_e( 'Este producto es un combo: su stock se calcula desde sus componentes', 'workshop' ); ?>"><i class="fa-solid fa-layer-group"></i> <?php esc_html_e( 'Combo', 'workshop' ); ?></span>
                             </div>
                         </td>
                         <td>
                             <span class="ws-badge" :class="row.location_type === 'pv' ? 'ws-badge-pv' : 'ws-badge-wh'" x-text="row.location_name"></span>
                             <small class="ws-loc-desc" x-show="row.location_description" x-text="row.location_description"></small>
                         </td>
-                        <td class="ws-strong" :class="!row.is_combo && row.group_total <= row.min_stock ? 'ws-text-danger' : ''" x-text="row.qty"></td>
+                        <td class="ws-strong" :class="row.group_total <= row.min_stock ? 'ws-text-danger' : ''" x-text="row.qty"></td>
                         <td>
                             <template x-if="row.group_parts && row.group_parts.length > 1">
                                 <span class="ws-group-badge" :title="groupTitle(row)">
@@ -110,7 +154,7 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                         </td>
                     </tr>
                 </template>
-                <tr x-show="total === 0"><td colspan="7"><p class="ws-empty"><?php esc_html_e( 'Sin resultados.', 'workshop' ); ?></p></td></tr>
+                <tr x-show="total === 0 && combos.length === 0"><td colspan="7"><p class="ws-empty"><?php esc_html_e( 'Sin resultados.', 'workshop' ); ?></p></td></tr>
             </tbody>
         </table>
         <div class="ws-pagination" x-show="total > pageSize">

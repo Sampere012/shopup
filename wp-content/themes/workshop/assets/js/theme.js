@@ -1639,6 +1639,7 @@
             // Pestañas de la vista: movimientos | cuadre | historial de cuadres.
             stockTab: 'moves',
             rows: [],
+            combos: [],
             search: '',
             locationId: '',
             lowOnly: false,
@@ -1678,7 +1679,7 @@
             setStockTab(t) { this.stockTab = t; },
             load() {
                 fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ action: 'ws_stock_list', ws_nonce: WS.nonce, location_id: this.locationId, search: this.search, low_only: this.lowOnly ? 1 : 0, sort: this.sortKey, dir: this.sortDir, page: this.page, pageSize: this.pageSize }) })
-                    .then(r => r.json()).then(r => { if (r.success) { this.rows = r.data.rows; this.total = r.data.total; this.page = r.data.page; } });
+                    .then(r => r.json()).then(r => { if (r.success) { this.rows = r.data.rows; this.combos = r.data.combos || []; this.total = r.data.total; this.page = r.data.page; } });
             },
             get canAnyMove() { return this.canEntry || this.canExit || this.canWriteoff || this.canTransfer || this.canVenta; },
             get wizDecreases() {
@@ -1704,6 +1705,26 @@
                 return 'Stock compartido (' + row.group_parts.length + ' ubicaciones)\n' + lines.join('\n');
             },
             sellerName(id) { const s = this.sellers.find(s => s.id === Number(id)); return s ? s.name : '—'; },
+            /* --- Tarjetas de combos (un card por combo con sus componentes) --- */
+            comboLoc(c) {
+                // Ubicación activa del card: la del filtro si está seleccionada,
+                // si no la de mayor stock (los chips del card la cambian).
+                if (c._loc) return c._loc;
+                const locs = c.locs || [];
+                if (this.locationId) {
+                    c._loc = locs.find(l => l.location_id === Number(this.locationId)) || locs[0] || null;
+                } else {
+                    c._loc = locs.slice().sort((a, b) => Number(b.qty) - Number(a.qty))[0] || null;
+                }
+                return c._loc;
+            },
+            setComboLoc(c, l) { c._loc = l; },
+            comboRow(c) {
+                const loc = this.comboLoc(c) || (c.locs || [])[0] || { location_id: 0, qty: 0 };
+                return { product_id: c.product_id, combo_id: c.combo_id, location_id: loc.location_id, name: c.name, barcode: '', is_combo: 1, qty: Number(loc.qty) || 0, sale_price: c.sale_price, currency: c.currency };
+            },
+            openComboMove(type, c) { this.openMove(type, this.comboRow(c)); },
+            openComboTransfer(c) { this.openTransfer(this.comboRow(c)); },
             openMove(type, row) {
                 this.moveType = type;
                 this.moveProduct = row;
