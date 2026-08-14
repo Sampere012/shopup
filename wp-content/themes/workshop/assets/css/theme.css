@@ -379,6 +379,13 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 }
 .ws-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .ws-span-2 { grid-column: span 2; }
+.ws-combo-items { display: flex; flex-direction: column; gap: 8px; }
+.ws-combo-item-row { display: grid; grid-template-columns: 1fr 96px auto; gap: 8px; align-items: center; }
+.ws-combo-item-row select, .ws-combo-item-row input { min-width: 0; }
+.ws-combo-item-row .ws-icon-btn { margin: 0; flex: 0 0 auto; }
+@media (max-width: 560px) {
+    .ws-combo-item-row { grid-template-columns: 1fr 80px auto; }
+}
 .ws-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .ws-check { display: inline-flex; align-items: center; gap: 8px; font-size: .9em; cursor: pointer; }
 .ws-check input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--ws-primary); }
@@ -386,11 +393,13 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-check-switch input { width: 18px; height: 18px; }
 
 /* ---------- Tabs (pestañas) ---------- */
-.ws-tabs { display: inline-flex; gap: 4px; padding: 4px; background: #eef0f5; border-radius: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+.ws-tabs { display: inline-flex; gap: 4px; padding: 4px; background: #eef0f5; border-radius: 12px; margin-bottom: 20px; flex-wrap: nowrap; overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
+.ws-tabs::-webkit-scrollbar { height: 6px; }
+.ws-tabs::-webkit-scrollbar-thumb { background: rgba(79, 70, 229, .25); border-radius: 999px; }
 .ws-tab {
     display: inline-flex; align-items: center; gap: 8px; padding: 9px 16px; border: none; border-radius: 9px;
     background: transparent; color: var(--ws-muted); font-size: .88em; font-weight: 600; font-family: inherit;
-    cursor: pointer; transition: background .15s, color .15s, box-shadow .15s;
+    cursor: pointer; transition: background .15s, color .15s, box-shadow .15s; flex: 0 0 auto; white-space: nowrap;
 }
 .ws-tab:hover { color: var(--ws-text); }
 .ws-tab.is-active { background: #fff; color: var(--ws-primary); box-shadow: 0 2px 8px rgba(15, 23, 42, .08); }

@@ -180,8 +180,11 @@ class WS_Combos {
                 }
                 $pid = (int) ( $raw['product_id'] ?? 0 );
                 $qty = (float) ( $raw['qty'] ?? 0 );
+                // Cantidad opcional: vacía o 0 = 1 unidad del producto.
                 if ( $pid && $qty > 0 ) {
                     $items[] = array( 'product_id' => $pid, 'qty' => round( $qty, 2 ) );
+                } elseif ( $pid ) {
+                    $items[] = array( 'product_id' => $pid, 'qty' => 1 );
                 }
             }
         }

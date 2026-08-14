@@ -85,8 +85,12 @@ if ( abs( $sales_today ) >= 1000000 ) {
 
 <div class="ws-card">
     <h3 class="ws-card-title"><i class="fa-solid fa-location-dot"></i> <?php esc_html_e( 'Mis ubicaciones', 'workshop' ); ?></h3>
+    <?php $active_locations = array_values( array_filter( $locations, fn( $loc ) => (int) $loc->active === 1 ) ); ?>
+    <?php if ( empty( $active_locations ) ) : ?>
+        <p class="ws-empty"><?php esc_html_e( 'No hay ubicaciones activas.', 'workshop' ); ?></p>
+    <?php else : ?>
     <div class="ws-locations-grid">
-        <?php foreach ( $locations as $loc ) : ?>
+        <?php foreach ( $active_locations as $loc ) : ?>
             <div class="ws-location-mini">
                 <div class="ws-location-mini-head">
                     <i class="fa-solid <?php echo 'pv' === $loc->type ? 'fa-store' : 'fa-warehouse'; ?>"></i>
@@ -99,6 +103,7 @@ if ( abs( $sales_today ) >= 1000000 ) {
             </div>
         <?php endforeach; ?>
     </div>
+    <?php endif; ?>
 </div>
 
 <?php if ( 'seller' === $role ) : ?>

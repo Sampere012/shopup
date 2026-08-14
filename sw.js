@@ -1,8 +1,8 @@
 /* Workshop MultiTienda Service Worker */
-const CACHE_NAME = 'workshop-v52';
-const STATIC_CACHE = 'workshop-static-v18';
-const DYNAMIC_CACHE = 'workshop-dynamic-v18';
-const DATA_CACHE = 'workshop-data-v18';
+const CACHE_NAME = 'workshop-v53';
+const STATIC_CACHE = 'workshop-static-v19';
+const DYNAMIC_CACHE = 'workshop-dynamic-v19';
+const DATA_CACHE = 'workshop-data-v19';
 
 // URLs estáticas para cachear inmediatamente
 // El SW se sirve desde /workshop/sw.js (local) o /sw.js (producción), así que
