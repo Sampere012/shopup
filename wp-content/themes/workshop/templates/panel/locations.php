@@ -93,7 +93,7 @@ $rates      = ws_exchange_rates();
         <div class="ws-card-head">
             <div>
                 <h3><i class="fa-solid fa-share-nodes"></i> <?php esc_html_e( 'Conectar ubicaciones · stock compartido', 'workshop' ); ?></h3>
-                <p class="ws-muted"><?php esc_html_e( 'Arrastra desde el asa «conectar» de una ubicación hasta otra para vincularlas: al vender en una, el stock se rebaja en todas las conectadas (por transitividad). Haz clic en una línea para desconectarla.', 'workshop' ); ?></p>
+                <p class="ws-muted"><?php esc_html_e( 'Arrastra desde el asa «conectar» de una ubicación hasta otra para vincularlas: al vender en una, el stock se rebaja en todas las conectadas (por transitividad). El vínculo comparte solo los productos presentes en ambas ubicaciones — los que tiene una sola quedan locales. Haz clic en una línea para desconectarla.', 'workshop' ); ?></p>
                 <span class="ws-link-dirty" x-show="isDirty()"><i class="fa-solid fa-circle-exclamation"></i> <?php esc_html_e( 'Cambios sin guardar', 'workshop' ); ?></span>
             </div>
             <div class="ws-link-tools">
