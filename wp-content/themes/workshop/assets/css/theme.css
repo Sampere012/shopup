@@ -227,6 +227,7 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-store-card-body { padding: 18px 20px 20px; }
 .ws-store-card-body h3 { margin: 0 0 4px; font-size: 1.12rem; }
 .ws-store-card-body p { margin: 0 0 14px; color: var(--ws-muted); font-size: .9em; }
+.ws-store-card-desc { font-size: .85em; line-height: 1.45; }
 .ws-link { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
 .ws-chip { background: #eef2ff; color: var(--ws-primary-dark); padding: 3px 12px; border-radius: 999px; font-size: .78rem; font-weight: 700; margin-right: 6px; }
 
@@ -412,6 +413,7 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
     padding: 11px 14px 11px 38px; border: 1px solid var(--ws-border); border-radius: 10px;
     width: 280px; max-width: 100%; font-size: 14px; font-family: inherit; background: #fff; transition: border-color .15s, box-shadow .15s;
 }
+.ws-field .ws-search input { padding: 11px 14px 11px 38px; }
 .ws-search-action { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
 .ws-search-action input { width: min(420px, 100%); }
 .ws-search-action .ws-btn { white-space: nowrap; }
@@ -777,6 +779,7 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-store-head.ws-has-bg .ws-store-head-inner { position: relative; z-index: 2; }
 .ws-store-head h1 { margin: 0 0 6px; font-size: 1.9rem; font-weight: 800; }
 .ws-store-head p { margin: 0; opacity: .85; }
+.ws-store-head .ws-store-desc { margin: 0 0 6px; font-size: .95em; }
 .ws-store-head-inner { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .ws-store-back {
     display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 11px;

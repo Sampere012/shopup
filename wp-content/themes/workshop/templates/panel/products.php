@@ -331,14 +331,7 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
                         </div>
                         <p class="ws-empty" x-show="!comboProductsFiltered.length"><?php esc_html_e( 'Sin productos que coincidan.', 'workshop' ); ?></p>
                         <div class="ws-combo-picked" x-show="comboForm.items.length">
-                            <span class="ws-muted" style="font-size:.82em" x-text="comboForm.items.length + ' producto(s) en el combo'"></span>
-                            <template x-for="(row, ri) in comboForm.items" :key="'ci' + ri">
-                                <span class="ws-combo-chip">
-                                    <span x-text="comboItemName(row.product_id)"></span>
-                                    <b x-text="row.qty || 1"></b>
-                                    <button type="button" class="ws-combo-chip-x" @click="removeComboItem(ri)" title="<?php esc_attr_e( 'Quitar del combo', 'workshop' ); ?>"><i class="fa-solid fa-xmark"></i></button>
-                                </span>
-                            </template>
+                            <span class="ws-muted" style="font-size:.82em" x-text="comboForm.items.length + ' producto(s) · ' + comboUnitsTotal() + ' unidades en total'"></span>
                         </div>
                     </label>
                     <label class="ws-field">

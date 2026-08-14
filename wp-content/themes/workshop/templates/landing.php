@@ -102,6 +102,9 @@ get_header();
                     <span class="ws-store-card-type"><?php echo esc_html( 'pv' === $loc->type ? __( 'Punto de venta', 'workshop' ) : __( 'Almacén', 'workshop' ) ); ?></span>
                     <div class="ws-store-card-body">
                         <h3><?php echo esc_html( $loc->name ); ?></h3>
+                        <?php if ( ! empty( $loc->description ) ) : ?>
+                            <p class="ws-store-card-desc"><?php echo esc_html( $loc->description ); ?></p>
+                        <?php endif; ?>
                         <p><i class="fa-solid fa-location-dot"></i> <?php echo esc_html( $loc->address ); ?></p>
                         <span class="ws-chip"><i class="fa-solid fa-money-bill"></i> <?php echo esc_html( $loc->currency ); ?></span>
                         <span class="ws-link"><?php esc_html_e( 'Ver tienda', 'workshop' ); ?> <i class="fa-solid fa-arrow-right"></i></span>

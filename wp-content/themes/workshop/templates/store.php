@@ -100,6 +100,9 @@ get_header();
             <div>
                 <a class="ws-store-back" href="<?php echo esc_url( ws_business_home() ); ?>"><i class="fa-solid fa-arrow-left"></i></a>
                 <h1><?php echo esc_html( $location->name ); ?></h1>
+                <?php if ( ! empty( $location->description ) ) : ?>
+                    <p class="ws-store-desc"><?php echo esc_html( $location->description ); ?></p>
+                <?php endif; ?>
                 <p><i class="fa-solid fa-location-dot"></i> <?php echo esc_html( $location->address ); ?></p>
                 <div class="ws-store-head-row">
                     <?php if ( (float) $location->delivery_cost > 0 ) : ?>

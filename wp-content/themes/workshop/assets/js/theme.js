@@ -852,6 +852,7 @@
             },
             comboItem(pid) { return this.comboForm.items.find(i => Number(i.product_id) === Number(pid)) || null; },
             comboItemName(pid) { const p = (this.allProducts || []).find(p => p.id === Number(pid)); return p ? p.name : ('#' + pid); },
+            comboUnitsTotal() { return (this.comboForm.items || []).reduce((n, i) => n + (Number(i.qty) > 0 ? Number(i.qty) : 1), 0); },
             toggleComboProduct(p) {
                 const it = this.comboItem(p.id);
                 if (it) {
