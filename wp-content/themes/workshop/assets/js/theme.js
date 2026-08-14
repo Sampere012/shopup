@@ -1256,7 +1256,7 @@
             locations: [],
             search: '',
             formOpen: false,
-            form: {},
+            form: { store_settings: { currency: '', rate: '' } },
             init() { this.restoreTableState(); this.reload(); this.initCanvas(); },
             reload() {
                 // La tabla se pagina; el lienzo de conexiones se alimenta aparte

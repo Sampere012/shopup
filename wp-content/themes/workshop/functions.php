@@ -10,7 +10,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'WS_VERSION', '0.4.12' );
+define( 'WS_VERSION', '0.4.13' );
 // Versión del esquema de BD: subir al añadir columnas/tablas para forzar la
 // instalación/migración diferida (ws_lazy_install / ws_db_migrate).
 define( 'WS_DB_VERSION', '0.10.4' );
@@ -31,6 +31,7 @@ require_once WS_PATH . 'inc/crud.php';
 require_once WS_PATH . 'inc/categories.php';
 require_once WS_PATH . 'inc/expenses.php';
 require_once WS_PATH . 'inc/stock.php';
+require_once WS_PATH . 'inc/combos.php';
 require_once WS_PATH . 'inc/orders.php';
 require_once WS_PATH . 'inc/shifts.php';
 require_once WS_PATH . 'inc/sessions.php';
