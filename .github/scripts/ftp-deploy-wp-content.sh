@@ -20,18 +20,31 @@ fi
 # Sube un archivo con reintentos (backoff) y modo binario explicito.
 # Los PNG/JS/PHP deben subirse como TYPE I; algunos proxies FTP negocian
 # ASCII por defecto y corrompen binarios.
+#
+# Antes del STOR se intenta (best-effort) CHMOD 644 + DELE del destino: si el
+# archivo remoto quedo con permisos de solo lectura de un deploy anterior,
+# el STOR devuelve 550 Permission denied; hacerlo escribible/borrarlo primero
+# lo resuelve. El error real del servidor se muestra en el warning.
 upload() {
   local src="$1"
   local dst="$2"
   local attempt
+  local err
   for attempt in 1 2 3 4 5; do
+    err="$(mktemp)"
     if curl -sS --connect-timeout 30 --max-time 180 \
         --user "${FTP_USER}:${FTP_PASS}" --ftp-create-dirs \
+        -Q "-SITE CHMOD 644 ${dst}" \
+        -Q "-DELE ${dst}" \
         -Q "TYPE I" --ftp-pasv \
-        -T "${src}" "ftp://${FTP_HOST}/${dst}" >/dev/null 2>&1; then
+        -T "${src}" "ftp://${FTP_HOST}/${dst}" 2>"$err"; then
+      rm -f "$err"
       return 0
     fi
-    echo "::warning::Intento ${attempt}/5 fallo para ${dst}"
+    local detail
+    detail="$(tr '\n' ' ' < "$err" | sed 's/  */ /g' | tail -c 400)"
+    rm -f "$err"
+    echo "::warning::Intento ${attempt}/5 fallo para ${dst}${detail:+ — $detail}"
     sleep $(( attempt * 2 ))
   done
   echo "::error::Fallo definitivo subiendo ${dst}"
@@ -40,6 +53,24 @@ upload() {
 
 count=0
 failed_files=()
+critical_failed=0
+
+# Un archivo es CRITICO si su extension es codigo (php/js/css/json/html/txt/xml
+# o sin extension); los assets (imagenes, fuentes, zip) son cosmeticos y un
+# fallo persistente no debe tumbar el deploy (el sitio sigue con el anterior).
+is_critical() {
+  local f="$1"
+  local base ext
+  base="${f##*/}"
+  ext="${base##*.}"
+  if [ "$base" = "$ext" ]; then
+    return 0
+  fi
+  case "$ext" in
+    php|js|css|json|html|htm|txt|xml|map|htaccess) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 
 # Sube un arbol local a un directorio remoto. Los fallos se acumulan en
 # failed_files (no aborta: un PNG bloqueado no debe tumbar el deploy entero).
@@ -51,6 +82,9 @@ deploy_dir() {
     rel="${f#./}"
     if ! upload "${rel}" "${remotedir}/${rel}"; then
       failed_files+=( "${remotedir}/${rel}" )
+      if is_critical "$rel"; then
+        critical_failed=1
+      fi
     fi
     count=$((count+1))
     # Pequena pausa para no saturar el rate-limit de conexiones de InfinityFree.
@@ -78,12 +112,25 @@ if [ "${#failed_files[@]}" -gt 0 ]; then
     sleep 0.5
   done
   failed_files=( "${retry[@]}" )
+  # Recalcular: la segunda pasada pudo subir un archivo critico que fallo antes.
+  critical_failed=0
+  for dst in "${failed_files[@]}"; do
+    rel="${dst#htdocs/wp-content/}"
+    if is_critical "$rel"; then
+      critical_failed=1
+    fi
+  done
 fi
 
 if [ "${#failed_files[@]}" -gt 0 ]; then
-  echo "::error::No se pudieron subir ${#failed_files[@]} archivos:"
+  if [ "$critical_failed" -ne 0 ]; then
+    echo "::error::No se pudieron subir archivos de CODIGO:"
+    printf '  - %s\n' "${failed_files[@]}"
+    exit 1
+  fi
+  # Solo assets cosmeticos: el deploy es valido, se avisa.
+  echo "::warning::No se pudieron subir ${#failed_files[@]} assets (imagenes/fuentes) — el sitio usa la version anterior de esos archivos:"
   printf '  - %s\n' "${failed_files[@]}"
-  exit 1
 fi
 
 echo "::notice::wp-content desplegado: ${count} archivos"
