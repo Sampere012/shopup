@@ -2722,15 +2722,26 @@ function ws_ajax_stock_count_virtual() {
     if ( ! $location_id || ! in_array( $location_id, ws_user_location_ids(), true ) ) {
         wp_send_json_error( array( 'msg' => __( 'Ubicación inválida.', 'workshop' ) ) );
     }
+    $rows  = WS_Stock::stock_rows( array( 'location_id' => $location_id, 'limit' => 1000 ) );
+    // Stock del GRUPO CONECTADO por producto (stock compartido) para mostrar
+    // el contexto del pool junto al virtual de esta ubicación.
+    $group = WS_Stock::stock_group_info( $rows );
     $out = array();
-    foreach ( WS_Stock::stock_rows( array( 'location_id' => $location_id, 'limit' => 1000 ) ) as $r ) {
+    foreach ( $rows as $r ) {
+        $g = $group[ $r->product_id . ':' . $r->location_id ] ?? null;
         $out[] = array(
-            'product_id' => (int) $r->product_id,
-            'name'       => $r->name,
-            'barcode'    => $r->barcode,
-            'qty'        => (float) $r->qty,
-            'sale_price' => (float) $r->sale_price,
-            'currency'   => $r->currency ?? '',
+            'product_id'   => (int) $r->product_id,
+            'name'         => $r->name,
+            'barcode'      => $r->barcode,
+            'qty'          => (float) $r->qty,
+            'sale_price'   => (float) $r->sale_price,
+            'currency'     => $r->currency ?? '',
+            'group_total'  => $g ? (float) $g['total'] : (float) $r->qty,
+            'group_parts'  => $g ? $g['parts'] : array( array(
+                'id'   => (int) $r->location_id,
+                'name' => (string) ( $r->location_name ?? '' ),
+                'qty'  => (float) $r->qty,
+            ) ),
         );
     }
     wp_send_json_success( array( 'data' => $out ) );
@@ -2761,10 +2772,19 @@ function ws_ajax_stock_count_save() {
     global $wpdb;
     $table = ws_table_name( 'stock_counts' );
 
-    // Reconstruir el stock virtual actual (fuente de verdad del cuadre).
+    // Reconstruir el stock virtual actual (fuente de verdad del cuadre), con
+    // el stock del GRUPO CONECTADO por producto para guardarlo como contexto.
+    $vrows  = WS_Stock::stock_rows( array( 'location_id' => $location_id, 'limit' => 1000 ) );
+    $vgroup = WS_Stock::stock_group_info( $vrows );
     $virtual = array();
-    foreach ( WS_Stock::stock_rows( array( 'location_id' => $location_id, 'limit' => 1000 ) ) as $r ) {
-        $virtual[ (int) $r->product_id ] = array( 'name' => $r->name, 'qty' => (float) $r->qty );
+    foreach ( $vrows as $r ) {
+        $g = $vgroup[ $r->product_id . ':' . $r->location_id ] ?? null;
+        $virtual[ (int) $r->product_id ] = array(
+            'name'         => $r->name,
+            'qty'          => (float) $r->qty,
+            'group_total'  => $g ? (float) $g['total'] : (float) $r->qty,
+            'group_parts'  => $g ? $g['parts'] : null,
+        );
     }
 
     $stored   = array();
@@ -2787,6 +2807,8 @@ function ws_ajax_stock_count_save() {
             'virtual_qty'  => $virt,
             'physical_qty' => $phys,
             'diff'         => $diff,
+            'group_total'  => $virtual[ $pid ]['group_total'],
+            'group_parts'  => $virtual[ $pid ]['group_parts'],
         );
         if ( $diff > 0.004 ) {
             $sobrante++;

@@ -243,6 +243,7 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                         <tr>
                             <th><?php esc_html_e( 'Producto', 'workshop' ); ?></th>
                             <th><?php esc_html_e( 'Virtual (app)', 'workshop' ); ?></th>
+                            <th title="<?php esc_attr_e( 'Suma del stock en todas las ubicaciones conectadas (stock compartido)', 'workshop' ); ?>"><?php esc_html_e( 'Stock grupo', 'workshop' ); ?> <i class="fa-solid fa-share-nodes ws-muted"></i></th>
                             <th><?php esc_html_e( 'Físico (contado)', 'workshop' ); ?></th>
                             <th><?php esc_html_e( 'Dif.', 'workshop' ); ?></th>
                         </tr>
@@ -252,6 +253,16 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                             <tr>
                                 <td><strong x-text="c.name"></strong><small class="ws-muted" x-show="c.barcode" x-text="c.barcode"></small></td>
                                 <td x-text="c.virtual_qty"></td>
+                                <td>
+                                    <template x-if="c.group_parts && c.group_parts.length > 1">
+                                        <span class="ws-group-badge" :title="groupTitle(c)">
+                                            <i class="fa-solid fa-share-nodes"></i>
+                                            <b x-text="c.group_total"></b>
+                                            <small x-text="'· ' + c.group_parts.length + ' ubs.'"></small>
+                                        </span>
+                                    </template>
+                                    <span x-show="!(c.group_parts && c.group_parts.length > 1)" class="ws-muted" x-text="c.group_total"></span>
+                                </td>
                                 <td><input type="number" step="0.01" min="0" x-model.number="c.physical" class="ws-count-input"></td>
                                 <td>
                                     <span class="ws-badge" :class="countDiff(c) > 0.004 ? 'ws-badge-completed' : (countDiff(c) < -0.004 ? 'ws-badge-cancelled' : 'ws-badge-pending')" x-text="countDiffText(c)"></span>
@@ -325,6 +336,7 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                         <tr>
                             <th><?php esc_html_e( 'Producto', 'workshop' ); ?></th>
                             <th><?php esc_html_e( 'Virtual (app)', 'workshop' ); ?></th>
+                            <th><?php esc_html_e( 'Stock grupo', 'workshop' ); ?></th>
                             <th><?php esc_html_e( 'Físico (contado)', 'workshop' ); ?></th>
                             <th><?php esc_html_e( 'Diferencia', 'workshop' ); ?></th>
                         </tr>
@@ -334,6 +346,16 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                             <tr>
                                 <td x-text="c.name"></td>
                                 <td x-text="c.virtual_qty"></td>
+                                <td>
+                                    <template x-if="c.group_parts && c.group_parts.length > 1">
+                                        <span class="ws-group-badge" :title="groupTitle(c)">
+                                            <i class="fa-solid fa-share-nodes"></i>
+                                            <b x-text="c.group_total"></b>
+                                            <small x-text="'· ' + c.group_parts.length + ' ubs.'"></small>
+                                        </span>
+                                    </template>
+                                    <span x-show="!(c.group_parts && c.group_parts.length > 1)" class="ws-muted" x-text="c.group_total"></span>
+                                </td>
                                 <td x-text="c.physical_qty"></td>
                                 <td>
                                     <span class="ws-badge" :class="c.diff > 0.004 ? 'ws-badge-completed' : (c.diff < -0.004 ? 'ws-badge-cancelled' : 'ws-badge-pending')" x-text="(c.diff > 0 ? '+' : '') + c.diff"></span>

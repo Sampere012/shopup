@@ -1451,7 +1451,7 @@
                 $('ws_stock_count_virtual', { location_id: this.count.location_id }).then(r => {
                     this.countLoading = false;
                     if (!r.success) { toast('error', 'Error', r.data && r.data.msg); return; }
-                    this.countItems = (r.data.data || []).map(p => ({ product_id: p.product_id, name: p.name, barcode: p.barcode, virtual_qty: p.qty, physical: p.qty }));
+                    this.countItems = (r.data.data || []).map(p => ({ product_id: p.product_id, name: p.name, barcode: p.barcode, virtual_qty: p.qty, physical: p.qty, group_total: p.group_total, group_parts: p.group_parts }));
                 }).catch(() => { this.countLoading = false; toast('error', 'Error', 'Sin conexión.'); });
             },
             saveCount() {
