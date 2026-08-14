@@ -773,8 +773,12 @@ function ws_ajax_stock_list() {
             'search'       => $search,
             'low_stock'    => $low_only,
         ), $args ) );
+        // Stock del GRUPO CONECTADO por producto (stock compartido): total
+        // sumando todas las ubicaciones vinculadas + desglose por ubicación.
+        $group = WS_Stock::stock_group_info( $rows );
         $out = array();
         foreach ( $rows as $r ) {
+            $g = $group[ $r->product_id . ':' . $r->location_id ] ?? null;
             $out[] = array(
                 'product_id'    => (int) $r->product_id,
                 'location_id'   => (int) $r->location_id,
@@ -787,6 +791,12 @@ function ws_ajax_stock_list() {
                 'min_stock'     => (float) $r->min_stock,
                 'sale_price'    => (float) $r->sale_price,
                 'currency'      => $r->currency,
+                'group_total'   => $g ? (float) $g['total'] : (float) $r->qty,
+                'group_parts'   => $g ? $g['parts'] : array( array(
+                    'id'   => (int) $r->location_id,
+                    'name' => (string) ( $r->location_name ?? '' ),
+                    'qty'  => (float) $r->qty,
+                ) ),
             );
         }
         return $out;

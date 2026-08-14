@@ -66,6 +66,7 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                     <th class="ws-th-sort" @click="sort('name')"><?php esc_html_e( 'Producto', 'workshop' ); ?> <i class="fa-solid" :class="sortIcon('name')"></i></th>
                     <th class="ws-th-sort" @click="sort('location_name')"><?php esc_html_e( 'Ubicación', 'workshop' ); ?> <i class="fa-solid" :class="sortIcon('location_name')"></i></th>
                     <th class="ws-th-sort" @click="sort('qty')"><?php esc_html_e( 'Stock', 'workshop' ); ?> <i class="fa-solid" :class="sortIcon('qty')"></i></th>
+                    <th title="<?php esc_attr_e( 'Suma del stock en todas las ubicaciones conectadas (stock compartido)', 'workshop' ); ?>"><?php esc_html_e( 'Stock grupo', 'workshop' ); ?> <i class="fa-solid fa-share-nodes ws-muted"></i></th>
                     <th class="ws-th-sort" @click="sort('min_stock')"><?php esc_html_e( 'Mínimo', 'workshop' ); ?> <i class="fa-solid" :class="sortIcon('min_stock')"></i></th>
                     <th class="ws-th-sort" @click="sort('sale_price')"><?php esc_html_e( 'Precio venta', 'workshop' ); ?> <i class="fa-solid" :class="sortIcon('sale_price')"></i></th>
                     <th><?php esc_html_e( 'Acciones', 'workshop' ); ?></th>
@@ -82,6 +83,16 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                         </td>
                         <td><span class="ws-badge" :class="row.location_type === 'pv' ? 'ws-badge-pv' : 'ws-badge-wh'" x-text="row.location_name"></span></td>
                         <td class="ws-strong" :class="row.qty <= row.min_stock ? 'ws-text-danger' : ''" x-text="row.qty"></td>
+                        <td>
+                            <template x-if="row.group_parts && row.group_parts.length > 1">
+                                <span class="ws-group-badge" :title="groupTitle(row)">
+                                    <i class="fa-solid fa-share-nodes"></i>
+                                    <b x-text="row.group_total"></b>
+                                    <small x-text="'· ' + row.group_parts.length + ' ubs.'"></small>
+                                </span>
+                            </template>
+                            <span x-show="!(row.group_parts && row.group_parts.length > 1)" class="ws-muted" x-text="row.group_total"></span>
+                        </td>
                         <td x-text="row.min_stock"></td>
                         <td x-text="money(row.sale_price, row.currency)"></td>
                         <td class="ws-actions">
@@ -92,7 +103,7 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                         </td>
                     </tr>
                 </template>
-                <tr x-show="total === 0"><td colspan="6"><p class="ws-empty"><?php esc_html_e( 'Sin resultados.', 'workshop' ); ?></p></td></tr>
+                <tr x-show="total === 0"><td colspan="7"><p class="ws-empty"><?php esc_html_e( 'Sin resultados.', 'workshop' ); ?></p></td></tr>
             </tbody>
         </table>
         <div class="ws-pagination" x-show="total > pageSize">

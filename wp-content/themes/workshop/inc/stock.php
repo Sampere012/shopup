@@ -309,7 +309,6 @@ class WS_Stock {
      * tabla de enlaces para cubrir cadenas de cualquier longitud.
      */
     public static function linked_location_ids( $location_id ) {
-        global $wpdb;
         static $cache = array();
         $location_id = (int) $location_id;
         if ( ! $location_id ) {
@@ -318,15 +317,9 @@ class WS_Stock {
         if ( array_key_exists( $location_id, $cache ) ) {
             return $cache[ $location_id ];
         }
-        $adj = array();
-        foreach ( $wpdb->get_results( "SELECT location_a, location_b FROM " . self::table( 'location_links' ) ) as $r ) {
-            $a = (int) $r->location_a;
-            $b = (int) $r->location_b;
-            $adj[ $a ][] = $b;
-            $adj[ $b ][] = $a;
-        }
-        $out   = array();
-        $seen  = array( $location_id => true );
+        $adj  = self::_link_adjacency();
+        $out  = array();
+        $seen = array( $location_id => true );
         $queue = array( $location_id );
         while ( $queue ) {
             $cur = array_shift( $queue );
@@ -335,12 +328,113 @@ class WS_Stock {
                     continue;
                 }
                 $seen[ $n ] = true;
-                $out[]      = $n;
-                $queue[]    = $n;
+                $out[]     = $n;
+                $queue[]   = $n;
             }
         }
         $cache[ $location_id ] = $out;
         return $out;
+    }
+
+    /**
+     * Adyacencia del grafo de conexiones (stock compartido), cacheada por
+     * petición. Se lee UNA vez y la reutilizan el BFS de propagación y el
+     * cálculo del stock del grupo en los listados.
+     */
+    protected static function _link_adjacency() {
+        global $wpdb;
+        static $adj = null;
+        if ( null === $adj ) {
+            $adj = array();
+            foreach ( $wpdb->get_results( "SELECT location_a, location_b FROM " . self::table( 'location_links' ) ) as $r ) {
+                $a = (int) $r->location_a;
+                $b = (int) $r->location_b;
+                $adj[ $a ][] = $b;
+                $adj[ $b ][] = $a;
+            }
+        }
+        return $adj;
+    }
+
+    /**
+     * Stock del GRUPO CONECTADO por producto para filas de stock.
+     *
+     * Para cada fila (producto + ubicación) calcula el total sumando el stock
+     * del producto en TODAS las ubicaciones conectadas transitivamente
+     * (incluida la propia), más el desglose por ubicación para el tooltip.
+     * Devuelve array keyed por "{product_id}:{location_id}" con
+     * array( 'total' => float, 'parts' => array de {id, name, qty} ).
+     */
+    public static function stock_group_info( $rows ) {
+        if ( empty( $rows ) ) {
+            return array();
+        }
+        global $wpdb;
+        $adj = self::_link_adjacency();
+
+        // Nombres de ubicación (una sola lectura, son pocas).
+        $loc_names = array();
+        foreach ( $wpdb->get_results( "SELECT id, name FROM " . self::table( 'locations' ) ) as $l ) {
+            $loc_names[ (int) $l->id ] = $l->name;
+        }
+
+        // Componente (conexión transitiva) por ubicación, cacheado.
+        $components = array();
+        $component  = function ( $lid ) use ( &$components, $adj ) {
+            if ( isset( $components[ $lid ] ) ) {
+                return $components[ $lid ];
+            }
+            $out   = array( $lid );
+            $seen  = array( $lid => true );
+            $queue = array( $lid );
+            while ( $queue ) {
+                $cur = array_shift( $queue );
+                foreach ( (array) ( $adj[ $cur ] ?? array() ) as $n ) {
+                    if ( isset( $seen[ $n ] ) ) {
+                        continue;
+                    }
+                    $seen[ $n ] = true;
+                    $out[]     = $n;
+                    $queue[]   = $n;
+                }
+            }
+            $components[ $lid ] = $out;
+            return $out;
+        };
+
+        // Cantidad por ubicación de cada producto (1 query por producto).
+        $qty_by_pid = array();
+        $info       = array();
+        foreach ( $rows as $r ) {
+            $pid = (int) $r->product_id;
+            $lid = (int) $r->location_id;
+            if ( ! $pid || ! $lid ) {
+                continue;
+            }
+            if ( ! isset( $qty_by_pid[ $pid ] ) ) {
+                $qty_by_pid[ $pid ] = array();
+                foreach ( $wpdb->get_results( $wpdb->prepare(
+                    "SELECT location_id, qty FROM " . self::table( 'stock' ) . " WHERE product_id = %d",
+                    $pid
+                ) ) as $q ) {
+                    $qty_by_pid[ $pid ][ (int) $q->location_id ] = (float) $q->qty;
+                }
+            }
+            $component_ids = $component( $lid );
+            $total         = 0.0;
+            $parts         = array();
+            foreach ( $component_ids as $gid ) {
+                $gqty = (float) ( $qty_by_pid[ $pid ][ $gid ] ?? 0 );
+                $total += $gqty;
+                $parts[] = array(
+                    'id'   => (int) $gid,
+                    'name' => (string) ( $loc_names[ $gid ] ?? '' ),
+                    'qty'  => $gqty,
+                );
+            }
+            $info[ $pid . ':' . $lid ] = array( 'total' => round( $total, 2 ), 'parts' => $parts );
+        }
+        return $info;
     }
 
     /**

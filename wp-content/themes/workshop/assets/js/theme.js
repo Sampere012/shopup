@@ -1291,6 +1291,11 @@
             money(v, c) { return money(v, c || this.currency); },
             typeLabel(t) { const m = { entrada: 'Entrada', salida: 'Salida', baja: 'Baja', traslado: 'Traslado', venta: 'Venta', otro: (this.wizCustomType || 'Personalizado') }; return m[t] || t; },
             locationName(id) { const l = this.locations.find(l => l.id === Number(id)); return l ? l.name : '—'; },
+            groupTitle(row) {
+                if (!row.group_parts || row.group_parts.length <= 1) return '';
+                const lines = row.group_parts.map(p => (p.name || ('#' + p.id)) + ': ' + (Number(p.qty) || 0));
+                return 'Stock compartido (' + row.group_parts.length + ' ubicaciones)\n' + lines.join('\n');
+            },
             sellerName(id) { const s = this.sellers.find(s => s.id === Number(id)); return s ? s.name : '—'; },
             openMove(type, row) {
                 this.moveType = type;
