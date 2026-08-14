@@ -61,9 +61,16 @@ function ws_announcement_can_close( $ann ) {
     if ( ! $ann ) {
         return true;
     }
+    // El admin del sistema siempre puede cerrar (y es quien crea los del sitio).
     if ( current_user_can( 'manage_options' ) ) {
         return true;
     }
+    // Solo el CREADOR del anuncio puede cerrar su banner: los trabajadores y
+    // otros dueños no pueden quitarlo de la vista, lo cierra quien lo envió.
+    if ( (int) ( $ann->created_by ?? 0 ) !== get_current_user_id() ) {
+        return false;
+    }
+    // El creador tampoco si marcó el anuncio fijo como no cerrable.
     if ( ! empty( $ann->pinned ) && (int) ( $ann->dismissible ?? 1 ) === 0 ) {
         return false;
     }

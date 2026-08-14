@@ -133,29 +133,49 @@ function ws_admin_page_announcements() {
 
     $notice = '';
     if ( isset( $_POST['ws_announcement_nonce'] ) && wp_verify_nonce( $_POST['ws_announcement_nonce'], 'ws_manage_announcements' ) ) {
-        $payload = array(
-            'title'       => $_POST['title'] ?? '',
-            'message'     => $_POST['message'] ?? '',
-            'type'        => sanitize_key( $_POST['type'] ?? 'info' ),
-            'scope'       => sanitize_key( $_POST['scope'] ?? 'business' ),
-            'business_id' => (int) ( $_POST['business_id'] ?? ws_current_business_id() ),
-            'pinned'      => ! empty( $_POST['pinned'] ) ? 1 : 0,
-            'dismissible' => ! empty( $_POST['dismissible'] ) ? 1 : 0,
-            'pinned_days' => (int) ( $_POST['pinned_days'] ?? 7 ),
-            'show_from'   => $_POST['show_from'] ?? '',
-            'show_until'  => $_POST['show_until'] ?? '',
-            'active'      => ! empty( $_POST['active'] ) ? 1 : 1,
-        );
-        $id = ws_announcement_save( $payload, (int) ( $_POST['ann_id'] ?? 0 ) );
-        if ( $id ) {
-            $notice = array( 'success', __( 'Anuncio guardado correctamente.', 'workshop' ) );
+        $ann_action = sanitize_key( (string) ( $_POST['ws_ann_action'] ?? '' ) );
+        if ( 'toggle' === $ann_action && function_exists( 'ws_announcement_toggle' ) ) {
+            $ann_field = in_array( (string) ( $_POST['ann_field'] ?? '' ), array( 'pinned', 'active' ), true ) ? sanitize_key( $_POST['ann_field'] ) : 'active';
+            ws_announcement_toggle( (int) ( $_POST['ann_id'] ?? 0 ), $ann_field );
+            $notice = array( 'success', __( 'Anuncio actualizado.', 'workshop' ) );
+        } elseif ( 'delete' === $ann_action && function_exists( 'ws_announcement_delete' ) ) {
+            ws_announcement_delete( (int) ( $_POST['ann_id'] ?? 0 ) );
+            $notice = array( 'success', __( 'Anuncio eliminado.', 'workshop' ) );
         } else {
-            $notice = array( 'error', __( 'El título es obligatorio para guardar el anuncio.', 'workshop' ) );
+            $payload = array(
+                'title'       => $_POST['title'] ?? '',
+                'message'     => $_POST['message'] ?? '',
+                'type'        => sanitize_key( $_POST['type'] ?? 'info' ),
+                'scope'       => sanitize_key( $_POST['scope'] ?? 'business' ),
+                'business_id' => (int) ( $_POST['business_id'] ?? ws_current_business_id() ),
+                'pinned'      => ! empty( $_POST['pinned'] ) ? 1 : 0,
+                'dismissible' => ! empty( $_POST['dismissible'] ) ? 1 : 0,
+                'pinned_days' => (int) ( $_POST['pinned_days'] ?? 7 ),
+                'show_from'   => $_POST['show_from'] ?? '',
+                'show_until'  => $_POST['show_until'] ?? '',
+                'active'      => ! empty( $_POST['active'] ) ? 1 : 1,
+            );
+            $id = ws_announcement_save( $payload, (int) ( $_POST['ann_id'] ?? 0 ) );
+            if ( $id ) {
+                $notice = array( 'success', __( 'Anuncio guardado correctamente.', 'workshop' ) );
+            } else {
+                $notice = array( 'error', __( 'El título es obligatorio para guardar el anuncio.', 'workshop' ) );
+            }
         }
     }
 
     $rows = function_exists( 'ws_announcements_site' ) ? ws_announcements_site() : array();
     $businesses = class_exists( 'WS_Business' ) ? WS_Business::all() : array();
+    $ann_types = array(
+        'info'    => array( __( 'Información', 'workshop' ), 'info' ),
+        'success' => array( __( 'Éxito', 'workshop' ), 'success' ),
+        'warning' => array( __( 'Aviso', 'workshop' ), 'warning' ),
+        'danger'  => array( __( 'Urgente', 'workshop' ), 'danger' ),
+    );
+    $businesses_map = array();
+    foreach ( (array) $businesses as $b ) {
+        $businesses_map[ (int) $b->id ] = (string) $b->name;
+    }
     ?>
     <div class="wrap ws-ann-admin-page">
         <h1><span class="dashicons dashicons-megaphone" style="vertical-align:middle"></span> <?php esc_html_e( 'Anuncios del sitio', 'workshop' ); ?></h1>
@@ -245,35 +265,118 @@ function ws_admin_page_announcements() {
         </div>
 
         <?php if ( empty( $rows ) ) : ?>
-            <p class="description"><?php esc_html_e( 'Todavía no hay anuncios del sitio.', 'workshop' ); ?></p>
+            <div class="ws-ann-empty">
+                <span class="dashicons dashicons-megaphone"></span>
+                <h2><?php esc_html_e( 'Todavía no hay anuncios del sitio.', 'workshop' ); ?></h2>
+                <p><?php esc_html_e( 'Cuando crees un anuncio con destino "Todo el sitio / landing" aparecerá aquí con su programación, su fijado y sus acciones.', 'workshop' ); ?></p>
+            </div>
         <?php else : ?>
-            <h2><?php esc_html_e( 'Anuncios activos del sitio', 'workshop' ); ?></h2>
-            <table class="widefat striped">
+            <h2><?php esc_html_e( 'Anuncios del sitio', 'workshop' ); ?> <span class="ws-ann-count"><?php echo count( $rows ); ?></span></h2>
+            <table class="widefat striped ws-ann-table">
                 <thead>
                     <tr>
                         <th><?php esc_html_e( 'Título', 'workshop' ); ?></th>
                         <th><?php esc_html_e( 'Tipo', 'workshop' ); ?></th>
+                        <th><?php esc_html_e( 'Destino', 'workshop' ); ?></th>
                         <th><?php esc_html_e( 'Fijado', 'workshop' ); ?></th>
                         <th><?php esc_html_e( 'Activo', 'workshop' ); ?></th>
-                        <th><?php esc_html_e( 'Desde', 'workshop' ); ?></th>
-                        <th><?php esc_html_e( 'Hasta', 'workshop' ); ?></th>
+                        <th><?php esc_html_e( 'Vigencia', 'workshop' ); ?></th>
+                        <th><?php esc_html_e( 'Creado por', 'workshop' ); ?></th>
+                        <th><?php esc_html_e( 'Acciones', 'workshop' ); ?></th>
                     </tr>
                 </thead>
                 <tbody>
-                    <?php foreach ( $rows as $a ) : ?>
+                    <?php foreach ( $rows as $a ) :
+                        $a_type    = $ann_types[ $a->type ][0] ?? $a->type;
+                        $a_type_cl = isset( $ann_types[ $a->type ] ) ? $a->type : 'info';
+                        $a_biz     = (int) $a->business_id;
+                        $a_biz_name = 'site' === (string) $a->scope
+                            ? __( 'Todo el sitio', 'workshop' )
+                            : ( $a_biz && isset( $businesses_map[ $a_biz ] ) ? $businesses_map[ $a_biz ] : '#' . $a_biz );
+                        $a_by_user = $a->created_by ? get_userdata( (int) $a->created_by ) : null;
+                        $a_by      = $a_by_user ? $a_by_user->display_name : ( $a->created_by ? '#' . (int) $a->created_by : '—' );
+                        ?>
                         <tr>
-                            <td><strong><?php echo esc_html( $a->title ); ?></strong></td>
-                            <td><?php echo esc_html( $a->type ); ?></td>
-                            <td><?php echo ! empty( $a->pinned ) ? esc_html__( 'Sí', 'workshop' ) : esc_html__( 'No', 'workshop' ); ?></td>
-                            <td><?php echo ! empty( $a->active ) ? esc_html__( 'Sí', 'workshop' ) : esc_html__( 'No', 'workshop' ); ?></td>
-                            <td><?php echo esc_html( $a->show_from ?: '—' ); ?></td>
-                            <td><?php echo esc_html( $a->show_until ?: '—' ); ?></td>
+                            <td>
+                                <strong><?php echo esc_html( $a->title ); ?></strong>
+                                <div class="ws-ann-msg"><?php echo esc_html( wp_trim_words( (string) $a->message, 12, '…' ) ); ?></div>
+                            </td>
+                            <td><span class="ws-ann-badge ws-ann-badge-<?php echo esc_attr( $a_type_cl ); ?>"><?php echo esc_html( $a_type ); ?></span></td>
+                            <td><?php echo esc_html( $a_biz_name ); ?></td>
+                            <td>
+                                <?php if ( ! empty( $a->pinned ) ) : ?>
+                                    <span class="dashicons dashicons-admin-post ws-ann-ico-pin" title="<?php echo esc_attr( $a->pinned_until ? sprintf( __( 'Fijado hasta %s', 'workshop' ), $a->pinned_until ) : __( 'Fijado', 'workshop' ) ); ?>"></span>
+                                <?php else : ?>
+                                    <span class="dashicons dashicons-minus ws-ann-ico-off"></span>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <?php if ( ! empty( $a->active ) ) : ?>
+                                    <span class="dashicons dashicons-visibility ws-ann-ico-on" title="<?php esc_attr_e( 'Visible', 'workshop' ); ?>"></span>
+                                <?php else : ?>
+                                    <span class="dashicons dashicons-hidden ws-ann-ico-off" title="<?php esc_attr_e( 'Oculto', 'workshop' ); ?>"></span>
+                                <?php endif; ?>
+                            </td>
+                            <td class="ws-ann-range">
+                                <?php echo esc_html( $a->show_from ? sprintf( __( 'Desde %s', 'workshop' ), $a->show_from ) : __( 'Desde: —', 'workshop' ) ); ?>
+                                <br>
+                                <?php echo esc_html( $a->show_until ? sprintf( __( 'Hasta %s', 'workshop' ), $a->show_until ) : __( 'Hasta: —', 'workshop' ) ); ?>
+                                <?php if ( ! empty( $a->pinned_until ) ) : ?>
+                                    <br><em><?php echo esc_html( sprintf( __( 'Fijo hasta %s', 'workshop' ), $a->pinned_until ) ); ?></em>
+                                <?php endif; ?>
+                            </td>
+                            <td><?php echo esc_html( $a_by ); ?></td>
+                            <td class="ws-ann-actions">
+                                <form method="post" class="ws-ann-inline">
+                                    <?php wp_nonce_field( 'ws_manage_announcements', 'ws_announcement_nonce' ); ?>
+                                    <input type="hidden" name="ws_ann_action" value="toggle">
+                                    <input type="hidden" name="ann_id" value="<?php echo (int) $a->id; ?>">
+                                    <input type="hidden" name="ann_field" value="pinned">
+                                    <button class="button ws-ann-btn" title="<?php echo ! empty( $a->pinned ) ? esc_attr__( 'Desfijar', 'workshop' ) : esc_attr__( 'Fijar como banner', 'workshop' ); ?>">
+                                        <span class="dashicons <?php echo ! empty( $a->pinned ) ? 'dashicons-admin-post' : 'dashicons-megaphone'; ?>"></span>
+                                    </button>
+                                </form>
+                                <form method="post" class="ws-ann-inline">
+                                    <?php wp_nonce_field( 'ws_manage_announcements', 'ws_announcement_nonce' ); ?>
+                                    <input type="hidden" name="ws_ann_action" value="toggle">
+                                    <input type="hidden" name="ann_id" value="<?php echo (int) $a->id; ?>">
+                                    <input type="hidden" name="ann_field" value="active">
+                                    <button class="button ws-ann-btn" title="<?php echo ! empty( $a->active ) ? esc_attr__( 'Desactivar', 'workshop' ) : esc_attr__( 'Activar', 'workshop' ); ?>">
+                                        <span class="dashicons <?php echo ! empty( $a->active ) ? 'dashicons-visibility' : 'dashicons-hidden'; ?>"></span>
+                                    </button>
+                                </form>
+                                <form method="post" class="ws-ann-inline" onsubmit="return confirm('<?php echo esc_js( __( '¿Eliminar este anuncio?', 'workshop' ) ); ?>');">
+                                    <?php wp_nonce_field( 'ws_manage_announcements', 'ws_announcement_nonce' ); ?>
+                                    <input type="hidden" name="ws_ann_action" value="delete">
+                                    <input type="hidden" name="ann_id" value="<?php echo (int) $a->id; ?>">
+                                    <button class="button ws-ann-btn ws-ann-btn-danger" title="<?php esc_attr_e( 'Eliminar', 'workshop' ); ?>">
+                                        <span class="dashicons dashicons-trash"></span>
+                                    </button>
+                                </form>
+                            </td>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>
             </table>
         <?php endif; ?>
     </div>
+    <style>
+        .ws-ann-admin-page .ws-ann-empty{max-width:960px;margin:20px 0;padding:44px 24px;text-align:center;background:#fff;border:1px solid #dcdcde;border-radius:8px}
+        .ws-ann-admin-page .ws-ann-empty .dashicons{font-size:44px;width:44px;height:44px;color:#2271b1}
+        .ws-ann-admin-page .ws-ann-empty h2{margin:14px 0 6px;font-size:20px}
+        .ws-ann-admin-page .ws-ann-empty p{margin:0;color:#646970}
+        .ws-ann-admin-page .ws-ann-count{display:inline-block;margin-left:6px;padding:1px 10px;border-radius:10px;background:#2271b1;color:#fff;font-size:12px;vertical-align:middle}
+        .ws-ann-admin-page .ws-ann-table{margin-top:12px}
+        .ws-ann-table .ws-ann-msg{color:#646970;font-weight:400;font-size:12px}
+        .ws-ann-badge{display:inline-block;padding:2px 10px;border-radius:10px;font-size:11px;line-height:1.7;color:#fff}
+        .ws-ann-badge-info{background:#2271b1}.ws-ann-badge-success{background:#00a32a}.ws-ann-badge-warning{background:#dba617}.ws-ann-badge-danger{background:#d63638}
+        .ws-ann-table .ws-ann-ico-pin{color:#2271b1}.ws-ann-table .ws-ann-ico-on{color:#00a32a}.ws-ann-table .ws-ann-ico-off{color:#a7aaad}
+        .ws-ann-table .ws-ann-range{font-size:12px;color:#50575e}
+        .ws-ann-inline{display:inline-block;margin:0 2px 0 0}
+        .ws-ann-btn{width:30px;height:30px;padding:0!important;display:inline-flex;align-items:center;justify-content:center}
+        .ws-ann-btn .dashicons{font-size:16px;width:16px;height:16px}
+        .ws-ann-btn-danger .dashicons{color:#d63638}
+    </style>
     <?php
 }
 
