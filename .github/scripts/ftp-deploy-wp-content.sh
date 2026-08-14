@@ -21,30 +21,34 @@ fi
 # Los PNG/JS/PHP deben subirse como TYPE I; algunos proxies FTP negocian
 # ASCII por defecto y corrompen binarios.
 #
-# Antes del STOR se intenta (best-effort) CHMOD 644 + DELE del destino: si el
-# archivo remoto quedo con permisos de solo lectura de un deploy anterior,
-# el STOR devuelve 550 Permission denied; hacerlo escribible/borrarlo primero
-# lo resuelve. El error real del servidor se muestra en el warning.
+# Camino feliz: STOR simple (asi funcionaba). NO se envia CHMOD antes del STOR:
+# InfinityFree rechaza 'SITE CHMOD' y con -Q eso abortaba la subida de TODOS
+# los archivos (curl 21 QUOT string not accepted). Si un STOR falla (p. ej.
+# 550/553 por destino remoto en solo lectura de un deploy anterior), se borra
+# el remoto con un DELE best-effort en conexion aparte (resultado ignorado) y
+# el siguiente intento reintenta el STOR. El error real se muestra en el warning.
 upload() {
   local src="$1"
   local dst="$2"
   local attempt
   local err
+  local detail
   for attempt in 1 2 3 4 5; do
     err="$(mktemp)"
     if curl -sS --connect-timeout 30 --max-time 180 \
         --user "${FTP_USER}:${FTP_PASS}" --ftp-create-dirs \
-        -Q "-SITE CHMOD 644 ${dst}" \
-        -Q "-DELE ${dst}" \
         -Q "TYPE I" --ftp-pasv \
         -T "${src}" "ftp://${FTP_HOST}/${dst}" 2>"$err"; then
       rm -f "$err"
       return 0
     fi
-    local detail
     detail="$(tr '\n' ' ' < "$err" | sed 's/  */ /g' | tail -c 400)"
     rm -f "$err"
     echo "::warning::Intento ${attempt}/5 fallo para ${dst}${detail:+ — $detail}"
+    curl -sS --connect-timeout 20 --max-time 60 \
+        --user "${FTP_USER}:${FTP_PASS}" \
+        -Q "DELE ${dst}" \
+        "ftp://${FTP_HOST}/" >/dev/null 2>&1 || true
     sleep $(( attempt * 2 ))
   done
   echo "::error::Fallo definitivo subiendo ${dst}"
