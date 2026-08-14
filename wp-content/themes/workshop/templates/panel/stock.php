@@ -453,10 +453,11 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
 
             <!-- Paso 2: productos -->
             <div x-show="wizStep === 2">
-                <div class="ws-search ws-mb">
+                <div class="ws-search ws-mb" style="margin-bottom:0">
                     <i class="fa-solid fa-magnifying-glass"></i>
                     <input type="search" placeholder="<?php esc_attr_e( 'Buscar producto…', 'workshop' ); ?>" x-model="wizSearch">
                 </div>
+                <label class="ws-check ws-check-pill" style="margin:8px 0 10px" title="<?php esc_attr_e( 'Muestra únicamente los combos', 'workshop' ); ?>"><input type="checkbox" x-model="wizCombosOnly"><span><?php esc_html_e( 'Solo combos', 'workshop' ); ?></span></label>
                 <div x-show="wizLoading" class="ws-empty"><?php esc_html_e( 'Cargando…', 'workshop' ); ?></div>
                 <div class="ws-wiz-list" x-show="!wizLoading">
                     <template x-if="wizProducts.length === 0">
@@ -468,6 +469,7 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                             <span class="ws-wiz-thumb"><img x-show="p.image" :src="p.image" alt=""><i x-show="!p.image" class="fa-solid fa-box"></i></span>
                             <span class="ws-wiz-info">
                                 <strong x-text="p.name"></strong>
+                                <span class="ws-combo-badge" x-show="p.is_combo" x-cloak title="<?php esc_attr_e( 'Este producto es un combo', 'workshop' ); ?>"><i class="fa-solid fa-layer-group"></i> <?php esc_html_e( 'Combo', 'workshop' ); ?></span>
                                 <small x-text="p.barcode"></small>
                             </span>
                             <span class="ws-wiz-stock" x-show="wizDecreases"><?php esc_html_e( 'Stock:', 'workshop' ); ?> <b x-text="p.stock"></b></span>
@@ -535,32 +537,40 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                     <button type="button" class="ws-btn ws-btn-secondary" @click="clearLinks()"><i class="fa-solid fa-circle-minus"></i> <?php esc_html_e( 'Limpiar', 'workshop' ); ?></button>
                     <button type="button" class="ws-btn ws-btn-primary" @click="saveLinks()" :disabled="savingLinks"><i class="fa-solid fa-floppy-disk"></i> <?php esc_html_e( 'Guardar', 'workshop' ); ?></button>
                 </div>
-                <div class="ws-link-canvas" x-ref="canvas">
-                    <template x-for="link in displayLinks()" :key="'l' + linkKey(link.a, link.b)">
-                        <div class="ws-link-line" :style="lineStyle(link)" :title="'Desconectar: ' + locName(link.a) + ' ↔ ' + locName(link.b)" @click="removeLink(link)"></div>
-                    </template>
-                    <template x-for="link in displayLinks()" :key="'m' + linkKey(link.a, link.b)">
-                        <span class="ws-link-mid" :style="midStyle(link)" :title="'Desconectar: ' + locName(link.a) + ' ↔ ' + locName(link.b)" @click="removeLink(link)"><i class="fa-solid fa-link"></i></span>
-                    </template>
-                    <template x-if="linkMode === 'connect' && tempLine && linkFrom">
-                        <div class="ws-link-temp" :style="tempLineStyle()"></div>
-                    </template>
+                <div class="ws-link-canvas" x-ref="canvas" @pointerdown="startPan($event)" @wheel.prevent="onCanvasWheel($event)" :class="panning ? 'is-panning' : ''">
+                    <div class="ws-link-layer" :style="canvasLayerStyle()">
+                        <template x-for="link in displayLinks()" :key="'l' + linkKey(link.a, link.b)">
+                            <div class="ws-link-line" :style="lineStyle(link)" :title="'Desconectar: ' + locName(link.a) + ' ↔ ' + locName(link.b)" @click="removeLink(link)"></div>
+                        </template>
+                        <template x-for="link in displayLinks()" :key="'m' + linkKey(link.a, link.b)">
+                            <span class="ws-link-mid" :style="midStyle(link)" :title="'Desconectar: ' + locName(link.a) + ' ↔ ' + locName(link.b)" @click="removeLink(link)"><i class="fa-solid fa-link"></i></span>
+                        </template>
+                        <template x-if="linkMode === 'connect' && tempLine && linkFrom">
+                            <div class="ws-link-temp" :style="tempLineStyle()"></div>
+                        </template>
 
-                    <template x-for="l in canvasLocations" :key="l.id">
-                        <div class="ws-link-node" :class="nodeClass(l.id)" :data-node-id="l.id" :style="nodeStyle(l.id)" @pointerdown.stop="startMove(l.id, $event)">
-                            <div class="ws-link-node-icon" :class="l.type === 'pv' ? 'is-pv' : 'is-wh'">
-                                <i class="fa-solid" :class="l.type === 'pv' ? 'fa-store' : 'fa-warehouse'"></i>
+                        <template x-for="l in canvasLocations" :key="l.id">
+                            <div class="ws-link-node" :class="nodeClass(l.id)" :data-node-id="l.id" :style="nodeStyle(l.id)" @pointerdown.stop="startMove(l.id, $event)">
+                                <div class="ws-link-node-icon" :class="l.type === 'pv' ? 'is-pv' : 'is-wh'">
+                                    <i class="fa-solid" :class="l.type === 'pv' ? 'fa-store' : 'fa-warehouse'"></i>
+                                </div>
+                                <div class="ws-link-node-body">
+                                    <strong x-text="l.name"></strong>
+                                    <small x-text="l.type === 'pv' ? 'PV' : 'Almacén'"></small>
+                                </div>
+                                <span class="ws-link-count" x-show="nodeLinks(l.id).length" x-text="nodeLinks(l.id).length"></span>
+                                <button class="ws-link-handle" title="Conectar con otra ubicación" @pointerdown.stop="startConnect(l.id, $event)"><i class="fa-solid fa-link"></i></button>
                             </div>
-                            <div class="ws-link-node-body">
-                                <strong x-text="l.name"></strong>
-                                <small x-text="l.type === 'pv' ? 'PV' : 'Almacén'"></small>
-                            </div>
-                            <span class="ws-link-count" x-show="nodeLinks(l.id).length" x-text="nodeLinks(l.id).length"></span>
-                            <button class="ws-link-handle" title="Conectar con otra ubicación" @pointerdown.stop="startConnect(l.id, $event)"><i class="fa-solid fa-link"></i></button>
-                        </div>
-                    </template>
+                        </template>
 
-                    <p class="ws-empty" x-show="!canvasLocations.length"><?php esc_html_e( 'Crea ubicaciones para poder conectarlas.', 'workshop' ); ?></p>
+                        <p class="ws-empty" x-show="!canvasLocations.length"><?php esc_html_e( 'Crea ubicaciones para poder conectarlas.', 'workshop' ); ?></p>
+                    </div>
+                    <div class="ws-canvas-zoom" title="<?php esc_attr_e( 'Zoom del lienzo (rueda del ratón + arrastra el fondo para moverte)', 'workshop' ); ?>">
+                        <button type="button" @click="zoomOut()" title="<?php esc_attr_e( 'Alejar', 'workshop' ); ?>"><i class="fa-solid fa-minus"></i></button>
+                        <span x-text="zoomPct()"></span>
+                        <button type="button" @click="zoomIn()" title="<?php esc_attr_e( 'Acercar', 'workshop' ); ?>"><i class="fa-solid fa-plus"></i></button>
+                        <button type="button" @click="resetZoom()" title="<?php esc_attr_e( 'Restablecer zoom', 'workshop' ); ?>"><i class="fa-solid fa-arrows-to-dot"></i></button>
+                    </div>
                 </div>
             </div>
         </div>

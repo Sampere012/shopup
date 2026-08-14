@@ -748,6 +748,7 @@
             canFraction: opts.canFraction,
             products: [],
             search: '',
+            showCombos: false,
             formOpen: false,
             importModal: false,
             dragOver: false,
@@ -929,7 +930,7 @@
                 return '';
             },
             reload() {
-                fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ action: 'ws_products_list', ws_nonce: WS.nonce, search: this.search, sort: this.sortKey, dir: this.sortDir, page: this.page, pageSize: this.pageSize }) })
+                fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ action: 'ws_products_list', ws_nonce: WS.nonce, search: this.search, sort: this.sortKey, dir: this.sortDir, page: this.page, pageSize: this.pageSize, show_combos: this.showCombos ? 1 : 0 }) })
                     .then(r => r.json()).then(r => { if (r.success) { this.products = r.data.products; this.total = r.data.total; this.page = r.data.page; } });
             },
             money(v, c) { return money(v, c || this.currency); },
@@ -954,7 +955,7 @@
             },
             parentCandidates() {
                 // Candidatos a "producto madre": productos que no son hijos.
-                return (this.products || []).filter(p => !p.fraction_parent && Number(p.id) !== Number(this.form.id || 0));
+                return (this.products || []).filter(p => !p.is_combo && !p.fraction_parent && Number(p.id) !== Number(this.form.id || 0));
             },
             clone(p) {
                 // Clona conservando barcode; el servidor añade sufijo si ya existe.
@@ -1001,7 +1002,7 @@
             },
             /* --- Edición masiva (mínimo, fechas, costo, venta) --- */
             get allPageSelected() {
-                return this.products.length > 0 && this.products.every(p => this.selected.indexOf(p.id) !== -1);
+                return this.products.some(p => !p.is_combo) && this.products.filter(p => !p.is_combo).every(p => this.selected.indexOf(p.id) !== -1);
             },
             get bulkIsNumeric() { return ['min_stock', 'cost_price', 'sale_price'].indexOf(this.bulk.field) !== -1; },
             get bulkIsDate() { return ['production_date', 'expiry_date'].indexOf(this.bulk.field) !== -1; },
@@ -1011,9 +1012,9 @@
             },
             togglePage(checked) {
                 if (checked) {
-                    this.products.forEach(p => { if (this.selected.indexOf(p.id) === -1) this.selected.push(p.id); });
+                    this.products.forEach(p => { if (p.is_combo) return; if (this.selected.indexOf(p.id) === -1) this.selected.push(p.id); });
                 } else {
-                    const pageIds = this.products.map(p => p.id);
+                    const pageIds = this.products.filter(p => !p.is_combo).map(p => p.id);
                     this.selected = this.selected.filter(id => pageIds.indexOf(id) === -1);
                 }
             },
@@ -1022,7 +1023,7 @@
                 // no solo la página visible (ws_products_list sin paginar).
                 $('ws_products_list', { search: this.search }).then(r => {
                     if (r.success) {
-                        this.selected = (r.data.products || []).map(p => p.id);
+                        this.selected = (r.data.products || []).filter(p => !p.is_combo).map(p => p.id);
                         toast('success', this.selected.length + ' producto(s) seleccionado(s)');
                     } else { toast('error', 'Error', r.data && r.data.msg); }
                 });
@@ -1114,6 +1115,63 @@
             savingLinks: false,
             savedLinksKey: '',
             canvasTick: 0,
+            // Zoom / paneo del lienzo (se aplica a la capa .ws-link-layer).
+            zoom: 1,
+            panX: 0,
+            panY: 0,
+            panning: false,
+            setZoom(z) {
+                this.zoom = Math.max(0.4, Math.min(2.5, z));
+                this.canvasTick++;
+            },
+            zoomIn() { this.setZoom(this.zoom * 1.2); },
+            zoomOut() { this.setZoom(this.zoom / 1.2); },
+            resetZoom() { this.zoom = 1; this.panX = 0; this.panY = 0; this.canvasTick++; },
+            zoomPct() { return Math.round(this.zoom * 100) + '%'; },
+            // Transform de la capa: escala + desplazamiento. El origen es
+            // arriba-izquierda; las posiciones de nodos/líneas siguen en % o px
+            // de la capa sin escalar y el CSS los escala visualmente.
+            canvasLayerStyle() {
+                void this.canvasTick;
+                return {
+                    transform: 'translate(' + this.panX + 'px, ' + this.panY + 'px) scale(' + this.zoom + ')',
+                    transformOrigin: '0 0'
+                };
+            },
+            // Zoom con la rueda hacia el cursor (mantiene el punto fijo).
+            onCanvasWheel(evt) {
+                const rect = this.$refs.canvas.getBoundingClientRect();
+                const mx = evt.clientX - rect.left;
+                const my = evt.clientY - rect.top;
+                const factor = evt.deltaY < 0 ? 1.1 : 1 / 1.1;
+                const next = Math.max(0.4, Math.min(2.5, this.zoom * factor));
+                const k = next / this.zoom;
+                this.panX = mx - (mx - this.panX) * k;
+                this.panY = my - (my - this.panY) * k;
+                this.zoom = next;
+                this.canvasTick++;
+            },
+            // Paneo arrastrando el fondo del lienzo (no nodos/líneas).
+            startPan(evt) {
+                if (!evt.target || !evt.target.closest) return;
+                if (evt.target.closest('.ws-link-node, .ws-link-line, .ws-link-mid, .ws-link-temp, .ws-canvas-zoom')) return;
+                this.panning = true;
+                this._panStartX = evt.clientX - this.panX;
+                this._panStartY = evt.clientY - this.panY;
+                const move = (e) => {
+                    if (!this.panning) return;
+                    this.panX = e.clientX - this._panStartX;
+                    this.panY = e.clientY - this._panStartY;
+                    this.canvasTick++;
+                };
+                const up = () => {
+                    this.panning = false;
+                    window.removeEventListener('pointermove', move);
+                    window.removeEventListener('pointerup', up);
+                };
+                window.addEventListener('pointermove', move);
+                window.addEventListener('pointerup', up);
+            },
             initCanvas() {
                 try {
                     const saved = JSON.parse(localStorage.getItem('ws_loc_nodes_' + (WS.business || 'default')) || '[]');
@@ -1278,9 +1336,14 @@
             },
             canvasPos(evt) {
                 const rect = this.$refs.canvas.getBoundingClientRect();
+                // Con zoom/paneo, la capa está escalada y desplazada: hay que
+                // convertir el puntero a coordenadas de la capa sin escalar
+                // (inversa de translate + scale con origin 0 0).
+                const x = (evt.clientX - rect.left - this.panX) / this.zoom;
+                const y = (evt.clientY - rect.top - this.panY) / this.zoom;
                 return {
-                    x: Math.max(0, Math.min(100, ((evt.clientX - rect.left) / rect.width) * 100)),
-                    y: Math.max(0, Math.min(100, ((evt.clientY - rect.top) / rect.height) * 100))
+                    x: Math.max(0, Math.min(100, (x / rect.width) * 100)),
+                    y: Math.max(0, Math.min(100, (y / rect.height) * 100))
                 };
             },
             startConnect(id, evt) {
@@ -1497,6 +1560,7 @@
             wizProducts: [],
             wizItems: [],
             wizSearch: '',
+            wizCombosOnly: false,
             wizRef: '',
             wizNote: '',
             wizLoading: false,
@@ -1532,8 +1596,10 @@
             },
             get wizFiltered() {
                 const s = this.wizSearch.toLowerCase().trim();
-                if (!s) return this.wizProducts;
-                return this.wizProducts.filter(p => p.name.toLowerCase().includes(s) || (p.barcode || '').toLowerCase().includes(s));
+                let list = this.wizProducts;
+                if (this.wizCombosOnly) list = list.filter(p => p.is_combo);
+                if (!s) return list;
+                return list.filter(p => p.name.toLowerCase().includes(s) || (p.barcode || '').toLowerCase().includes(s));
             },
             get wizSelectedCount() { return this.wizItems.length; },
             get wizHasStockProducts() { return this.wizType === 'entrada' || this.wizProducts.some(p => p.stock > 0); },
@@ -1570,6 +1636,7 @@
                 this.wizProducts = [];
                 this.wizItems = [];
                 this.wizSearch = '';
+                this.wizCombosOnly = false;
                 this.wizRef = '';
                 this.wizNote = '';
             },
@@ -1600,18 +1667,22 @@
                 this.wizProducts = [];
                 this.wizItems = [];
                 const isEntrada = this.wizType === 'entrada' || (this.wizType === 'otro' && this.wizDirection === 'entrada');
+                const toWiz = p => ({ product_id: p.product_id, combo_id: p.combo_id || 0, name: p.name, barcode: p.barcode, image: p.image, stock: p.stock || 0, sale_price: p.sale_price, price: p.sale_price, qty: 1, selected: false, is_combo: !!p.is_combo });
                 if (isEntrada) {
-                    $('ws_products_list', {}).then(r => {
+                    // Entrada: todos los productos (+ combos) del catálogo.
+                    $('ws_products_list', { show_combos: 1 }).then(r => {
                         this.wizLoading = false;
                         if (!r.success) { toast('error', 'Error', r.data && r.data.msg); return; }
-                        this.wizProducts = r.data.products.map(p => ({ product_id: p.id, name: p.name, barcode: p.barcode, image: p.image, stock: 0, sale_price: p.sale_price, price: p.sale_price, qty: 1, selected: false }));
+                        this.wizProducts = (r.data.products || []).map(p => ({ product_id: p.id, combo_id: p.combo_id || 0, name: p.name, barcode: p.barcode, image: p.image, stock: 0, sale_price: p.sale_price, price: p.sale_price, qty: 1, selected: false, is_combo: !!p.is_combo }));
                     });
                 } else {
                     const loc = this.wizType === 'traslado' ? this.wizFrom : this.wizLocation;
-                    $('ws_stock_list', { location_id: loc, search: '', low_only: 0 }).then(r => {
+                    // Salida/baja/traslado/venta: solo con stock en la ubicación
+                    // (+ combos con stock derivado de sus componentes).
+                    $('ws_stock_list', { location_id: loc, search: '', low_only: 0, include_combos: 1 }).then(r => {
                         this.wizLoading = false;
                         if (!r.success) { toast('error', 'Error', r.data && r.data.msg); return; }
-                        this.wizProducts = r.data.rows.filter(p => p.qty > 0).map(p => ({ product_id: p.product_id, name: p.name, barcode: p.barcode, image: p.image, stock: p.qty, sale_price: p.sale_price, price: p.sale_price, qty: 1, selected: false }));
+                        this.wizProducts = (r.data.rows || []).filter(p => p.qty > 0).map(toWiz);
                     });
                 }
             },
@@ -1632,7 +1703,7 @@
                 if (this.wizDecreases && p.qty > p.stock) p.qty = p.stock;
             },
             wizSubmit() {
-                const items = this.wizItems.map(i => ({ product_id: i.product_id, qty: i.qty, price: this.wizType === 'venta' ? (Number(i.price) || 0) : 0 }));
+                const items = this.wizItems.map(i => ({ product_id: i.product_id, combo_id: i.combo_id || 0, qty: i.qty, price: this.wizType === 'venta' ? (Number(i.price) || 0) : 0 }));
                 if (this.wizType === 'traslado') {
                     $('ws_stock_batch_transfer', { from_location: this.wizFrom, to_location: this.wizTo, note: this.wizNote, items: JSON.stringify(items) }).then(res => {
                         if (res.success) { toast('success', 'Transferencia realizada'); this.wizOpen = false; this.load(); }

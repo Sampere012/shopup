@@ -105,45 +105,102 @@ function ws_send_list( $rows_key, $fetch, $count, $filter_args ) {
 add_action( 'wp_ajax_ws_products_list', 'ws_ajax_products_list' );
 function ws_ajax_products_list() {
     ws_guard( 'products_view' );
-    $search = sanitize_text_field( $_POST['search'] ?? '' );
-    ws_send_list( 'products', function ( $args ) use ( $search ) {
-        $rows = WS_CRUD::get_products( array_merge( array( 'search' => $search ), $args ) );
-        $out = array();
-        foreach ( $rows as $p ) {
-            $out[] = array(
-                'id'           => (int) $p->id,
-                'name'         => $p->name,
-                'barcode'      => $p->barcode,
-                'category'     => (string) ( $p->category ?? '' ),
-                'category_id'  => (int) ( $p->category_id ?? 0 ),
-                // Ruta de la categoría en árbol (Padre / Hijo) para la lista.
-                'category_path'=> ( ! empty( $p->category_id ) && class_exists( 'WS_Categories' ) )
-                    ? WS_Categories::path_text( (int) $p->category_id )
-                    : (string) ( $p->category ?? '' ),
-                'description'  => $p->description,
-                'image'        => $p->image,
-                'cost_price'   => (float) $p->cost_price,
-                'sale_price'   => (float) $p->sale_price,
-                'transfer_pct' => (float) $p->transfer_pct,
-                'currency'     => $p->currency,
-                'show_equiv'   => (int) ( $p->show_equiv ?? 1 ),
-                'supplier_id'  => (int) $p->supplier_id,
-                'supplier_name'=> $p->supplier_name,
-                'min_stock'    => (float) $p->min_stock,
-                'production_date' => (string) ( $p->production_date ?? '' ),
-                'expiry_date'     => (string) ( $p->expiry_date ?? '' ),
-                // Estado de caducidad para la tabla: vencido o por vencer (≤7 días).
-                'expired'      => ( ! empty( $p->expiry_date ) && strtotime( (string) $p->expiry_date . ' 00:00:00' ) < strtotime( 'today midnight' ) ) ? 1 : 0,
-                'expiring'     => ( ! empty( $p->expiry_date ) ) ? ( ( strtotime( (string) $p->expiry_date . ' 00:00:00' ) >= strtotime( 'today midnight' ) && strtotime( (string) $p->expiry_date . ' 23:59:59' ) <= strtotime( 'today midnight +7 days' ) ) ? 1 : 0 ) : 0,
-                'fraction_parent' => (int) ( $p->fraction_parent ?? 0 ),
-                'fraction_qty'    => (float) ( $p->fraction_qty ?? 0 ),
-                'active'       => (int) $p->active,
-            );
-        }
-        return $out;
-    }, function () use ( $search ) {
-        return WS_CRUD::count_products( array( 'search' => $search ) );
-    }, array( 'search' => $search ) );
+    $search      = sanitize_text_field( $_POST['search'] ?? '' );
+    $show_combos = ! empty( $_POST['show_combos'] );
+
+    $row_map = function ( $p ) {
+        return array(
+            'id'           => (int) $p->id,
+            'name'         => $p->name,
+            'barcode'      => $p->barcode,
+            'category'     => (string) ( $p->category ?? '' ),
+            'category_id'  => (int) ( $p->category_id ?? 0 ),
+            // Ruta de la categoría en árbol (Padre / Hijo) para la lista.
+            'category_path'=> ( ! empty( $p->category_id ) && class_exists( 'WS_Categories' ) )
+                ? WS_Categories::path_text( (int) $p->category_id )
+                : (string) ( $p->category ?? '' ),
+            'description'  => $p->description,
+            'image'        => $p->image,
+            'cost_price'   => (float) $p->cost_price,
+            'sale_price'   => (float) $p->sale_price,
+            'transfer_pct' => (float) $p->transfer_pct,
+            'currency'     => $p->currency,
+            'show_equiv'   => (int) ( $p->show_equiv ?? 1 ),
+            'supplier_id'  => (int) $p->supplier_id,
+            'supplier_name'=> $p->supplier_name,
+            'min_stock'    => (float) $p->min_stock,
+            'production_date' => (string) ( $p->production_date ?? '' ),
+            'expiry_date'     => (string) ( $p->expiry_date ?? '' ),
+            // Estado de caducidad para la tabla: vencido o por vencer (≤7 días).
+            'expired'      => ( ! empty( $p->expiry_date ) && strtotime( (string) $p->expiry_date . ' 00:00:00' ) < strtotime( 'today midnight' ) ) ? 1 : 0,
+            'expiring'     => ( ! empty( $p->expiry_date ) ) ? ( ( strtotime( (string) $p->expiry_date . ' 00:00:00' ) >= strtotime( 'today midnight' ) && strtotime( (string) $p->expiry_date . ' 23:59:59' ) <= strtotime( 'today midnight +7 days' ) ) ? 1 : 0 ) : 0,
+            'fraction_parent' => (int) ( $p->fraction_parent ?? 0 ),
+            'fraction_qty'    => (float) ( $p->fraction_qty ?? 0 ),
+            'active'       => (int) $p->active,
+            'is_combo'     => 0,
+            'combo_id'     => 0,
+        );
+    };
+
+    if ( ! $show_combos ) {
+        ws_send_list( 'products', function ( $args ) use ( $search, $row_map ) {
+            $rows = WS_CRUD::get_products( array_merge( array( 'search' => $search ), $args ) );
+            return array_map( $row_map, $rows );
+        }, function () use ( $search ) {
+            return WS_CRUD::count_products( array( 'search' => $search ) );
+        }, array( 'search' => $search ) );
+    }
+
+    // Con "Mostrar combos": mezclamos los combos activos con los productos y
+    // paginamos en PHP (los combos viven en otra tabla y no participan del SQL).
+    $pg   = ws_list_paging();
+    $rows = array_map( $row_map, WS_CRUD::get_products( array( 'search' => $search ) ) );
+    foreach ( WS_Combos::all( array( 'active' => 1, 'search' => $search ) ) as $c ) {
+        $rows[] = array(
+            'id'               => -1 * (int) $c->id,
+            'name'             => $c->name,
+            'barcode'          => '',
+            'category'         => '',
+            'category_id'      => 0,
+            'category_path'    => '',
+            'description'      => '',
+            'image'            => $c->photo,
+            'cost_price'       => 0.0,
+            'sale_price'       => WS_Combos::price( $c ),
+            'transfer_pct'     => 0.0,
+            'currency'         => $c->currency,
+            'show_equiv'       => 1,
+            'supplier_id'      => 0,
+            'supplier_name'    => '',
+            'min_stock'        => 0.0,
+            'production_date'  => '',
+            'expiry_date'      => '',
+            'expired'          => 0,
+            'expiring'         => 0,
+            'fraction_parent'  => 0,
+            'fraction_qty'     => 0.0,
+            'active'           => 1,
+            'is_combo'         => 1,
+            'combo_id'         => (int) $c->id,
+        );
+    }
+    $sortable = array( 'name', 'supplier_name', 'cost_price', 'sale_price', 'transfer_pct', 'min_stock', 'production_date', 'expiry_date' );
+    $sort = in_array( $pg['sort'], $sortable, true ) ? $pg['sort'] : 'name';
+    usort( $rows, function ( $a, $b ) use ( $sort, $pg ) {
+        $x = $a[ $sort ];
+        $y = $b[ $sort ];
+        $cmp = ( is_numeric( $x ) && is_numeric( $y ) ) ? ( (float) $x <=> (float) $y ) : strcasecmp( (string) $x, (string) $y );
+        return 'DESC' === $pg['dir'] ? -$cmp : $cmp;
+    } );
+    $total       = count( $rows );
+    $total_pages = max( 1, (int) ceil( $total / $pg['pageSize'] ) );
+    $page        = min( $pg['page'], $total_pages );
+    wp_send_json_success( array(
+        'products' => array_slice( $rows, ( $page - 1 ) * $pg['pageSize'], $pg['pageSize'] ),
+        'total'    => $total,
+        'page'     => $page,
+        'pageSize' => $pg['pageSize'],
+    ) );
 }
 
 add_action( 'wp_ajax_ws_locations_list', 'ws_ajax_locations_list' );
@@ -658,10 +715,46 @@ function ws_ajax_stock_batch_venta() {
     $wpdb->query( 'START TRANSACTION' );
     foreach ( $items as $it ) {
         $pid = (int) ( $it['product_id'] ?? 0 );
+        $cid = (int) ( $it['combo_id'] ?? 0 );
         $qty = (float) ( $it['qty'] ?? 0 );
-        if ( ! $pid || $qty <= 0 ) {
+        if ( ( ! $pid && ! $cid ) || $qty <= 0 ) {
             continue;
         }
+
+        // Venta de un COMBO: se descuentan sus componentes (cada uno × cantidad).
+        if ( $cid > 0 ) {
+            $c = WS_Combos::get( $cid );
+            if ( ! $c ) {
+                $wpdb->query( 'ROLLBACK' );
+                wp_send_json_error( array( 'msg' => sprintf( __( 'Combo #%d no encontrado.', 'workshop' ), $cid ) ) );
+            }
+            $price = (float) ( $it['price'] ?? 0 );
+            if ( $price <= 0 ) {
+                $price = WS_Combos::price( $c );
+            }
+            $currency = $c->currency;
+
+            $stock_res = WS_Combos::decrease_in_tx( $cid, $location_id, $qty, 'venta', $ref ? $ref : 'Venta desde stock', $note, $seller_id );
+            if ( is_wp_error( $stock_res ) ) {
+                $wpdb->query( 'ROLLBACK' );
+                wp_send_json_error( array( 'msg' => $stock_res->get_error_message() ) );
+            }
+
+            $subtotal = round( $qty * $price, 2 );
+            $total    += $subtotal;
+            $sale_items[] = array(
+                'product_id'   => 0,
+                'combo_id'     => $cid,
+                'product_name' => $c->name,
+                'qty'          => $qty,
+                'price'        => $price,
+                'cost_price'   => 0,
+                'discount'     => 0,
+                'subtotal'     => $subtotal,
+            );
+            continue;
+        }
+
         $p = $wpdb->get_row( $wpdb->prepare( "SELECT name, currency, sale_price, cost_price FROM " . ws_table_name( 'products' ) . " WHERE id=%d", $pid ) );
         if ( ! $p ) {
             $wpdb->query( 'ROLLBACK' );
@@ -907,9 +1000,10 @@ function ws_stock_rows_map( $rows, $group = array() ) {
 add_action( 'wp_ajax_ws_stock_list', 'ws_ajax_stock_list' );
 function ws_ajax_stock_list() {
     ws_guard( 'stock_view' );
-    $location_id = (int) ( $_POST['location_id'] ?? 0 );
-    $search      = sanitize_text_field( $_POST['search'] ?? '' );
-    $low_only    = ! empty( $_POST['low_only'] );
+    $location_id    = (int) ( $_POST['location_id'] ?? 0 );
+    $search         = sanitize_text_field( $_POST['search'] ?? '' );
+    $low_only       = ! empty( $_POST['low_only'] );
+    $include_combos = ! empty( $_POST['include_combos'] );
     $allowed     = ws_user_locations();
     $allowed_ids = array_map( fn( $l ) => (int) $l->id, $allowed );
     $loc_ids = ( $location_id && in_array( $location_id, $allowed_ids, true ) )
@@ -944,6 +1038,47 @@ function ws_ajax_stock_list() {
             'total'    => $total,
             'page'     => $page,
             'pageSize' => $pg['pageSize'],
+        ) );
+    }
+
+    if ( $include_combos ) {
+        // Asistente de movimientos: productos + combos activos (stock derivado
+        // en la ubicación) en un solo listado, sin paginar (el cliente filtra).
+        $rows  = WS_Stock::stock_rows( array(
+            'location_ids' => $loc_ids,
+            'search'       => $search,
+        ) );
+        $group = WS_Stock::stock_group_info( $rows );
+        $out   = ws_stock_rows_map( $rows, $group );
+        $loc   = $location_id ? $location_id : ( $allowed_ids ? $allowed_ids[0] : 0 );
+        $like  = '' !== $search ? mb_strtolower( $search ) : '';
+        foreach ( WS_Combos::catalog_rows( $loc ) as $c ) {
+            if ( '' !== $like && false === mb_strpos( mb_strtolower( $c['name'] ), $like ) ) {
+                continue;
+            }
+            $out[] = array(
+                'product_id'    => (int) $c['id'],
+                'combo_id'      => (int) $c['combo_id'],
+                'location_id'   => $loc,
+                'location_name' => '',
+                'location_type' => '',
+                'name'          => $c['name'],
+                'barcode'       => '',
+                'image'         => $c['photo'],
+                'qty'           => (float) $c['qty'],
+                'min_stock'     => 0,
+                'sale_price'    => (float) $c['price'],
+                'currency'      => $c['currency'],
+                'group_total'   => (float) $c['qty'],
+                'group_parts'   => array(),
+                'is_combo'      => 1,
+            );
+        }
+        wp_send_json_success( array(
+            'rows'     => $out,
+            'total'    => count( $out ),
+            'page'     => 1,
+            'pageSize' => count( $out ),
         ) );
     }
 

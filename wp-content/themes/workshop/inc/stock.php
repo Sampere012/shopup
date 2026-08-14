@@ -231,13 +231,21 @@ class WS_Stock {
         $count = 0;
         foreach ( $items as $it ) {
             $pid = (int) ( $it['product_id'] ?? 0 );
+            $cid = (int) ( $it['combo_id'] ?? 0 );
             $qty = (float) ( $it['qty'] ?? 0 );
-            if ( ! $pid || $qty <= 0 ) {
+            if ( ( ! $pid && ! $cid ) || $qty <= 0 ) {
                 continue;
             }
-            $result = ( 'entrada' === $direction )
-                ? self::increase_in_tx( $pid, $location_id, $qty, $type, $ref, $note, $user_id )
-                : self::decrease_in_tx( $pid, $location_id, $qty, $type, $ref, $note, $user_id );
+            // Combo: se mueven sus COMPONENTES (cada producto × cantidad).
+            if ( $cid > 0 ) {
+                $result = ( 'entrada' === $direction )
+                    ? WS_Combos::increase_in_tx( $cid, $location_id, $qty, $type, $ref, $note, $user_id )
+                    : WS_Combos::decrease_in_tx( $cid, $location_id, $qty, $type, $ref, $note, $user_id );
+            } else {
+                $result = ( 'entrada' === $direction )
+                    ? self::increase_in_tx( $pid, $location_id, $qty, $type, $ref, $note, $user_id )
+                    : self::decrease_in_tx( $pid, $location_id, $qty, $type, $ref, $note, $user_id );
+            }
             if ( is_wp_error( $result ) ) {
                 $wpdb->query( 'ROLLBACK' );
                 return $result;
@@ -267,8 +275,19 @@ class WS_Stock {
         $count = 0;
         foreach ( $items as $it ) {
             $pid = (int) ( $it['product_id'] ?? 0 );
+            $cid = (int) ( $it['combo_id'] ?? 0 );
             $qty = (float) ( $it['qty'] ?? 0 );
-            if ( ! $pid || $qty <= 0 ) {
+            if ( ( ! $pid && ! $cid ) || $qty <= 0 ) {
+                continue;
+            }
+            // Combo: transferencia de sus componentes (cada uno × cantidad).
+            if ( $cid > 0 ) {
+                $updated = WS_Combos::transfer( $cid, $from_location, $to_location, $qty, $ref, $note, $user_id );
+                if ( is_wp_error( $updated ) ) {
+                    $wpdb->query( 'ROLLBACK' );
+                    return $updated;
+                }
+                $count++;
                 continue;
             }
             $updated = self::_decrease_locked( $pid, $from_location, $qty );

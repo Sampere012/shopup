@@ -93,6 +93,7 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
                 <i class="fa-solid fa-magnifying-glass"></i>
                 <input type="search" placeholder="<?php esc_attr_e( 'Buscar…', 'workshop' ); ?>" x-model="search" @input="onSearch()">
             </div>
+            <label class="ws-check ws-check-pill" title="<?php esc_attr_e( 'Incluye los combos en el listado de productos', 'workshop' ); ?>"><input type="checkbox" x-model="showCombos" @change="reload()"><span><?php esc_html_e( 'Mostrar combos', 'workshop' ); ?></span></label>
             <div class="ws-toolbar-actions">
                 <?php if ( $can_bulk && ! $plan_full ) : ?>
                     <button class="ws-btn ws-btn-secondary" @click="importModal = true"><i class="fa-solid fa-file-import"></i> <?php esc_html_e( 'Importar CSV', 'workshop' ); ?></button>
@@ -136,13 +137,14 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
                     <template x-for="p in products" :key="p.id">
                         <tr>
                             <template x-if="canEdit">
-                                <td class="ws-th-check"><input type="checkbox" :checked="selected.indexOf(p.id) !== -1" @change="toggleRow(p.id)"></td>
+                                <td class="ws-th-check"><input type="checkbox" :checked="selected.indexOf(p.id) !== -1" @change="toggleRow(p.id)" x-show="!p.is_combo"></td>
                             </template>
                             <td>
                                 <div class="ws-cell-product">
                                     <div class="ws-thumb"><img x-show="p.image" :src="p.image" :alt="p.name" loading="lazy"><i x-show="!p.image" class="fa-solid fa-box"></i></div>
                                     <div>
                                         <strong x-text="p.name"></strong>
+                                        <span class="ws-combo-badge" x-show="p.is_combo" x-cloak title="<?php esc_attr_e( 'Este producto es un combo', 'workshop' ); ?>"><i class="fa-solid fa-layer-group"></i> <?php esc_html_e( 'Combo', 'workshop' ); ?></span>
                                         <span class="ws-badge ws-badge-fraction" x-show="p.fraction_parent" x-cloak title="<?php esc_attr_e( 'Producto fraccionado', 'workshop' ); ?>">
                                             <i class="fa-solid fa-scale-balanced"></i>
                                             <?php esc_html_e( 'Fracción de', 'workshop' ); ?> #<span x-text="p.fraction_parent"></span>
@@ -167,9 +169,11 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
                                 <span x-show="!p.expiry_date" class="ws-muted">—</span>
                             </td>
                             <td class="ws-actions">
-                                <template x-if="canEdit"><button class="ws-icon-btn" title="Editar" @click="openForm(p)"><i class="fa-solid fa-pen"></i></button></template>
-                                <template x-if="canCreate"><button class="ws-icon-btn" title="Clonar" @click="clone(p)"><i class="fa-solid fa-clone"></i></button></template>
-                                <template x-if="canDelete"><button class="ws-icon-btn ws-danger" title="Eliminar" @click="remove(p)"><i class="fa-solid fa-trash-can"></i></button></template>
+                                <template x-if="!p.is_combo">
+                                    <template x-if="canEdit"><button class="ws-icon-btn" title="Editar" @click="openForm(p)"><i class="fa-solid fa-pen"></i></button></template>
+                                    <template x-if="canCreate"><button class="ws-icon-btn" title="Clonar" @click="clone(p)"><i class="fa-solid fa-clone"></i></button></template>
+                                    <template x-if="canDelete"><button class="ws-icon-btn ws-danger" title="Eliminar" @click="remove(p)"><i class="fa-solid fa-trash-can"></i></button></template>
+                                </template>
                             </td>
                         </tr>
                     </template>
