@@ -74,7 +74,7 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
             </thead>
             <tbody>
                 <template x-for="row in rows" :key="row.product_id + '-' + row.location_id">
-                    <tr :class="row.qty <= row.min_stock ? 'ws-row-low' : ''">
+                    <tr :class="row.group_total <= row.min_stock ? 'ws-row-low' : ''">
                         <td>
                             <div class="ws-cell-product">
                                 <div class="ws-thumb"><img x-show="row.image" :src="row.image" :alt="row.name" loading="lazy"><i x-show="!row.image" class="fa-solid fa-box"></i></div>
@@ -82,7 +82,7 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                             </div>
                         </td>
                         <td><span class="ws-badge" :class="row.location_type === 'pv' ? 'ws-badge-pv' : 'ws-badge-wh'" x-text="row.location_name"></span></td>
-                        <td class="ws-strong" :class="row.qty <= row.min_stock ? 'ws-text-danger' : ''" x-text="row.qty"></td>
+                        <td class="ws-strong" :class="row.group_total <= row.min_stock ? 'ws-text-danger' : ''" x-text="row.qty"></td>
                         <td>
                             <template x-if="row.group_parts && row.group_parts.length > 1">
                                 <span class="ws-group-badge" :title="groupTitle(row)">

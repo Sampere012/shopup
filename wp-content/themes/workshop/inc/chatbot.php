@@ -2112,7 +2112,8 @@ function ws_chatbot_app_context() {
     $pending   = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$T('orders')} WHERE status = %s", 'pending' ) );
     $today     = gmdate( 'Y-m-d 00:00:00', current_time( 'timestamp' ) );
     $sale_row  = $wpdb->get_row( $wpdb->prepare( "SELECT COUNT(*) c, COALESCE(SUM(total),0) t FROM {$T('pos_sales')} WHERE created_at >= %s AND status = 'completed'", $today ) );
-    $low_stock = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$T('stock')} st JOIN {$T('products')} p ON p.id = st.product_id WHERE st.qty > 0 AND st.qty <= p.min_stock" );
+    // Stock bajo con el STOCK DEL GRUPO CONECTADO (stock compartido).
+    $low_stock = WS_Stock::count_low_stock_group_rows( array(), true );
     $agotados  = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$T('stock')} st WHERE st.qty <= 0" );
     $today     = gmdate( 'Y-m-d', current_time( 'timestamp' ) );
     $soon      = gmdate( 'Y-m-d', current_time( 'timestamp' ) + 7 * DAY_IN_SECONDS );
@@ -2895,10 +2896,8 @@ function ws_ajax_chatbot_summary() {
     $pending = (int) $wpdb->get_var( $wpdb->prepare(
         "SELECT COUNT(*) FROM {$ot} WHERE location_id IN ({$ph}) AND status='pending'", ...$args
     ) );
-    $low_stock = (int) $wpdb->get_var( $wpdb->prepare(
-        "SELECT COUNT(*) FROM {$st} s INNER JOIN {$prt} p ON p.id=s.product_id
-         WHERE s.location_id IN ({$ph}) AND p.min_stock>0 AND s.qty<=p.min_stock", ...$args
-    ) );
+    // Stock bajo con el STOCK DEL GRUPO CONECTADO (stock compartido).
+    $low_stock = WS_Stock::count_low_stock_group_rows( $loc_ids, false, true );
     $cash = WS_POS::get_open_cash( (int) $loc_ids[0] );
 
     wp_send_json_success( array( 'summary' => array(

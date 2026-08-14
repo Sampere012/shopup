@@ -755,6 +755,38 @@ function ws_ajax_movement_venta() {
 
 /* ---------------- Stock list ---------------- */
 
+/**
+ * Mapea filas de stock a la respuesta JSON, añadiendo el stock del GRUPO
+ * CONECTADO por producto (stock compartido): total sumando todas las
+ * ubicaciones vinculadas + desglose por ubicación para el tooltip.
+ */
+function ws_stock_rows_map( $rows, $group = array() ) {
+    $out = array();
+    foreach ( $rows as $r ) {
+        $g = $group[ $r->product_id . ':' . $r->location_id ] ?? null;
+        $out[] = array(
+            'product_id'    => (int) $r->product_id,
+            'location_id'   => (int) $r->location_id,
+            'location_name' => $r->location_name ?? '',
+            'location_type' => $r->location_type ?? '',
+            'name'          => $r->name,
+            'barcode'       => $r->barcode,
+            'image'         => $r->image,
+            'qty'           => (float) $r->qty,
+            'min_stock'     => (float) $r->min_stock,
+            'sale_price'    => (float) $r->sale_price,
+            'currency'      => $r->currency,
+            'group_total'   => $g ? (float) $g['total'] : (float) $r->qty,
+            'group_parts'   => $g ? $g['parts'] : array( array(
+                'id'   => (int) $r->location_id,
+                'name' => (string) ( $r->location_name ?? '' ),
+                'qty'  => (float) $r->qty,
+            ) ),
+        );
+    }
+    return $out;
+}
+
 add_action( 'wp_ajax_ws_stock_list', 'ws_ajax_stock_list' );
 function ws_ajax_stock_list() {
     ws_guard( 'stock_view' );
@@ -767,44 +799,48 @@ function ws_ajax_stock_list() {
         ? array( $location_id )
         : $allowed_ids;
 
-    ws_send_list( 'rows', function ( $args ) use ( $loc_ids, $search, $low_only ) {
-        $rows = WS_Stock::stock_rows( array_merge( array(
+    if ( $low_only ) {
+        // "Solo stock bajo" con STOCK DEL GRUPO: el total de las ubicaciones
+        // conectadas (stock compartido) cuenta para el mínimo, no el stock de
+        // cada ubicación. Pre-filtro SQL por ubicación (el grupo bajo implica
+        // que cada ubicación del grupo está baja, así que es un superconjunto)
+        // y luego el filtro definitivo por grupo en PHP con paginación local.
+        $pg   = ws_list_paging();
+        $rows = WS_Stock::stock_rows( array(
             'location_ids' => $loc_ids,
             'search'       => $search,
-            'low_stock'    => $low_only,
-        ), $args ) );
-        // Stock del GRUPO CONECTADO por producto (stock compartido): total
-        // sumando todas las ubicaciones vinculadas + desglose por ubicación.
+            'low_stock'    => 1,
+            'orderby'      => $pg['sort'],
+            'order'        => $pg['dir'],
+        ) );
         $group = WS_Stock::stock_group_info( $rows );
-        $out = array();
-        foreach ( $rows as $r ) {
+        $rows  = array_values( array_filter( $rows, function ( $r ) use ( $group ) {
             $g = $group[ $r->product_id . ':' . $r->location_id ] ?? null;
-            $out[] = array(
-                'product_id'    => (int) $r->product_id,
-                'location_id'   => (int) $r->location_id,
-                'location_name' => $r->location_name ?? '',
-                'location_type' => $r->location_type ?? '',
-                'name'          => $r->name,
-                'barcode'       => $r->barcode,
-                'image'         => $r->image,
-                'qty'           => (float) $r->qty,
-                'min_stock'     => (float) $r->min_stock,
-                'sale_price'    => (float) $r->sale_price,
-                'currency'      => $r->currency,
-                'group_total'   => $g ? (float) $g['total'] : (float) $r->qty,
-                'group_parts'   => $g ? $g['parts'] : array( array(
-                    'id'   => (int) $r->location_id,
-                    'name' => (string) ( $r->location_name ?? '' ),
-                    'qty'  => (float) $r->qty,
-                ) ),
-            );
-        }
-        return $out;
-    }, function () use ( $loc_ids, $search, $low_only ) {
+            return ( $g ? (float) $g['total'] : (float) $r->qty ) <= (float) $r->min_stock;
+        } ) );
+        $total       = count( $rows );
+        $total_pages = max( 1, (int) ceil( $total / $pg['pageSize'] ) );
+        $page        = min( $pg['page'], $total_pages );
+        $slice       = array_slice( $rows, ( $page - 1 ) * $pg['pageSize'], $pg['pageSize'] );
+        wp_send_json_success( array(
+            'rows'     => ws_stock_rows_map( $slice, $group ),
+            'total'    => $total,
+            'page'     => $page,
+            'pageSize' => $pg['pageSize'],
+        ) );
+    }
+
+    ws_send_list( 'rows', function ( $args ) use ( $loc_ids, $search ) {
+        $rows  = WS_Stock::stock_rows( array_merge( array(
+            'location_ids' => $loc_ids,
+            'search'       => $search,
+        ), $args ) );
+        $group = WS_Stock::stock_group_info( $rows );
+        return ws_stock_rows_map( $rows, $group );
+    }, function () use ( $loc_ids, $search ) {
         return WS_Stock::count_stock_rows( array(
             'location_ids' => $loc_ids,
             'search'       => $search,
-            'low_stock'    => $low_only,
         ) );
     }, array() );
 }

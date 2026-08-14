@@ -523,7 +523,8 @@ function ws_chatbot_tools_snapshot() {
     $products  = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$T('products')}" );
     $categories = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$T('categories')}" );
     $pending   = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$T('orders')} WHERE status = %s", 'pending' ) );
-    $low_stock = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$T('stock')} st JOIN {$T('products')} p ON p.id = st.product_id WHERE st.qty > 0 AND st.qty <= p.min_stock" );
+    // Stock bajo con el STOCK DEL GRUPO CONECTADO (stock compartido).
+    $low_stock = WS_Stock::count_low_stock_group_rows( array(), true );
     $agotados  = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$T('stock')} st WHERE st.qty <= 0" );
     $today     = gmdate( 'Y-m-d', current_time( 'timestamp' ) );
     $soon      = gmdate( 'Y-m-d', current_time( 'timestamp' ) + 7 * DAY_IN_SECONDS );

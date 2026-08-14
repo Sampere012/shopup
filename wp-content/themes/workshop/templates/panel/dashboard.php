@@ -26,15 +26,10 @@ $pos_table      = ws_table_name( 'pos_sales' );
 
 $products_total = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$products_table} WHERE active=1" );
 
-$low_stock = 0;
-if ( $loc_ids ) {
-    $low_stock = (int) $wpdb->get_var( $wpdb->prepare(
-        "SELECT COUNT(*) FROM {$stock_table} s
-         INNER JOIN {$products_table} p ON p.id = s.product_id
-         WHERE s.location_id IN ({$loc_placeholders}) AND s.qty <= p.min_stock",
-        ...$args
-    ) );
-}
+// Stock bajo con el STOCK DEL GRUPO CONECTADO (stock compartido): el total
+// de las ubicaciones vinculadas cuenta para el mínimo, no el stock de cada
+// ubicación por separado.
+$low_stock = $loc_ids ? WS_Stock::count_low_stock_group_rows( $loc_ids ) : 0;
 
 $pending_orders = 0;
 if ( $loc_ids ) {

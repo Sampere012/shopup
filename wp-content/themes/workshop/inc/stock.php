@@ -402,23 +402,33 @@ class WS_Stock {
             return $out;
         };
 
-        // Cantidad por ubicación de cada producto (1 query por producto).
+        // Cantidad por ubicación de los productos implicados: UNA query con
+        // todos los ids (índice unique product_location).
+        $pids = array();
+        foreach ( $rows as $r ) {
+            $pid = (int) $r->product_id;
+            if ( $pid ) {
+                $pids[ $pid ] = true;
+            }
+        }
+        $pids = array_keys( $pids );
         $qty_by_pid = array();
-        $info       = array();
+        if ( $pids ) {
+            $ph = implode( ',', array_fill( 0, count( $pids ), '%d' ) );
+            foreach ( $wpdb->get_results( $wpdb->prepare(
+                "SELECT product_id, location_id, qty FROM " . self::table( 'stock' ) . " WHERE product_id IN ({$ph})",
+                ...$pids
+            ) ) as $q ) {
+                $qty_by_pid[ (int) $q->product_id ][ (int) $q->location_id ] = (float) $q->qty;
+            }
+        }
+
+        $info = array();
         foreach ( $rows as $r ) {
             $pid = (int) $r->product_id;
             $lid = (int) $r->location_id;
             if ( ! $pid || ! $lid ) {
                 continue;
-            }
-            if ( ! isset( $qty_by_pid[ $pid ] ) ) {
-                $qty_by_pid[ $pid ] = array();
-                foreach ( $wpdb->get_results( $wpdb->prepare(
-                    "SELECT location_id, qty FROM " . self::table( 'stock' ) . " WHERE product_id = %d",
-                    $pid
-                ) ) as $q ) {
-                    $qty_by_pid[ $pid ][ (int) $q->location_id ] = (float) $q->qty;
-                }
             }
             $component_ids = $component( $lid );
             $total         = 0.0;
@@ -435,6 +445,50 @@ class WS_Stock {
             $info[ $pid . ':' . $lid ] = array( 'total' => round( $total, 2 ), 'parts' => $parts );
         }
         return $info;
+    }
+
+    /**
+     * Conteo de filas de stock BAJO usando el STOCK DEL GRUPO CONECTADO
+     * (stock compartido): una fila (producto + ubicación) cuenta como baja
+     * cuando el total de TODAS las ubicaciones conectadas a esa ubicación es
+     * menor o igual al mínimo del producto — no el stock de cada ubicación.
+     *
+     * Pre-filtra en SQL por stock bajo por ubicación (el grupo bajo implica
+     * que todas sus ubicaciones están bajas, así que es un superconjunto) y
+     * aplica el criterio definitivo por grupo en PHP.
+     *
+     * @param int[] $location_ids Filtro de ubicaciones (vacío = todas).
+     * @param bool  $exclude_empty No contar grupos agotados (total <= 0): con
+     *                             true, un producto con mínimo 0 tampoco cuenta
+     *                             (no puede cumplir total > 0 y total <= 0).
+     * @param bool  $min_positive  Solo contar productos con mínimo > 0.
+     * @return int
+     */
+    public static function count_low_stock_group_rows( $location_ids = array(), $exclude_empty = false, $min_positive = false ) {
+        $args = array( 'low_stock' => 1 );
+        if ( $location_ids ) {
+            $args['location_ids'] = array_values( array_filter( array_map( 'intval', $location_ids ) ) );
+        }
+        $rows = self::stock_rows( $args );
+        if ( empty( $rows ) ) {
+            return 0;
+        }
+        $group = self::stock_group_info( $rows );
+        $count = 0;
+        foreach ( $rows as $r ) {
+            if ( $min_positive && (float) $r->min_stock <= 0 ) {
+                continue;
+            }
+            $g = $group[ $r->product_id . ':' . $r->location_id ] ?? null;
+            $total = $g ? (float) $g['total'] : (float) $r->qty;
+            if ( $exclude_empty && $total <= 0 ) {
+                continue;
+            }
+            if ( $total <= (float) $r->min_stock ) {
+                $count++;
+            }
+        }
+        return $count;
     }
 
     /**
