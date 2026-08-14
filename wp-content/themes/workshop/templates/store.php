@@ -10,7 +10,22 @@ defined( 'ABSPATH' ) || exit;
 $location = get_query_var( 'ws_location' );
 $products = WS_Stock::stock_rows( array( 'location_id' => $location->id ) );
 // Combos activos como ítems del catálogo (stock derivado de sus componentes).
-$products = array_merge( $products, WS_Combos::catalog_rows( $location->id ) );
+$combos = WS_Combos::catalog_rows( $location->id );
+// Los productos que componen un combo ACTIVO no salen sueltos en la tienda:
+// se agrupan dentro del card del combo (el combo es un producto que contiene
+// varios productos). Al deshabilitar el combo, sus productos vuelven al grid.
+$combo_product_ids = array();
+foreach ( $combos as $c ) {
+    foreach ( (array) ( $c['items'] ?? array() ) as $it ) {
+        $combo_product_ids[ (int) ( $it['product_id'] ?? 0 ) ] = true;
+    }
+}
+if ( $combo_product_ids ) {
+    $products = array_values( array_filter( $products, function ( $p ) use ( $combo_product_ids ) {
+        return ! isset( $combo_product_ids[ (int) ( $p->product_id ?? 0 ) ] );
+    } ) );
+}
+$products = array_merge( $products, $combos );
 $payments = ws_payment_methods( $location->id );
 
 // Datos de monedas/tasas/WhatsApp para la tienda.
@@ -173,6 +188,12 @@ get_header();
                                 <span class="ws-price-equiv" x-show="priceInfo(p).equiv" x-text="priceInfo(p).equiv"></span>
                                 <span class="ws-price-transfer" x-show="p.transfer_pct > 0" x-text="transferLine(p)"></span>
                                 <span class="ws-stock-badge" :class="p.qty > 0 ? 'ws-text-success' : 'ws-text-danger'" x-text="stockLabel(p)"></span>
+                            </div>
+                            <div class="ws-combo-items ws-store-combo-items" x-show="p.is_combo && (p.combo_items || []).length">
+                                <span class="ws-combo-items-label"><?php esc_html_e( 'Contiene:', 'workshop' ); ?></span>
+                                <template x-for="it in (p.combo_items || [])" :key="it.product_id">
+                                    <span class="ws-combo-chip" x-text="it.name + ' × ' + it.qty"></span>
+                                </template>
                             </div>
                             <div class="ws-product-actions">
                                 <button class="ws-btn ws-btn-ghost ws-btn-sm ws-btn-block" @click.stop="openProduct(p)">
@@ -445,6 +466,12 @@ get_header();
                     <div class="ws-store-modal-info">
                         <p class="ws-product-barcode" x-text="activeProduct.barcode"></p>
                         <p class="ws-product-desc" x-show="activeProduct.description" x-text="activeProduct.description"></p>
+                        <div class="ws-combo-items ws-store-combo-items" x-show="activeProduct.is_combo && (activeProduct.combo_items || []).length">
+                            <span class="ws-combo-items-label"><?php esc_html_e( 'Contiene:', 'workshop' ); ?></span>
+                            <template x-for="it in (activeProduct.combo_items || [])" :key="it.product_id">
+                                <span class="ws-combo-chip" x-text="it.name + ' × ' + it.qty"></span>
+                            </template>
+                        </div>
                         <div class="ws-product-row">
                             <span class="ws-price ws-price-lg" x-text="priceInfo(activeProduct).main"></span>
                             <span class="ws-price-equiv" x-show="priceInfo(activeProduct).equiv" x-text="priceInfo(activeProduct).equiv"></span>

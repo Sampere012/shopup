@@ -979,6 +979,9 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-combo-loc b { font-weight: 700; }
 .ws-combo-loc.is-active { border-color: var(--ws-primary); background: #eef2ff; color: var(--ws-primary); }
 .ws-combo-actions { display: flex; gap: 6px; margin-top: 2px; }
+/* Línea 'Contiene:' en las cards de la tienda para combos. */
+.ws-store-combo-items { margin-top: 4px; }
+.ws-store-modal-info .ws-store-combo-items { margin: 6px 0 10px; }
 .ws-report-date { display: inline-flex; align-items: center; gap: 6px; font-size: .85em; color: var(--ws-muted); }
 .ws-report-date input[type="date"] { padding: 8px 10px; border: 1px solid var(--ws-border); border-radius: 9px; font-size: .9em; background: #fff; font-family: inherit; color: inherit; }
 .ws-locations-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; }
