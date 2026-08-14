@@ -1747,13 +1747,30 @@
                 const target = !current;
                 $('ws_store_toggle', { kind: kind, id: id, location_id: locationId, channel: channel, visible: target ? 1 : 0 }).then(res => {
                     if (res.success) {
-                        if (isStore) {
+                        if (kind === 'combo') {
+                            // Las filas de combos (comboRows) son objetos DERIVADOS
+                            // que se recrean en cada render: hay que actualizar la
+                            // fuente this.combos para que el ojo persista en la UI
+                            // (antes se mutaba un objeto temporal y volvía a saltar
+                            // el estado anterior).
+                            const combo = (this.combos || []).find(c => c.combo_id === id);
+                            if (combo && combo.locs && combo.locs.length) {
+                                const loc = combo.locs.find(l => l.location_id === Number(locationId));
+                                if (loc) {
+                                    if (isStore) loc.store_visible = target ? 1 : 0;
+                                    else loc.pos_visible = target ? 1 : 0;
+                                }
+                            } else if (combo && isStore) {
+                                combo.store_visible = target ? 1 : 0;
+                            }
+                        } else if (isStore) {
                             item.store_visible = target ? 1 : 0;
-                            toast('success', target ? 'Visible en la tienda' : 'Oculto de la tienda');
                         } else {
                             item.pos_visible = target ? 1 : 0;
-                            toast('success', target ? 'Visible en el POS' : 'Oculto del POS');
                         }
+                        toast('success', isStore
+                            ? (target ? 'Visible en la tienda' : 'Oculto de la tienda')
+                            : (target ? 'Visible en el POS' : 'Oculto del POS'));
                     } else {
                         toast('error', 'Error', res.data && res.data.msg);
                     }

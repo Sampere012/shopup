@@ -1107,6 +1107,63 @@ function ws_apply_store_visibility_overrides( &$rows ) {
     }
 }
 
+/**
+ * Combos como LISTA para el panel de stock: un combo por ubicación con su
+ * stock derivado, componentes y visibilidad EFECTIVA por canal (store/pos).
+ * Filtra por búsqueda (nombre) y por ubicación; con $low_only=true solo
+ * devuelve combos SIN stock (qty derivada <= 0) en esa ubicación — el MISMO
+ * criterio que "Solo stock bajo" aplica a los productos con min_stock 0.
+ */
+function ws_stock_combos_list( $loc_ids, $search = '', $low_only = false ) {
+    $loc_names = array();
+    foreach ( ws_user_locations() as $l ) {
+        $loc_names[ (int) $l->id ] = $l->name;
+    }
+    $like   = '' !== $search ? mb_strtolower( $search ) : '';
+    $combos = array();
+    $seen   = array();
+    foreach ( $loc_ids as $lid ) {
+        foreach ( WS_Combos::catalog_rows( $lid ) as $c ) {
+            if ( '' !== $like && false === mb_strpos( mb_strtolower( $c['name'] ), $like ) ) {
+                continue;
+            }
+            if ( $low_only && (float) $c['qty'] > 0 ) {
+                continue;
+            }
+            $cid = (int) $c['combo_id'];
+            if ( ! isset( $seen[ $cid ] ) ) {
+                $seen[ $cid ] = count( $combos );
+                $combos[] = array(
+                    'combo_id'      => $cid,
+                    'product_id'    => (int) $c['id'], // id negativo = -combo_id
+                    'name'          => $c['name'],
+                    'image'         => $c['photo'],
+                    'sale_price'    => (float) $c['price'],
+                    'currency'      => $c['currency'],
+                    'is_combo'      => 1,
+                    'store_visible' => (int) ( $c['store_visible'] ?? 1 ),
+                    'items'         => array_map( function ( $it ) {
+                        return array(
+                            'product_id' => (int) $it['product_id'],
+                            'name'       => $it['name'],
+                            'qty'        => (float) $it['qty'],
+                        );
+                    }, $c['items'] ),
+                    'locs' => array(),
+                );
+            }
+            $combos[ $seen[ $cid ] ]['locs'][] = array(
+                'location_id'   => (int) $lid,
+                'location_name' => $loc_names[ (int) $lid ] ?? '',
+                'qty'           => (float) $c['qty'],
+                'store_visible' => ws_store_visible( 'combo', $cid, $lid, 'store' ) ? 1 : 0,
+                'pos_visible'   => ws_store_visible( 'combo', $cid, $lid, 'pos' ) ? 1 : 0,
+            );
+        }
+    }
+    return $combos;
+}
+
 add_action( 'wp_ajax_ws_stock_list', 'ws_ajax_stock_list' );
 function ws_ajax_stock_list() {
     ws_guard( 'stock_view' );
@@ -1150,6 +1207,9 @@ function ws_ajax_stock_list() {
             'total'    => $total,
             'page'     => $page,
             'pageSize' => $pg['pageSize'],
+            // "Solo stock bajo" también filtra los combos (agotados en esa
+            // ubicación): ya no desaparecen todos del tab de Combos.
+            'combos'   => ws_stock_combos_list( $loc_ids, $search, true ),
         ) );
     }
 
@@ -1224,52 +1284,10 @@ function ws_ajax_stock_list() {
     // overrides de ws_store_visibility mandan sobre el flag global).
     ws_apply_store_visibility_overrides( $slice );
 
-    // Combos: un card por combo con su stock DERIVADO en cada ubicación del
-    // filtro (locs) y sus componentes (items), para mostrarlo como producto
-    // que contiene varios productos. Sin paginar: se agrupan por combo_id.
-    $like      = '' !== $search ? mb_strtolower( $search ) : '';
-    $loc_names = array();
-    foreach ( $allowed as $l ) {
-        $loc_names[ (int) $l->id ] = $l->name;
-    }
-    $combos = array();
-    $seen   = array();
-    foreach ( $loc_ids as $lid ) {
-        foreach ( WS_Combos::catalog_rows( $lid ) as $c ) {
-            if ( '' !== $like && false === mb_strpos( mb_strtolower( $c['name'] ), $like ) ) {
-                continue;
-            }
-            $cid = (int) $c['combo_id'];
-            if ( ! isset( $seen[ $cid ] ) ) {
-                $seen[ $cid ] = count( $combos );
-                $combos[] = array(
-                    'combo_id'   => $cid,
-                    'product_id' => (int) $c['id'], // id negativo = -combo_id
-                    'name'       => $c['name'],
-                    'image'      => $c['photo'],
-                    'sale_price' => (float) $c['price'],
-                    'currency'   => $c['currency'],
-                    'is_combo'   => 1,
-                    'store_visible' => (int) ( $c['store_visible'] ?? 1 ),
-                    'items'      => array_map( function ( $it ) {
-                        return array(
-                            'product_id' => (int) $it['product_id'],
-                            'name'       => $it['name'],
-                            'qty'        => (float) $it['qty'],
-                        );
-                    }, $c['items'] ),
-                    'locs' => array(),
-                );
-            }
-            $combos[ $seen[ $cid ] ]['locs'][] = array(
-                'location_id'   => (int) $lid,
-                'location_name' => $loc_names[ (int) $lid ] ?? '',
-                'qty'           => (float) $c['qty'],
-                'store_visible' => ws_store_visible( 'combo', $cid, $lid, 'store' ) ? 1 : 0,
-                'pos_visible'   => ws_store_visible( 'combo', $cid, $lid, 'pos' ) ? 1 : 0,
-            );
-        }
-    }
+    // Combos: un combo por ubicación con su stock DERIVADO (locs) y sus
+    // componentes (items). Filtra por búsqueda y ubicación igual que los
+    // productos (sin paginar, se agrupan por combo_id).
+    $combos = ws_stock_combos_list( $loc_ids, $search );
 
     wp_send_json_success( array(
         'rows'     => $slice,
