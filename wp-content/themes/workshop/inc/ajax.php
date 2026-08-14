@@ -3201,11 +3201,15 @@ function ws_ajax_stock_count_save() {
         }
 
         // Ajuste automático: alinear el stock virtual al conteo físico.
+        // IMPORTANTE: el ajuste del cuadre SOLO afecta a la ubicación elegida
+        // (skip_linked = true). Aunque la ubicación esté conectada a otras por
+        // stock compartido, el cuadre es un conteo físico puntual de UNA
+        // ubicación: corregir aquí NO debe arrastrar el stock de las demás.
         if ( $adjust && abs( $diff ) > 0.004 ) {
             $ref = 'Cuadre #' . wp_generate_uuid4();
             $res = $diff > 0
-                ? WS_Stock::increase( $pid, $location_id, $diff, 'ajuste', $ref, $note ? $note : 'Ajuste por cuadre de inventario' )
-                : WS_Stock::decrease( $pid, $location_id, abs( $diff ), 'ajuste', $ref, $note ? $note : 'Ajuste por cuadre de inventario' );
+                ? WS_Stock::increase( $pid, $location_id, $diff, 'ajuste', $ref, $note ? $note : 'Ajuste por cuadre de inventario', 0, true )
+                : WS_Stock::decrease( $pid, $location_id, abs( $diff ), 'ajuste', $ref, $note ? $note : 'Ajuste por cuadre de inventario', 0, true );
             if ( ! is_wp_error( $res ) ) {
                 $ajustados++;
             }

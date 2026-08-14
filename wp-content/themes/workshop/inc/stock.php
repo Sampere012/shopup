@@ -23,7 +23,7 @@ class WS_Stock {
     /**
      * Aumenta stock de forma atómica.
      */
-    public static function increase( $product_id, $location_id, $qty, $type, $ref = '', $note = '', $user_id = 0 ) {
+    public static function increase( $product_id, $location_id, $qty, $type, $ref = '', $note = '', $user_id = 0, $skip_linked = false ) {
         global $wpdb;
         $product_id  = (int) $product_id;
         $location_id = (int) $location_id;
@@ -36,7 +36,9 @@ class WS_Stock {
         self::_upsert_stock( $product_id, $location_id, $qty, '+', null );
         self::_apply_fraction_links( $product_id, $location_id, $qty, '+' );
         self::_log( $type, $product_id, $location_id, 0, $qty, $ref, $note, $user_id );
-        self::_propagate_linked( $product_id, $location_id, $qty, '+', $type, $ref, $note, $user_id );
+        if ( ! $skip_linked ) {
+            self::_propagate_linked( $product_id, $location_id, $qty, '+', $type, $ref, $note, $user_id );
+        }
         $wpdb->query( 'COMMIT' );
         return true;
     }
@@ -44,7 +46,7 @@ class WS_Stock {
     /**
      * Disminuye stock de forma atómica (no permite negativo).
      */
-    public static function decrease( $product_id, $location_id, $qty, $type, $ref = '', $note = '', $user_id = 0 ) {
+    public static function decrease( $product_id, $location_id, $qty, $type, $ref = '', $note = '', $user_id = 0, $skip_linked = false ) {
         global $wpdb;
         $product_id  = (int) $product_id;
         $location_id = (int) $location_id;
@@ -64,7 +66,9 @@ class WS_Stock {
             return new WP_Error( 'insufficient', __( 'Stock insuficiente para el movimiento (unidades relacionadas).', 'workshop' ) );
         }
         self::_log( $type, $product_id, $location_id, 0, $qty, $ref, $note, $user_id );
-        self::_propagate_linked( $product_id, $location_id, $qty, '-', $type, $ref, $note, $user_id );
+        if ( ! $skip_linked ) {
+            self::_propagate_linked( $product_id, $location_id, $qty, '-', $type, $ref, $note, $user_id );
+        }
         $wpdb->query( 'COMMIT' );
         return true;
     }
