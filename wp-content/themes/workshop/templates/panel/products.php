@@ -308,20 +308,41 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
                         <span><?php esc_html_e( '¿Qué productos incluye?', 'workshop' ); ?></span>
                         <div class="ws-form-hint">
                             <i class="fa-solid fa-circle-info"></i>
-                            <span><?php esc_html_e( 'Elige el producto y cuánto se coge de él (opcional: vacío = 1). Cada combo consume estas cantidades; el stock del combo es el mínimo disponible de sus productos.', 'workshop' ); ?></span>
+                            <span><?php esc_html_e( 'Marca los productos del combo y cuánto se coge de cada uno (la cantidad es opcional: vacía = 1). Cada combo consume estas cantidades; el stock del combo es el mínimo disponible de sus productos.', 'workshop' ); ?></span>
                         </div>
-                        <div class="ws-combo-items">
-                            <template x-for="(row, ri) in comboForm.items" :key="ri">
-                                <div class="ws-combo-item-row">
-                                    <select x-model="row.product_id" required>
-                                        <option value="">— <?php esc_html_e( 'Elige un producto', 'workshop' ); ?> —</option>
-                                        <template x-for="p in allProducts" :key="p.id"><option :value="p.id" x-text="p.name + (p.currency && p.currency !== currency ? ' (' + p.currency + ')' : '')"></option></template>
-                                    </select>
-                                    <input type="number" step="0.01" min="0" x-model.number="row.qty" placeholder="<?php esc_attr_e( 'Cantidad (1)', 'workshop' ); ?>" title="<?php esc_attr_e( 'Vacío = 1 unidad', 'workshop' ); ?>">
-                                    <button type="button" class="ws-icon-btn ws-danger" @click="removeComboItem(ri)" x-show="comboForm.items.length > 1"><i class="fa-solid fa-xmark"></i></button>
+                        <div class="ws-search" style="margin-bottom:8px">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                            <input type="search" placeholder="<?php esc_attr_e( 'Buscar producto…', 'workshop' ); ?>" x-model="comboProductSearch">
+                        </div>
+                        <div class="ws-combo-pick" x-show="comboProductsFiltered.length">
+                            <template x-for="p in comboProductsFiltered" :key="p.id">
+                                <div class="ws-wiz-item ws-combo-pick-item" :class="comboItem(p.id) ? 'is-picked' : ''">
+                                    <label class="ws-combo-pick-main">
+                                        <input type="checkbox" :checked="!!comboItem(p.id)" @change="toggleComboProduct(p)">
+                                        <span class="ws-wiz-thumb"><img x-show="p.image" :src="p.image" alt="" loading="lazy"><i x-show="!p.image" class="fa-solid fa-box"></i></span>
+                                        <span class="ws-wiz-info">
+                                            <strong x-text="p.name"></strong>
+                                            <small x-text="p.barcode"></small>
+                                        </span>
+                                    </label>
+                                    <template x-if="comboItem(p.id)">
+                                        <span class="ws-wiz-qty">
+                                            <input type="number" step="0.01" min="0" x-model.number="comboItem(p.id).qty" placeholder="1" title="<?php esc_attr_e( 'Vacío = 1 unidad', 'workshop' ); ?>">
+                                        </span>
+                                    </template>
                                 </div>
                             </template>
-                            <button type="button" class="ws-btn ws-btn-secondary ws-btn-sm" @click="addComboItem()"><i class="fa-solid fa-plus"></i> <?php esc_html_e( 'Añadir producto', 'workshop' ); ?></button>
+                        </div>
+                        <p class="ws-empty" x-show="!comboProductsFiltered.length"><?php esc_html_e( 'Sin productos que coincidan.', 'workshop' ); ?></p>
+                        <div class="ws-combo-picked" x-show="comboForm.items.length">
+                            <span class="ws-muted" style="font-size:.82em" x-text="comboForm.items.length + ' producto(s) en el combo'"></span>
+                            <template x-for="(row, ri) in comboForm.items" :key="'ci' + ri">
+                                <span class="ws-combo-chip">
+                                    <span x-text="comboItemName(row.product_id)"></span>
+                                    <b x-text="row.qty || 1"></b>
+                                    <button type="button" class="ws-combo-chip-x" @click="removeComboItem(ri)" title="<?php esc_attr_e( 'Quitar del combo', 'workshop' ); ?>"><i class="fa-solid fa-xmark"></i></button>
+                                </span>
+                            </template>
                         </div>
                     </label>
                     <label class="ws-field">

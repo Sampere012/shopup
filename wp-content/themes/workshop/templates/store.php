@@ -486,9 +486,9 @@ window.WS_STORE_DATA = <?php echo wp_json_encode( array(
     'whatsappNumbers' => $ws_store_was,
     'categories' => $ws_store_categories,
     'products' => array_map( function ( $r ) {
-        // Combos (filas de WS_Combos::catalog_rows): id negativo, foto propia,
-        // precio (manual o auto) en la moneda del combo y stock derivado.
-        if ( ! empty( $r['is_combo'] ) ) {
+        // Combos (filas de WS_Combos::catalog_rows) llegan como ARRAYS;
+        // los productos (WS_Stock::stock_rows) como objetos stdClass.
+        if ( is_array( $r ) && ! empty( $r['is_combo'] ) ) {
             return array(
                 'id'           => (int) $r['id'],
                 'combo_id'     => (int) $r['combo_id'],
@@ -507,20 +507,21 @@ window.WS_STORE_DATA = <?php echo wp_json_encode( array(
                 'combo_items'  => $r['items'],
             );
         }
+        $p = (object) $r;
         return array(
-            'id'           => (int) $r->product_id,
+            'id'           => (int) $p->product_id,
             'combo_id'     => 0,
-            'name'         => $r->name,
-            'barcode'      => $r->barcode,
-            'image'        => $r->image ? ws_image_url( $r->image ) : '',
-            'description'  => $r->description ?? '',
-            'category_id'  => (int) ( $r->category_id ?? 0 ),
-            'category'     => (string) ( $r->category ?? '' ),
-            'price'        => (float) $r->sale_price,
-            'transfer_pct' => (float) $r->transfer_pct,
-            'currency'     => $r->currency,
-            'show_equiv'   => (int) ( $r->show_equiv ?? 1 ),
-            'qty'          => (float) $r->qty,
+            'name'         => $p->name,
+            'barcode'      => $p->barcode,
+            'image'        => $p->image ? ws_image_url( $p->image ) : '',
+            'description'  => $p->description ?? '',
+            'category_id'  => (int) ( $p->category_id ?? 0 ),
+            'category'     => (string) ( $p->category ?? '' ),
+            'price'        => (float) $p->sale_price,
+            'transfer_pct' => (float) $p->transfer_pct,
+            'currency'     => $p->currency,
+            'show_equiv'   => (int) ( $p->show_equiv ?? 1 ),
+            'qty'          => (float) $p->qty,
             'is_combo'     => 0,
             'combo_items'  => array(),
         );

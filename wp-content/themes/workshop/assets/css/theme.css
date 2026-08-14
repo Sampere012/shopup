@@ -382,15 +382,8 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 }
 .ws-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .ws-span-2 { grid-column: span 2; }
-.ws-combo-items { display: flex; flex-direction: column; gap: 8px; }
 .ws-form-hint { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 10px; padding: 9px 12px; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; border-radius: 10px; font-size: .8rem; line-height: 1.45; }
 .ws-form-hint i { margin-top: 2px; color: #2563eb; flex: 0 0 auto; }
-.ws-combo-item-row { display: grid; grid-template-columns: 1fr 96px auto; gap: 8px; align-items: center; }
-.ws-combo-item-row select, .ws-combo-item-row input { min-width: 0; }
-.ws-combo-item-row .ws-icon-btn { margin: 0; flex: 0 0 auto; }
-@media (max-width: 560px) {
-    .ws-combo-item-row { grid-template-columns: 1fr 80px auto; }
-}
 .ws-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .ws-check { display: inline-flex; align-items: center; gap: 8px; font-size: .9em; cursor: pointer; }
 .ws-check input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--ws-primary); }
@@ -987,6 +980,25 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-wiz-qty input { width: 90px; padding: 7px 10px; border: 1px solid var(--ws-border); border-radius: 9px; font-family: inherit; font-size: .9rem; text-align: center; }
 .ws-wiz-price input { width: 110px; padding: 7px 10px; border: 1px solid var(--ws-border); border-radius: 9px; font-family: inherit; font-size: .9rem; text-align: center; }
 .ws-wiz-count { margin-left: auto; font-size: .85rem; color: var(--ws-muted); }
+/* Selector de componentes del combo (lista con imagen + filtro, como Stock). */
+.ws-combo-pick { max-height: 38vh; overflow-y: auto; border: 1px solid var(--ws-border); border-radius: 12px; padding: 6px; margin-bottom: 10px; }
+.ws-combo-pick-main { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; cursor: pointer; }
+.ws-combo-pick-item { cursor: default; }
+.ws-combo-pick-item:hover { background: #f6f8fc; }
+.ws-combo-pick-item.is-picked { background: #eef2ff; box-shadow: inset 0 0 0 1px rgba(79, 70, 229, .25); }
+.ws-combo-pick-item.is-picked:hover { background: #e6ebff; }
+.ws-combo-picked { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+.ws-combo-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: #fff; border: 1px solid rgba(79, 70, 229, .3); border-radius: 999px;
+    padding: 3px 6px 3px 11px; font-size: .8em; font-weight: 600; color: var(--ws-text);
+}
+.ws-combo-chip b { color: var(--ws-primary); font-weight: 800; }
+.ws-combo-chip-x {
+    width: 18px; height: 18px; border: none; border-radius: 999px; background: transparent;
+    color: var(--ws-muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: .75em;
+}
+.ws-combo-chip-x:hover { background: #fee2e2; color: var(--ws-danger); }
 .ws-wiz-summary .ws-muted { margin: 0 0 12px; }
 .ws-mb { margin-bottom: 12px; }
 

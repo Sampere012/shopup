@@ -769,9 +769,10 @@
             comboTotal: 0,
             comboFormOpen: false,
             comboTransferOpen: false,
-            comboForm: {},
+            comboForm: { items: [] },
             comboTransfer: { combo: null, from_location: 0, to_location: 0, count: 1, note: '' },
             allProducts: [],
+            comboProductSearch: '',
             // Pestañas: lista de productos / historial de precios.
             tab: 'products',
             historyLoaded: false,
@@ -834,11 +835,34 @@
                     active: !!c.active,
                     items: (c.items || []).map(i => ({ product_id: i.product_id, qty: i.qty }))
                 } : {
-                    id: 0, name: '', photo: '', price_mode: 'auto', price: 0, currency: this.currency, active: true, items: [{ product_id: '', qty: 1 }]
+                    id: 0, name: '', photo: '', price_mode: 'auto', price: 0, currency: this.currency, active: true, items: []
                 };
+                this.comboProductSearch = '';
                 this.comboFormOpen = true;
             },
-            addComboItem() { this.comboForm.items.push({ product_id: '', qty: 1 }); },
+            // Selector de componentes: lista con imagen + filtro (como Stock).
+            get comboProductsFiltered() {
+                const s = (this.comboProductSearch || '').toLowerCase().trim();
+                let list = this.allProducts || [];
+                if (s) list = list.filter(p => (p.name || '').toLowerCase().includes(s) || (p.barcode || '').toLowerCase().includes(s));
+                // Los seleccionados primero, luego por nombre.
+                return [...list].sort((a, b) => {
+                    const ai = this.comboItem(a.id) ? 0 : 1;
+                    const bi = this.comboItem(b.id) ? 0 : 1;
+                    if (ai !== bi) return ai - bi;
+                    return String(a.name || '').localeCompare(String(b.name || ''));
+                });
+            },
+            comboItem(pid) { return this.comboForm.items.find(i => Number(i.product_id) === Number(pid)) || null; },
+            comboItemName(pid) { const p = (this.allProducts || []).find(p => p.id === Number(pid)); return p ? p.name : ('#' + pid); },
+            toggleComboProduct(p) {
+                const it = this.comboItem(p.id);
+                if (it) {
+                    this.comboForm.items = this.comboForm.items.filter(i => i !== it);
+                } else {
+                    this.comboForm.items.push({ product_id: p.id, qty: 1 });
+                }
+            },
             removeComboItem(i) { this.comboForm.items.splice(i, 1); },
             saveCombo() {
                 const body = new URLSearchParams({ action: 'ws_combo_save', ws_nonce: WS.nonce, items: JSON.stringify(this.comboForm.items) });
