@@ -1123,10 +1123,17 @@
             setZoom(z) {
                 this.zoom = Math.max(0.4, Math.min(2.5, z));
                 this.canvasTick++;
+                this.persistZoomState();
             },
             zoomIn() { this.setZoom(this.zoom * 1.2); },
             zoomOut() { this.setZoom(this.zoom / 1.2); },
-            resetZoom() { this.zoom = 1; this.panX = 0; this.panY = 0; this.canvasTick++; },
+            resetZoom() { this.zoom = 1; this.panX = 0; this.panY = 0; this.canvasTick++; this.persistZoomState(); },
+            // Guarda zoom + paneo por negocio (se restaura al reabrir).
+            persistZoomState() {
+                try {
+                    localStorage.setItem('ws_loc_zoom_' + (WS.business || 'default'), JSON.stringify({ zoom: this.zoom, panX: this.panX, panY: this.panY }));
+                } catch (e) {}
+            },
             zoomPct() { return Math.round(this.zoom * 100) + '%'; },
             // Transform de la capa: escala + desplazamiento. El origen es
             // arriba-izquierda; las posiciones de nodos/líneas siguen en % o px
@@ -1150,6 +1157,7 @@
                 this.panY = my - (my - this.panY) * k;
                 this.zoom = next;
                 this.canvasTick++;
+                this.persistZoomState();
             },
             // Paneo arrastrando el fondo del lienzo (no nodos/líneas).
             startPan(evt) {
@@ -1168,6 +1176,7 @@
                     this.panning = false;
                     window.removeEventListener('pointermove', move);
                     window.removeEventListener('pointerup', up);
+                    this.persistZoomState();
                 };
                 window.addEventListener('pointermove', move);
                 window.addEventListener('pointerup', up);
@@ -1179,6 +1188,13 @@
                 } catch (e) {
                     this.nodes = [];
                 }
+                // Restaura el zoom/paneo guardado por negocio.
+                try {
+                    const vz = JSON.parse(localStorage.getItem('ws_loc_zoom_' + (WS.business || 'default')) || '{}');
+                    if (typeof vz.zoom === 'number' && vz.zoom >= 0.4 && vz.zoom <= 2.5) this.zoom = vz.zoom;
+                    if (typeof vz.panX === 'number' && isFinite(vz.panX)) this.panX = vz.panX;
+                    if (typeof vz.panY === 'number' && isFinite(vz.panY)) this.panY = vz.panY;
+                } catch (e) {}
                 // Las líneas se dibujan en píxeles: al redimensionar la ventana
                 // se re-renderizan (las posiciones de los nodos son %).
                 if (!this._resizeBound) {
