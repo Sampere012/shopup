@@ -2675,7 +2675,22 @@ ul.ws-topbar-nav { list-style: none; margin: 0 auto; padding: 0; }
 .ws-link-tools { display: flex; gap: 8px; flex-wrap: wrap; }
 .ws-link-dirty { display: inline-flex; align-items: center; gap: 6px; font-size: .75rem; font-weight: 600; color: #b45309; background: #fef3c7; border-radius: 999px; padding: 3px 10px; }
 .ws-link-canvas { position: relative; height: 460px; overflow: hidden; border: 1px dashed var(--ws-border); border-radius: 12px;
-    background-image: radial-gradient(circle, rgba(79, 70, 229, .13) 1px, transparent 1px); background-size: 22px 22px; touch-action: none; }
+    background-image: radial-gradient(circle, rgba(79, 70, 229, .13) 1px, transparent 1px); background-size: 22px 22px; touch-action: none; cursor: grab; }
+.ws-link-canvas.is-panning { cursor: grabbing; }
+.ws-link-layer { position: absolute; inset: 0; will-change: transform; }
+.ws-canvas-zoom {
+    position: absolute; top: 10px; right: 10px; z-index: 30;
+    display: flex; align-items: center; gap: 2px;
+    background: #fff; border: 1px solid var(--ws-border); border-radius: 10px;
+    padding: 4px; box-shadow: 0 4px 14px rgba(15, 23, 42, .12);
+}
+.ws-canvas-zoom button {
+    width: 28px; height: 28px; border: none; border-radius: 7px; background: transparent;
+    cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+    color: var(--ws-text); font-size: .85em; transition: background .15s;
+}
+.ws-canvas-zoom button:hover { background: #eef2ff; color: var(--ws-primary); }
+.ws-canvas-zoom span { font-size: .72em; font-weight: 700; color: var(--ws-muted); min-width: 42px; text-align: center; font-variant-numeric: tabular-nums; }
 /* Líneas de conexión como divs rotados (el x-for dentro de <svg> no recibe
    el scope del bucle en Alpine, así que se dibujan en HTML con píxeles). */
 .ws-link-line { position: absolute; height: 3px; border-radius: 2px; z-index: 1; cursor: pointer; pointer-events: auto;

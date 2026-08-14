@@ -103,32 +103,40 @@ $rates      = ws_exchange_rates();
             </div>
         </div>
 
-        <div class="ws-link-canvas" x-ref="canvas">
-            <template x-for="link in displayLinks()" :key="'l' + linkKey(link.a, link.b)">
-                <div class="ws-link-line" :style="lineStyle(link)" :title="'Desconectar: ' + locName(link.a) + ' ↔ ' + locName(link.b)" @click="removeLink(link)"></div>
-            </template>
-            <template x-for="link in displayLinks()" :key="'m' + linkKey(link.a, link.b)">
-                <span class="ws-link-mid" :style="midStyle(link)" :title="'Desconectar: ' + locName(link.a) + ' ↔ ' + locName(link.b)" @click="removeLink(link)"><i class="fa-solid fa-link"></i></span>
-            </template>
-            <template x-if="linkMode === 'connect' && tempLine && linkFrom">
-                <div class="ws-link-temp" :style="tempLineStyle()"></div>
-            </template>
+        <div class="ws-link-canvas" x-ref="canvas" @pointerdown="startPan($event)" @wheel.prevent="onCanvasWheel($event)" :class="panning ? 'is-panning' : ''">
+            <div class="ws-link-layer" :style="canvasLayerStyle()">
+                <template x-for="link in displayLinks()" :key="'l' + linkKey(link.a, link.b)">
+                    <div class="ws-link-line" :style="lineStyle(link)" :title="'Desconectar: ' + locName(link.a) + ' ↔ ' + locName(link.b)" @click="removeLink(link)"></div>
+                </template>
+                <template x-for="link in displayLinks()" :key="'m' + linkKey(link.a, link.b)">
+                    <span class="ws-link-mid" :style="midStyle(link)" :title="'Desconectar: ' + locName(link.a) + ' ↔ ' + locName(link.b)" @click="removeLink(link)"><i class="fa-solid fa-link"></i></span>
+                </template>
+                <template x-if="linkMode === 'connect' && tempLine && linkFrom">
+                    <div class="ws-link-temp" :style="tempLineStyle()"></div>
+                </template>
 
-            <template x-for="l in canvasLocations" :key="l.id">
-                <div class="ws-link-node" :class="nodeClass(l.id)" :data-node-id="l.id" :style="nodeStyle(l.id)" @pointerdown.stop="startMove(l.id, $event)">
-                    <div class="ws-link-node-icon" :class="l.type === 'pv' ? 'is-pv' : 'is-wh'">
-                        <i class="fa-solid" :class="l.type === 'pv' ? 'fa-store' : 'fa-warehouse'"></i>
+                <template x-for="l in canvasLocations" :key="l.id">
+                    <div class="ws-link-node" :class="nodeClass(l.id)" :data-node-id="l.id" :style="nodeStyle(l.id)" @pointerdown.stop="startMove(l.id, $event)">
+                        <div class="ws-link-node-icon" :class="l.type === 'pv' ? 'is-pv' : 'is-wh'">
+                            <i class="fa-solid" :class="l.type === 'pv' ? 'fa-store' : 'fa-warehouse'"></i>
+                        </div>
+                        <div class="ws-link-node-body">
+                            <strong x-text="l.name"></strong>
+                            <small x-text="l.type === 'pv' ? 'PV' : 'Almacén'"></small>
+                        </div>
+                        <span class="ws-link-count" x-show="nodeLinks(l.id).length" x-text="nodeLinks(l.id).length"></span>
+                        <button class="ws-link-handle" title="Conectar con otra ubicación" @pointerdown.stop="startConnect(l.id, $event)"><i class="fa-solid fa-link"></i></button>
                     </div>
-                    <div class="ws-link-node-body">
-                        <strong x-text="l.name"></strong>
-                        <small x-text="l.type === 'pv' ? 'PV' : 'Almacén'"></small>
-                    </div>
-                    <span class="ws-link-count" x-show="nodeLinks(l.id).length" x-text="nodeLinks(l.id).length"></span>
-                    <button class="ws-link-handle" title="Conectar con otra ubicación" @pointerdown.stop="startConnect(l.id, $event)"><i class="fa-solid fa-link"></i></button>
-                </div>
-            </template>
+                </template>
 
-            <p class="ws-empty" x-show="!canvasLocations.length"><?php esc_html_e( 'Crea ubicaciones para poder conectarlas.', 'workshop' ); ?></p>
+                <p class="ws-empty" x-show="!canvasLocations.length"><?php esc_html_e( 'Crea ubicaciones para poder conectarlas.', 'workshop' ); ?></p>
+            </div>
+            <div class="ws-canvas-zoom" title="<?php esc_attr_e( 'Zoom del lienzo (rueda del ratón + arrastra el fondo para moverte)', 'workshop' ); ?>">
+                <button type="button" @click="zoomOut()" title="<?php esc_attr_e( 'Alejar', 'workshop' ); ?>"><i class="fa-solid fa-minus"></i></button>
+                <span x-text="zoomPct()"></span>
+                <button type="button" @click="zoomIn()" title="<?php esc_attr_e( 'Acercar', 'workshop' ); ?>"><i class="fa-solid fa-plus"></i></button>
+                <button type="button" @click="resetZoom()" title="<?php esc_attr_e( 'Restablecer zoom', 'workshop' ); ?>"><i class="fa-solid fa-arrows-to-dot"></i></button>
+            </div>
         </div>
     </div>
     <?php endif; ?>
