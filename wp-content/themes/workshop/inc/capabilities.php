@@ -53,7 +53,10 @@ class WS_Capabilities {
             'customers_view' => true, 'customers_create' => true, 'customers_edit' => true,
             'customers_delete' => true, 'customers_manage' => true,
             'reviews_view' => true, 'reviews_moderate' => true,
-            'loyalty_manage' => true,
+            // Fidelización DESMARCADA por defecto en negocios nuevos: el módulo
+            // no aparece ni para el negocio ni para sus trabajadores hasta que
+            // el dueño lo active desde Permisos.
+            'loyalty_manage' => false,
             'products_fraction' => true,
             'pos_sell' => true, 'pos_view' => true,
             // Módulos nuevos: categorías en árbol y control de gastos.
