@@ -25,7 +25,9 @@ $biz       = ws_current_business();
 
 global $wpdb;
 $store_count = count( $locations );
-$prod_count  = (int) $wpdb->get_var( "SELECT COUNT(*) FROM " . ws_table_name( 'products' ) . " WHERE active=1" );
+// Solo cuenta lo VISIBLE EN LA TIENDA (store_visible=1): lo que está en el
+// inventario pero oculto del catálogo público no cuenta como "producto".
+$prod_count  = (int) $wpdb->get_var( "SELECT COUNT(*) FROM " . ws_table_name( 'products' ) . " WHERE active=1 AND store_visible=1" );
 $loc_all     = (int) $wpdb->get_var( "SELECT COUNT(*) FROM " . ws_table_name( 'locations' ) );
 
 get_header();

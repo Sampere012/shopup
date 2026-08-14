@@ -52,8 +52,12 @@
             existingItem.qty += qty;
             existingItem.subtotal = existingItem.qty * existingItem.price;
         } else {
+            // combo_id viaja con el item: al sincronizar, el backend descuenta
+            // los COMPONENTES del combo (sin combo_id, con product_id negativo,
+            // la venta offline de un combo fallaría al descontar stock).
             currentPOSSale.items.push({
                 product_id: product.id,
+                combo_id: product.combo_id || 0,
                 product_name: product.name,
                 qty: qty,
                 price: product.sale_price,

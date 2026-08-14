@@ -86,37 +86,74 @@ if ( ! empty( $sub_data['is_trial'] ) && $sub_data['trial_days_left'] > 0 && $su
             </div>
 
             <div class="ws-products-scroll">
-                <div class="ws-products-grid">
-                    <template x-if="loadingProducts">
-                        <div class="ws-loading">
-                            <i class="fa-solid fa-spinner fa-spin"></i>
-                            <?php esc_html_e( 'Cargando productos...', 'workshop' ); ?>
-                        </div>
-                    </template>
-                    <template x-if="!loadingProducts && filteredProducts.length === 0">
-                        <div class="ws-empty">
-                            <?php esc_html_e( 'No hay productos disponibles', 'workshop' ); ?>
-                        </div>
-                    </template>
-                    <template x-for="product in filteredProducts" :key="product.id">
-                        <div class="ws-product-card" @click="addToCart(product)" :class="{ 'is-out': product.stock <= 0 }">
-                            <div class="ws-product-image">
-                                <img :src="product.image || '<?php echo WS_URL; ?>assets/images/placeholder.png'" :alt="product.name" loading="lazy">
+                <template x-if="loadingProducts">
+                    <div class="ws-loading">
+                        <i class="fa-solid fa-spinner fa-spin"></i>
+                        <?php esc_html_e( 'Cargando productos...', 'workshop' ); ?>
+                    </div>
+                </template>
+                <template x-if="!loadingProducts && filteredProducts.length === 0">
+                    <div class="ws-empty">
+                        <?php esc_html_e( 'No hay productos disponibles', 'workshop' ); ?>
+                    </div>
+                </template>
+                <template x-if="!loadingProducts && filteredProducts.length > 0">
+                    <div>
+                        <!-- Combos agrupados en su propia sección, con sus componentes -->
+                        <div class="ws-pos-section" x-show="posCombos.length > 0" x-cloak>
+                            <h4 class="ws-pos-section-title"><i class="fa-solid fa-layer-group"></i> <?php esc_html_e( 'Combos', 'workshop' ); ?> <small class="ws-muted" x-text="'(' + posCombos.length + ')'"></small></h4>
+                            <div class="ws-products-grid">
+                                <template x-for="product in posCombos" :key="'c' + product.id">
+                                    <div class="ws-product-card ws-product-combo" @click="addToCart(product)" :class="{ 'is-out': product.stock <= 0 }">
+                                        <div class="ws-product-image">
+                                            <img :src="product.image || '<?php echo WS_URL; ?>assets/images/placeholder.png'" :alt="product.name" loading="lazy">
+                                        </div>
+                                        <div class="ws-product-info">
+                                            <div class="ws-product-name-row">
+                                                <div class="ws-product-name" x-text="product.name"></div>
+                                                <span class="ws-combo-badge" title="<?php esc_attr_e( 'Este producto es un combo', 'workshop' ); ?>"><i class="fa-solid fa-layer-group"></i> <?php esc_html_e( 'Combo', 'workshop' ); ?></span>
+                                            </div>
+                                            <div class="ws-pos-combo-items" x-show="(product.combo_items || []).length">
+                                                <template x-for="it in (product.combo_items || []).slice(0, 4)" :key="it.product_id">
+                                                    <span class="ws-combo-chip" x-text="it.name + ' ×' + it.qty"></span>
+                                                </template>
+                                            </div>
+                                            <div class="ws-product-price" x-text="formatPrice(product.sale_price)"></div>
+                                            <div class="ws-product-stock" :class="product.stock > 0 ? 'ws-stock-ok' : 'ws-stock-low'">
+                                                <i class="fa-solid fa-box"></i>
+                                                <span x-text="product.stock"></span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </template>
                             </div>
-                            <div class="ws-product-info">
-                                <div class="ws-product-name-row">
-                                    <div class="ws-product-name" x-text="product.name"></div>
-                                    <span class="ws-combo-badge" x-show="product.is_combo" title="<?php esc_attr_e( 'Este producto es un combo', 'workshop' ); ?>"><i class="fa-solid fa-layer-group"></i> <?php esc_html_e( 'Combo', 'workshop' ); ?></span>
-                                </div>
-                                <div class="ws-product-price" x-text="formatPrice(product.sale_price)"></div>
-                                <div class="ws-product-stock" :class="product.stock > 0 ? 'ws-stock-ok' : 'ws-stock-low'">
-                                    <i class="fa-solid fa-box"></i>
-                                    <span x-text="product.stock"></span>
-                                </div>
+                        </div>
+                        <!-- Productos sueltos -->
+                        <div class="ws-pos-section" x-show="posProducts.length > 0" x-cloak>
+                            <h4 class="ws-pos-section-title"><i class="fa-solid fa-box"></i> <?php esc_html_e( 'Productos', 'workshop' ); ?> <small class="ws-muted" x-text="'(' + posProducts.length + ')'"></small></h4>
+                            <div class="ws-products-grid">
+                                <template x-for="product in posProducts" :key="'p' + product.id">
+                                    <div class="ws-product-card" @click="addToCart(product)" :class="{ 'is-out': product.stock <= 0 }">
+                                        <div class="ws-product-image">
+                                            <img :src="product.image || '<?php echo WS_URL; ?>assets/images/placeholder.png'" :alt="product.name" loading="lazy">
+                                        </div>
+                                        <div class="ws-product-info">
+                                            <div class="ws-product-name-row">
+                                                <div class="ws-product-name" x-text="product.name"></div>
+                                                <span class="ws-combo-badge" x-show="product.is_combo" title="<?php esc_attr_e( 'Este producto es un combo', 'workshop' ); ?>"><i class="fa-solid fa-layer-group"></i> <?php esc_html_e( 'Combo', 'workshop' ); ?></span>
+                                            </div>
+                                            <div class="ws-product-price" x-text="formatPrice(product.sale_price)"></div>
+                                            <div class="ws-product-stock" :class="product.stock > 0 ? 'ws-stock-ok' : 'ws-stock-low'">
+                                                <i class="fa-solid fa-box"></i>
+                                                <span x-text="product.stock"></span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </template>
                             </div>
                         </div>
-                    </template>
-                </div>
+                    </div>
+                </template>
             </div>
         </div>
 
@@ -148,6 +185,7 @@ if ( ! empty( $sub_data['is_trial'] ) && $sub_data['trial_days_left'] > 0 && $su
                     <div class="ws-cart-item">
                         <div class="ws-item-info">
                             <div class="ws-item-name" x-text="item.product_name"></div>
+                            <span class="ws-combo-badge" x-show="item.combo_id" x-cloak title="<?php esc_attr_e( 'Este producto es un combo', 'workshop' ); ?>"><i class="fa-solid fa-layer-group"></i> <?php esc_html_e( 'Combo', 'workshop' ); ?></span>
                             <div class="ws-item-price" x-text="formatPrice(item.price)"></div>
                         </div>
                         <div class="ws-item-qty">
@@ -728,6 +766,12 @@ document.addEventListener('alpine:init', () => {
             );
         },
 
+        // Combos y productos sueltos por separado: el grid los agrupa en
+        // secciones para que los combos se vean como lo que son (un producto
+        // que contiene varios) y no mezclados al final de la lista.
+        get posCombos() { return this.filteredProducts.filter(p => p.is_combo); },
+        get posProducts() { return this.filteredProducts.filter(p => !p.is_combo); },
+
         get filteredCustomers() {
             if (!this.customerSearch) return this.customers;
             const query = this.customerSearch.toLowerCase();
@@ -822,14 +866,16 @@ document.addEventListener('alpine:init', () => {
             try { localStorage.removeItem('ws_pos_repeat_items'); } catch (e) {}
             let added = 0;
             items.forEach((it) => {
-                const p = this.products.find((x) => String(x.id) === String(it.product_id));
+                // Un ítem COMBO se guarda con product_id=0 y combo_id: se busca
+                // por combo_id en el catálogo. Un producto normal, por su id.
+                const p = this.products.find((x) => String(x.id) === String(it.product_id) || (Number(it.combo_id) > 0 && Number(x.combo_id) === Number(it.combo_id)));
                 if (!p || !(Number(p.stock) > 0)) return;
                 const qty = Math.min(Math.max(1, Math.floor(Number(it.qty) || 1)), Number(p.stock));
                 const existing = this.cart.find((c) => String(c.product_id) === String(p.id));
                 if (existing) {
                     existing.qty = Math.min((Number(existing.qty) || 0) + qty, Number(p.stock));
                 } else {
-                    this.cart.push({ product_id: p.id, product_name: p.name, price: p.sale_price, cost_price: p.cost_price || 0, qty: qty, stock: p.stock });
+                    this.cart.push({ product_id: p.id, combo_id: p.combo_id || 0, product_name: p.name, price: p.sale_price, cost_price: p.cost_price || 0, qty: qty, stock: p.stock });
                 }
                 added++;
             });

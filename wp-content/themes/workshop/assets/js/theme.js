@@ -761,7 +761,6 @@
             canFraction: opts.canFraction,
             products: [],
             search: '',
-            showCombos: false,
             formOpen: false,
             importModal: false,
             dragOver: false,
@@ -954,7 +953,9 @@
                 return '';
             },
             reload() {
-                fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ action: 'ws_products_list', ws_nonce: WS.nonce, search: this.search, sort: this.sortKey, dir: this.sortDir, page: this.page, pageSize: this.pageSize, show_combos: this.showCombos ? 1 : 0 }) })
+                // El tab de Productos SOLO lista productos reales: los combos
+                // viven en su propia pestaña (Combos).
+                fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ action: 'ws_products_list', ws_nonce: WS.nonce, search: this.search, sort: this.sortKey, dir: this.sortDir, page: this.page, pageSize: this.pageSize, show_combos: 0 }) })
                     .then(r => r.json()).then(r => { if (r.success) { this.products = r.data.products; this.total = r.data.total; this.page = r.data.page; } });
             },
             money(v, c) { return money(v, c || this.currency); },
@@ -1658,6 +1659,8 @@
             sellers: opts.sellers || [],
             // Pestañas de la vista: movimientos | cuadre | historial de cuadres.
             stockTab: 'moves',
+            // Sub-pestañas del tab Movimientos: productos | combos (tablas).
+            stockSub: 'products',
             rows: [],
             combos: [],
             search: '',
@@ -1697,6 +1700,32 @@
             countDetail: { id: 0, items: [] },
             init() { this.restoreTableState(); this.load(); },
             setStockTab(t) { this.stockTab = t; },
+            setStockSub(t) { this.stockSub = t; },
+            // Combos como FILAS de tabla (una por combo y ubicación), igual que
+            // los productos: stock derivado en cada ubicación + acciones.
+            get comboRows() {
+                const rows = [];
+                (this.combos || []).forEach(c => {
+                    const locs = (c.locs && c.locs.length) ? c.locs : [{ location_id: 0, location_name: '—', qty: 0 }];
+                    locs.forEach(l => {
+                        rows.push({
+                            product_id: c.product_id,
+                            combo_id: c.combo_id,
+                            name: c.name,
+                            image: c.image,
+                            barcode: '',
+                            is_combo: 1,
+                            store_visible: c.store_visible,
+                            sale_price: c.sale_price,
+                            currency: c.currency,
+                            location_id: l.location_id,
+                            location_name: l.location_name,
+                            qty: Number(l.qty) || 0
+                        });
+                    });
+                });
+                return rows;
+            },
             load() {
                 fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ action: 'ws_stock_list', ws_nonce: WS.nonce, location_id: this.locationId, search: this.search, low_only: this.lowOnly ? 1 : 0, sort: this.sortKey, dir: this.sortDir, page: this.page, pageSize: this.pageSize }) })
                     .then(r => r.json()).then(r => { if (r.success) { this.rows = r.data.rows; this.combos = r.data.combos || []; this.total = r.data.total; this.page = r.data.page; } });
@@ -1972,9 +2001,9 @@
             currency: opts.currency || '€',
             movements: [],
             search: '',
-            // Pestañas: todo | productos | combos (los movimientos de combos se
+            // Pestañas: productos | combos (los movimientos de combos se
             // registran por componente pero enlazados al combo).
-            scope: '',
+            scope: 'products',
             typeFilter: '',
             locationFilter: '',
             dateFrom: '',

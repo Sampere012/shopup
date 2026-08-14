@@ -143,7 +143,10 @@ class WS_Business {
             $pro_table = ws_table_name( 'products', $b );
             $rev_table = ws_table_name( 'reviews', $b );
             $ord_table = ws_table_name( 'orders', $b );
-            $products = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$pro_table} WHERE active=1" );
+            // Solo cuenta lo VISIBLE EN LA TIENDA: un producto puede estar en el
+            // inventario y oculto del catálogo público (toggle en Stock), y ese
+            // no debe contar como "producto del negocio" en el mercado.
+            $products = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$pro_table} WHERE active=1 AND store_visible=1" );
             // Tiendas públicas: puntos de venta y almacenes activos (ambos
             // tienen tienda pública, como un PV).
             $pvs      = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$loc_table} WHERE active=1" );

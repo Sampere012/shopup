@@ -85,14 +85,11 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
                 </p>
             <?php endif; ?>
         </div>
-        <?php endif; ?>
-
-        <div class="ws-toolbar">
+        <?php endif; ?>            <div class="ws-toolbar">
             <div class="ws-search">
                 <i class="fa-solid fa-magnifying-glass"></i>
                 <input type="search" placeholder="<?php esc_attr_e( 'Buscar…', 'workshop' ); ?>" x-model="search" @input="onSearch()">
             </div>
-            <label class="ws-check ws-check-pill" title="<?php esc_attr_e( 'Incluye los combos en el listado de productos', 'workshop' ); ?>"><input type="checkbox" x-model="showCombos" @change="reload()"><span><?php esc_html_e( 'Mostrar combos', 'workshop' ); ?></span></label>
             <div class="ws-toolbar-actions">
                 <?php if ( $can_bulk && ! $plan_full ) : ?>
                     <button class="ws-btn ws-btn-secondary" @click="importModal = true"><i class="fa-solid fa-file-import"></i> <?php esc_html_e( 'Importar CSV', 'workshop' ); ?></button>

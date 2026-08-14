@@ -64,57 +64,62 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
             </div>
         </div>
 
-        <!-- Combos: un card por combo (el combo es un producto que contiene
-             varios productos: imagen, componentes y stock por ubicación). -->
-        <div class="ws-combos-section" x-show="combos.length > 0" x-cloak>
-            <div class="ws-combos-head">
-                <h4><i class="fa-solid fa-layer-group"></i> <?php esc_html_e( 'Combos', 'workshop' ); ?> <small class="ws-muted" x-text="'(' + combos.length + ')'"></small></h4>
-            </div>
-            <div class="ws-combo-grid">
-                <template x-for="c in combos" :key="c.combo_id">
-                    <div class="ws-combo-card">
-                        <div class="ws-combo-img">
-                            <img x-show="c.image" :src="c.image" :alt="c.name" loading="lazy">
-                            <i x-show="!c.image" class="fa-solid fa-layer-group"></i>
-                        </div>
-                        <div class="ws-combo-body">
-                            <div class="ws-combo-title">
-                                <strong x-text="c.name"></strong>
-                                <span class="ws-combo-badge"><i class="fa-solid fa-layer-group"></i> <?php esc_html_e( 'Combo', 'workshop' ); ?></span>
-                            </div>
-                            <span class="ws-combo-price" x-text="money(c.sale_price, c.currency)"></span>
-                            <div class="ws-combo-items">
-                                <span class="ws-combo-items-label"><?php esc_html_e( 'Contiene:', 'workshop' ); ?></span>
-                                <template x-for="it in c.items" :key="it.product_id">
-                                    <span class="ws-combo-chip" x-text="it.name + ' × ' + it.qty"></span>
-                                </template>
-                            </div>
-                            <div class="ws-combo-locs" x-show="c.locs.length">
-                                <template x-for="l in c.locs" :key="l.location_id">
-                                    <button type="button" class="ws-combo-loc" :class="comboLoc(c) && comboLoc(c).location_id === l.location_id ? 'is-active' : ''" :title="'<?php esc_attr_e( 'Stock del combo en ', 'workshop' ); ?>' + l.location_name" @click="setComboLoc(c, l)">
-                                        <span x-text="l.location_name"></span>
-                                        <b x-text="l.qty"></b>
-                                    </button>
-                                </template>
-                            </div>
-                            <div class="ws-combo-actions">
+        <!-- Sub-pestañas del tab Movimientos: productos y combos en tablas
+             separadas (más organizado que mezclarlos o mostrarlos en cards). -->
+        <div class="ws-stock-subtabs">
+            <button type="button" class="ws-tab" :class="stockSub === 'products' && 'is-active'" @click="setStockSub('products')"><i class="fa-solid fa-box"></i> <?php esc_html_e( 'Productos', 'workshop' ); ?></button>
+            <button type="button" class="ws-tab" :class="stockSub === 'combos' && 'is-active'" @click="setStockSub('combos')"><i class="fa-solid fa-layer-group"></i> <?php esc_html_e( 'Combos', 'workshop' ); ?> <small class="ws-muted" x-text="'(' + combos.length + ')'"></small></button>
+        </div>
+
+        <!-- Tabla de COMBOS (su propia pestaña): stock derivado por ubicación,
+             precio y las mismas acciones que un producto (entrada/salida/baja/
+             transferencia + visibilidad en la tienda). -->
+        <div x-show="stockSub === 'combos'" x-cloak>
+            <table class="ws-table">
+                <thead>
+                    <tr>
+                        <th><?php esc_html_e( 'Combo', 'workshop' ); ?></th>
+                        <th><?php esc_html_e( 'Ubicación', 'workshop' ); ?></th>
+                        <th><?php esc_html_e( 'Stock', 'workshop' ); ?></th>
+                        <th><?php esc_html_e( 'Precio venta', 'workshop' ); ?></th>
+                        <th title="<?php esc_attr_e( 'Visible en la tienda pública (el stock sigue en el inventario)', 'workshop' ); ?>"><?php esc_html_e( 'Tienda', 'workshop' ); ?></th>
+                        <th><?php esc_html_e( 'Acciones', 'workshop' ); ?></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <template x-for="c in comboRows" :key="c.combo_id + '-' + c.location_id">
+                        <tr>
+                            <td>
+                                <div class="ws-cell-product">
+                                    <div class="ws-thumb"><img x-show="c.image" :src="c.image" :alt="c.name" loading="lazy"><i x-show="!c.image" class="fa-solid fa-layer-group"></i></div>
+                                    <strong x-text="c.name"></strong>
+                                    <span class="ws-combo-badge" x-cloak><i class="fa-solid fa-layer-group"></i> <?php esc_html_e( 'Combo', 'workshop' ); ?></span>
+                                </div>
+                            </td>
+                            <td><span class="ws-badge" x-text="c.location_name"></span></td>
+                            <td class="ws-strong" x-text="c.qty"></td>
+                            <td x-text="money(c.sale_price, c.currency)"></td>
+                            <td class="ws-actions">
                                 <template x-if="canManageStore">
                                     <button type="button" class="ws-icon-btn" :class="!c.store_visible && 'ws-icon-btn-muted'" :title="c.store_visible ? '<?php esc_attr_e( 'Visible en la tienda', 'workshop' ); ?>' : '<?php esc_attr_e( 'Oculto de la tienda (sigue en el inventario)', 'workshop' ); ?>'" @click="toggleStoreVisible('combo', c)">
                                         <i class="fa-solid" :class="c.store_visible ? 'fa-eye' : 'fa-eye-slash'"></i>
                                     </button>
                                 </template>
-                                <template x-if="canEntry"><button class="ws-icon-btn" title="<?php esc_attr_e( 'Entrada', 'workshop' ); ?>" @click="openComboMove('entrada', c)"><i class="fa-solid fa-down-long"></i></button></template>
-                                <template x-if="canExit"><button class="ws-icon-btn" title="<?php esc_attr_e( 'Salida', 'workshop' ); ?>" @click="openComboMove('salida', c)"><i class="fa-solid fa-up-long"></i></button></template>
-                                <template x-if="canWriteoff"><button class="ws-icon-btn ws-danger" title="<?php esc_attr_e( 'Baja', 'workshop' ); ?>" @click="openComboMove('baja', c)"><i class="fa-solid fa-trash-can"></i></button></template>
-                                <template x-if="canTransfer"><button class="ws-icon-btn" title="<?php esc_attr_e( 'Transferencia', 'workshop' ); ?>" @click="openComboTransfer(c)"><i class="fa-solid fa-arrow-right-arrow-left"></i></button></template>
-                            </div>
-                        </div>
-                    </div>
-                </template>
-            </div>
+                            </td>
+                            <td class="ws-actions">
+                                <template x-if="canEntry"><button class="ws-icon-btn" title="<?php esc_attr_e( 'Entrada', 'workshop' ); ?>" @click="openMove('entrada', c)"><i class="fa-solid fa-down-long"></i></button></template>
+                                <template x-if="canExit"><button class="ws-icon-btn" title="<?php esc_attr_e( 'Salida', 'workshop' ); ?>" @click="openMove('salida', c)"><i class="fa-solid fa-up-long"></i></button></template>
+                                <template x-if="canWriteoff"><button class="ws-icon-btn ws-danger" title="<?php esc_attr_e( 'Baja', 'workshop' ); ?>" @click="openMove('baja', c)"><i class="fa-solid fa-trash-can"></i></button></template>
+                                <template x-if="canTransfer"><button class="ws-icon-btn" title="<?php esc_attr_e( 'Transferencia', 'workshop' ); ?>" @click="openTransfer(c)"><i class="fa-solid fa-arrow-right-arrow-left"></i></button></template>
+                            </td>
+                        </tr>
+                    </template>
+                    <tr x-show="comboRows.length === 0"><td colspan="6"><p class="ws-empty"><?php esc_html_e( 'Sin combos.', 'workshop' ); ?></p></td></tr>
+                </tbody>
+            </table>
         </div>
 
-        <table class="ws-table">
+        <table class="ws-table" x-show="stockSub === 'products'" x-cloak>
             <thead>
                 <tr>
                     <th class="ws-th-sort" @click="sort('name')"><?php esc_html_e( 'Producto', 'workshop' ); ?> <i class="fa-solid" :class="sortIcon('name')"></i></th>
@@ -168,10 +173,10 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                         </td>
                     </tr>
                 </template>
-                <tr x-show="total === 0 && combos.length === 0"><td colspan="8"><p class="ws-empty"><?php esc_html_e( 'Sin resultados.', 'workshop' ); ?></p></td></tr>
+                <tr x-show="total === 0"><td colspan="8"><p class="ws-empty"><?php esc_html_e( 'Sin resultados.', 'workshop' ); ?></p></td></tr>
             </tbody>
         </table>
-        <div class="ws-pagination" x-show="total > pageSize">
+        <div class="ws-pagination" x-show="stockSub === 'products' && total > pageSize">
             <span class="ws-pagination-info" x-text="(total ? (page - 1) * pageSize + 1 : 0) + '–' + Math.min(page * pageSize, total) + ' de ' + total"></span>
             <div class="ws-pagination-controls">
                 <button class="ws-page-btn" @click="prevPage()" :disabled="page <= 1"><i class="fa-solid fa-chevron-left"></i></button>

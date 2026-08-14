@@ -2627,6 +2627,7 @@ function ws_ajax_pos_sale_items_get() {
             'id'           => (int) $it->id,
             'sale_id'      => (int) $it->sale_id,
             'product_id'   => (int) $it->product_id,
+            'combo_id'     => (int) ( $it->combo_id ?? 0 ),
             'product_name' => $it->product_name,
             'qty'          => (float) $it->qty,
             'price'        => (float) $it->price,

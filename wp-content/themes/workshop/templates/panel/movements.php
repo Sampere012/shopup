@@ -17,7 +17,6 @@ $currency  = ws_currency_symbol();
 
     <div class="ws-card">
         <div class="ws-tabs">
-            <button type="button" class="ws-tab" :class="scope === '' && 'is-active'" @click="setScope('')"><i class="fa-solid fa-list"></i> <?php esc_html_e( 'Todos', 'workshop' ); ?></button>
             <button type="button" class="ws-tab" :class="scope === 'products' && 'is-active'" @click="setScope('products')"><i class="fa-solid fa-box"></i> <?php esc_html_e( 'Productos', 'workshop' ); ?></button>
             <button type="button" class="ws-tab" :class="scope === 'combos' && 'is-active'" @click="setScope('combos')"><i class="fa-solid fa-layer-group"></i> <?php esc_html_e( 'Combos', 'workshop' ); ?></button>
         </div>

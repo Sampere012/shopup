@@ -231,7 +231,10 @@ $locations = ws_user_locations();
                             <tbody>
                                 <template x-for="item in selectedSaleItems" :key="item.id">
                                     <tr>
-                                        <td x-text="item.product_name"></td>
+                                        <td>
+                                            <span x-text="item.product_name"></span>
+                                            <span class="ws-combo-badge" x-show="item.combo_id" x-cloak title="<?php esc_attr_e( 'Este producto es un combo', 'workshop' ); ?>"><i class="fa-solid fa-layer-group"></i> <?php esc_html_e( 'Combo', 'workshop' ); ?></span>
+                                        </td>
                                         <td x-text="item.qty"></td>
                                         <td x-text="formatCurrency(item.price)"></td>
                                         <td x-text="formatCurrency(item.subtotal)"></td>
