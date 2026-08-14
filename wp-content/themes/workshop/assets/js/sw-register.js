@@ -294,4 +294,27 @@
         deferredInstallPrompt = null;
         try { localStorage.removeItem(WS_PWA_COOLDOWN_KEY); } catch (e) {}
     });
+
+    // ---------- API para el asistente (instalar / actualizar desde el chat) ----------
+    // El bot usa estos métodos para instalar la app (PWA) bajo demanda y para
+    // saber si ya está instalada (modo standalone) antes de avisar de una
+    // actualización. Se expone al cargar: el asistente lo consulta al usarlo.
+    window.WSPWA_API = window.WSPWA_API || {};
+    window.WSPWA_API.isStandalone = function() { return wsIsStandalone(); };
+    window.WSPWA_API.canInstall = function() { return !!deferredInstallPrompt; };
+    window.WSPWA_API.install = function(done) {
+        if (!deferredInstallPrompt) { if (done) { done(false); } return; }
+        try {
+            deferredInstallPrompt.prompt();
+            deferredInstallPrompt.userChoice.then(function(choice) {
+                if (choice && choice.outcome === 'accepted') { deferredInstallPrompt = null; }
+                else { wsRememberDismiss(); }
+                if (done) { done(!!(choice && choice.outcome === 'accepted')); }
+            });
+        } catch (e) {
+            deferredInstallPrompt = null;
+            wsRememberDismiss();
+            if (done) { done(false); }
+        }
+    };
 })();
