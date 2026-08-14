@@ -2,7 +2,14 @@
 # Despliega wp-content (theme workshop + mu-plugins) a InfinityFree por FTP.
 # Usa curl (mismo metodo que los archivos raiz, que si funciona) en vez de
 # SamKirkland/FTP-Deploy-Action, que reportaba exito sin subir nada.
-# Sube SIEMPRE el arbol completo: auto-cura la deriva de commits previos.
+#
+# Dos modos:
+#  - INCREMENTAL (por defecto): si la env DEPLOY_FILELIST apunta a un archivo
+#    con rutas relativas a la raiz del repo (una por linea, generadas por
+#    deploy.yml con `git diff`), se suben SOLO esos archivos (los cambiados o
+#    nuevos del push). Mucho mas rapido: un commit toca 5-20 archivos.
+#  - COMPLETA (FULL_SYNC=1 o sin DEPLOY_FILELIST): sube el arbol entero;
+#    se usa como auto-cura cuando el incremental falla o en el primer deploy.
 #
 # Tolerancia a fallos: InfinityFree limita conexiones FTP por minuto y a veces
 # responde con rechazos puntuales (rate-limit). Cada archivo se sube con su
@@ -16,6 +23,9 @@ if [ -z "${FTP_HOST:-}" ] || [ -z "${FTP_USER:-}" ] || [ -z "${FTP_PASS:-}" ]; t
   echo "::error::Faltan FTP_HOST / FTP_USER / FTP_PASS"
   exit 1
 fi
+
+FULL_SYNC="${FULL_SYNC:-0}"
+DEPLOY_FILELIST="${DEPLOY_FILELIST:-}"
 
 # Sube un archivo con reintentos (backoff) y modo binario explicito.
 # Los PNG/JS/PHP deben subirse como TYPE I; algunos proxies FTP negocian
@@ -97,8 +107,41 @@ deploy_dir() {
   popd >/dev/null
 }
 
-deploy_dir "wp-content/themes/workshop" "htdocs/wp-content/themes/workshop"
-deploy_dir "wp-content/mu-plugins"      "htdocs/wp-content/mu-plugins"
+if [ "$FULL_SYNC" = "1" ]; then
+  echo "::notice::Modo COMPLETO (todos los archivos)"
+  deploy_dir "wp-content/themes/workshop" "htdocs/wp-content/themes/workshop"
+  deploy_dir "wp-content/mu-plugins"      "htdocs/wp-content/mu-plugins"
+elif [ -n "${DEPLOY_FILELIST}" ] && [ -s "${DEPLOY_FILELIST}" ]; then
+  echo "::notice::Modo INCREMENTAL (solo archivos cambiados/nuevos del push)"
+  # El listado trae rutas relativas a la raiz del repo, p. ej.
+  # wp-content/themes/workshop/inc/stock.php -> htdocs/wp-content/...
+  while IFS= read -r f; do
+    case "$f" in
+      wp-content/*)
+        if [ -f "$f" ]; then
+          if ! upload "$f" "htdocs/$f"; then
+            failed_files+=( "htdocs/$f" )
+            if is_critical "${f#wp-content/}"; then
+              critical_failed=1
+            fi
+          fi
+          count=$((count+1))
+          sleep 0.3
+        fi
+        ;;
+    esac
+  done < "$DEPLOY_FILELIST"
+elif [ -n "${DEPLOY_FILELIST}" ]; then
+  # El listado existe pero esta vacio: este push no toco wp-content.
+  echo "::notice::Sin cambios que subir (incremental, listado vacio)"
+  exit 0
+else
+  # Ni FULL_SYNC ni DEPLOY_FILELIST: respaldo defensivo con el comportamiento
+  # historico (sync completo) para que el deploy nunca quede en silencio.
+  echo "::notice::Modo COMPLETO (sin DEPLOY_FILELIST, respaldo)"
+  deploy_dir "wp-content/themes/workshop" "htdocs/wp-content/themes/workshop"
+  deploy_dir "wp-content/mu-plugins"      "htdocs/wp-content/mu-plugins"
+fi
 
 # Segunda pasada SOLO con los que fallaron (la conexion/rate-limit puede haberse
 # recuperado entre tanto).
