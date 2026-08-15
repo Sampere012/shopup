@@ -1596,9 +1596,16 @@ add_action( 'wp_ajax_ws_store_products', 'ws_ajax_store_products' );
 function ws_ajax_store_products() {
     $location_id = (int) ( $_POST['location_id'] ?? 0 );
     $search      = sanitize_text_field( $_POST['search'] ?? '' );
-    // Solo productos VISIBLES en la tienda (pueden existir en el inventario
-    // y estar ocultos del catálogo público).
-    $rows        = WS_Stock::stock_rows( array( 'location_id' => $location_id, 'search' => $search, 'store_visible' => 1 ) );
+    // Solo productos VISIBLES EN LA TIENDA DE ESTA UBICACIÓN (pueden existir
+    // en el inventario y estar ocultos del catálogo público). La visibilidad
+    // es POR UBICACIÓN: el override del ojito (ws_store_visibility) manda
+    // sobre el flag global, igual que en store.php.
+    $rows        = array_values( array_filter(
+        WS_Stock::stock_rows( array( 'location_id' => $location_id, 'search' => $search ) ),
+        function ( $r ) use ( $location_id ) {
+            return ws_store_visible( 'product', (int) ( $r->product_id ?? 0 ), (int) $location_id, 'store' );
+        }
+    ) );
     $products    = array();
     foreach ( $rows as $r ) {
         $products[] = array(

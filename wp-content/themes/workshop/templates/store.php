@@ -8,9 +8,18 @@
 defined( 'ABSPATH' ) || exit;
 
 $location = get_query_var( 'ws_location' );
-// Solo lo VISIBLE EN LA TIENDA: un producto/combo puede existir en el
-// inventario y estar oculto del catálogo público (toggle en Stock).
-$products = WS_Stock::stock_rows( array( 'location_id' => $location->id, 'store_visible' => 1 ) );
+// Solo lo VISIBLE EN LA TIENDA DE ESTA UBICACIÓN: un producto puede existir
+// en el inventario y estar oculto del catálogo público (toggle en Stock). La
+// visibilidad es POR UBICACIÓN — el override de ws_store_visibility (el
+// ojito del panel) manda sobre el flag global, igual que el filtro de combos
+// de abajo. Sin filtro SQL store_visible=1: un producto oculto globalmente
+// pero mostrado en ESTA ubicación debe salir aquí.
+$products = array_values( array_filter(
+    WS_Stock::stock_rows( array( 'location_id' => $location->id ) ),
+    function ( $p ) use ( $location ) {
+        return ws_store_visible( 'product', (int) ( $p->product_id ?? 0 ), (int) $location->id, 'store' );
+    }
+) );
 // Combos activos y visibles como ítems del catálogo (stock derivado).
 // SOLO los que esta tienda puede vender: el combo necesita stock de TODOS sus
 // productos en ESTA ubicación (qty derivado > 0). Si no los tiene, no se

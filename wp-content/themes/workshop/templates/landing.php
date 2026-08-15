@@ -25,9 +25,21 @@ $biz       = ws_current_business();
 
 global $wpdb;
 $store_count = count( $locations );
-// Solo cuenta lo VISIBLE EN LA TIENDA (store_visible=1): lo que está en el
-// inventario pero oculto del catálogo público no cuenta como "producto".
-$prod_count  = (int) $wpdb->get_var( "SELECT COUNT(*) FROM " . ws_table_name( 'products' ) . " WHERE active=1 AND store_visible=1" );
+// Solo cuenta lo VISIBLE EN LA TIENDA (ojito POR UBICACIÓN): lo que está en
+// el inventario pero oculto del catálogo público no cuenta como "producto".
+// El override de ws_store_visibility (visible en AL MENOS una ubicación
+// activa) manda sobre el flag global.
+$pro_t = ws_table_name( 'products' );
+$loc_t = ws_table_name( 'locations' );
+$sv_t  = ws_table_name( 'store_visibility' );
+if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $sv_t ) ) === $sv_t ) {
+    $prod_count = (int) $wpdb->get_var( "SELECT COUNT(DISTINCT p.id) FROM {$pro_t} p
+        INNER JOIN {$loc_t} l ON l.active=1
+        LEFT JOIN {$sv_t} sv ON sv.entity_type='product' AND sv.entity_id=p.id AND sv.location_id=l.id AND sv.channel='store'
+        WHERE p.active=1 AND COALESCE(sv.visible, p.store_visible) = 1" );
+} else {
+    $prod_count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$pro_t} WHERE active=1 AND store_visible=1" );
+}
 
 get_header();
 ?>

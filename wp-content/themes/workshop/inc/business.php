@@ -143,10 +143,20 @@ class WS_Business {
             $pro_table = ws_table_name( 'products', $b );
             $rev_table = ws_table_name( 'reviews', $b );
             $ord_table = ws_table_name( 'orders', $b );
-            // Solo cuenta lo VISIBLE EN LA TIENDA: un producto puede estar en el
-            // inventario y oculto del catálogo público (toggle en Stock), y ese
-            // no debe contar como "producto del negocio" en el mercado.
-            $products = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$pro_table} WHERE active=1 AND store_visible=1" );
+            // Solo cuenta lo VISIBLE EN LA TIENDA (ojito POR UBICACIÓN): un
+            // producto puede estar en el inventario y oculto del catálogo
+            // público, y ese no debe contar como "producto del negocio" en el
+            // mercado. El override de ws_store_visibility (visible en AL MENOS
+            // una ubicación activa) manda sobre el flag global.
+            $sv_table = ws_table_name( 'store_visibility', $b );
+            if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $sv_table ) ) === $sv_table ) {
+                $products = (int) $wpdb->get_var( "SELECT COUNT(DISTINCT p.id) FROM {$pro_table} p
+                    INNER JOIN {$loc_table} l ON l.active=1
+                    LEFT JOIN {$sv_table} sv ON sv.entity_type='product' AND sv.entity_id=p.id AND sv.location_id=l.id AND sv.channel='store'
+                    WHERE p.active=1 AND COALESCE(sv.visible, p.store_visible) = 1" );
+            } else {
+                $products = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$pro_table} WHERE active=1 AND store_visible=1" );
+            }
             // Tiendas públicas: puntos de venta y almacenes activos (ambos
             // tienen tienda pública, como un PV).
             $pvs      = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$loc_table} WHERE active=1" );
