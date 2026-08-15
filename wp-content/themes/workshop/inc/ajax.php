@@ -228,6 +228,7 @@ function ws_ajax_locations_list() {
                 'delivery_cost'   => (float) $l->delivery_cost,
                 'delivery_currency' => $l->delivery_currency ? $l->delivery_currency : ( $l->currency ? $l->currency : ws_currency_symbol() ),
                 'active'          => (int) $l->active,
+                'pos_enabled'     => (int) ( $l->pos_enabled ?? 1 ),
             );
         }
         return $out;
@@ -241,6 +242,11 @@ function ws_ajax_my_locations() {
     ws_guard( 'locations_view' );
     $out = array();
     foreach ( ws_user_locations() as $l ) {
+        // Solo se muestra en el POS la ubicación marcada en Ubicaciones
+        // (pos_enabled): el check decide dónde se vende en punto de venta.
+        if ( ! (int) ( $l->pos_enabled ?? 1 ) ) {
+            continue;
+        }
         $out[] = array(
             'id'       => (int) $l->id,
             'name'     => $l->name,

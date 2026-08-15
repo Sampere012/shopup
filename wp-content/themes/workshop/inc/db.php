@@ -43,6 +43,7 @@ function ws_db_tables() {
             delivery_cost DECIMAL(12,2) NOT NULL DEFAULT 0,
             delivery_currency VARCHAR(10) NOT NULL DEFAULT '',
             active TINYINT(1) NOT NULL DEFAULT 1,
+            pos_enabled TINYINT(1) NOT NULL DEFAULT 1,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -684,6 +685,12 @@ function ws_db_migrate() {
         // ubicación (la tienda vende en USD y el domicilio se cobra en CUP).
         if ( ! in_array( 'delivery_currency', $lcols, true ) ) {
             $wpdb->query( "ALTER TABLE {$loc_t} ADD COLUMN delivery_currency VARCHAR(10) NOT NULL DEFAULT '' AFTER delivery_cost" );
+        }
+        // Habilitada en el POS: decide si la ubicación aparece en el punto de
+        // venta y si se puede asignar a empleados para vender (la tienda
+        // pública y el stock no se ven afectados).
+        if ( ! in_array( 'pos_enabled', $lcols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$loc_t} ADD COLUMN pos_enabled TINYINT(1) NOT NULL DEFAULT 1 AFTER active" );
         }
         // Y en pedidos: el domicilio se guarda en SU moneda y el total del
         // pedido lo suma convertido a la moneda de la ubicación.

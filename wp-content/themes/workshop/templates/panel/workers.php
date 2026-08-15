@@ -7,7 +7,13 @@
 
 defined( 'ABSPATH' ) || exit;
 
-$locations = WS_CRUD::get_locations();
+// Solo las ubicaciones habilitadas en el POS se pueden asignar a empleados
+// (el vendedor trabaja en el punto de venta): el check de Ubicaciones decide
+// qué ubicaciones aparecen al crear/editar un trabajador.
+$locations = array_values( array_filter(
+    WS_CRUD::get_locations(),
+    static fn( $l ) => (int) ( $l->pos_enabled ?? 1 ) === 1
+) );
 $role_opts = array(
     'ws_storekeeper' => __( 'Almacenero', 'workshop' ),
     'ws_seller'      => __( 'Vendedor/PV', 'workshop' ),

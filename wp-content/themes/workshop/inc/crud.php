@@ -609,6 +609,9 @@ class WS_CRUD {
             // del mensajero, que puede no ser la de la tienda).
             'delivery_currency' => sanitize_text_field( $data['delivery_currency'] ?? ( $data['currency'] ?? ws_currency_symbol() ) ),
             'active'          => isset( $data['active'] ) ? (int) filter_var( $data['active'], FILTER_VALIDATE_BOOLEAN ) : 1,
+            // Habilitada en el POS: por defecto sí. La tienda pública y el
+            // inventario no dependen de este flag.
+            'pos_enabled'     => isset( $data['pos_enabled'] ) ? (int) filter_var( $data['pos_enabled'], FILTER_VALIDATE_BOOLEAN ) : 1,
         );
         global $wpdb;
         if ( $id ) {
@@ -787,11 +790,23 @@ class WS_CRUD {
     public static function set_worker_locations( $user_id, $location_ids ) {
         global $wpdb;
         $table = self::table( 'user_locations' );
-        $wpdb->delete( $table, array( 'user_id' => $user_id ) );
+        // Solo se pueden asignar ubicaciones habilitadas en el POS: el check de
+        // Ubicaciones decide qué PVs puede usar un empleado para vender.
+        $pos_ok = array();
         foreach ( array_unique( array_map( 'intval', (array) $location_ids ) ) as $lid ) {
-            if ( $lid ) {
-                $wpdb->insert( $table, array( 'user_id' => $user_id, 'location_id' => $lid ) );
+            if ( ! $lid ) {
+                continue;
             }
+            $enabled = (int) $wpdb->get_var( $wpdb->prepare(
+                'SELECT pos_enabled FROM ' . self::table( 'locations' ) . ' WHERE id=%d', $lid
+            ) );
+            if ( $enabled ) {
+                $pos_ok[] = $lid;
+            }
+        }
+        $wpdb->delete( $table, array( 'user_id' => $user_id ) );
+        foreach ( $pos_ok as $lid ) {
+            $wpdb->insert( $table, array( 'user_id' => $user_id, 'location_id' => $lid ) );
         }
     }
 

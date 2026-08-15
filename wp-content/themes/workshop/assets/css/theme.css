@@ -553,6 +553,7 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-badge { display: inline-block; padding: 4px 11px; border-radius: 999px; font-size: .76em; font-weight: 700; background: #f3f4f6; color: #475569; }
 .ws-badge-pv { background: #eef2ff; color: var(--ws-primary-dark); }
 .ws-badge-wh { background: #e0e7ff; color: #3730a3; }
+.ws-badge-off { background: #f3f4f6; color: #9ca3af; }
 .ws-loc-desc { display: block; margin-top: 3px; font-size: .72em; line-height: 1.35; color: #64748b; max-width: 220px; }
 .ws-badge-pending { background: #fef3c7; color: #92400e; }
 .ws-badge-accepted { background: #d1fae5; color: #065f46; }

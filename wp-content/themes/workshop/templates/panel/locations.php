@@ -43,6 +43,7 @@ $rates      = ws_exchange_rates();
                     <th class="ws-th-sort" @click="sort('currency')"><?php esc_html_e( 'Moneda', 'workshop' ); ?> <i class="fa-solid" :class="sortIcon('currency')"></i></th>
                     <th class="ws-th-sort" @click="sort('delivery_cost')"><?php esc_html_e( 'Domicilio', 'workshop' ); ?> <i class="fa-solid" :class="sortIcon('delivery_cost')"></i></th>
                     <th><?php esc_html_e( 'Tienda', 'workshop' ); ?></th>
+                    <th><?php esc_html_e( 'POS', 'workshop' ); ?></th>
                     <th class="ws-th-sort" @click="sort('slug')"><?php esc_html_e( 'URL', 'workshop' ); ?> <i class="fa-solid" :class="sortIcon('slug')"></i></th>
                     <th></th>
                 </tr>
@@ -65,6 +66,9 @@ $rates      = ws_exchange_rates();
                             <a class="ws-link" :href="storeUrl(l.slug)" target="_blank" rel="noopener" :title="l.type === 'pv' ? '<?php echo esc_js( __( 'Ver tienda pública (PV)', 'workshop' ) ); ?>' : '<?php echo esc_js( __( 'Ver tienda pública (almacén)', 'workshop' ) ); ?>'"><i class="fa-solid fa-arrow-up-right-from-square"></i></a>
                         </td>
                         <td>
+                            <span class="ws-badge" :class="l.pos_enabled ? 'ws-badge-pv' : 'ws-badge-off'" x-text="l.pos_enabled ? '<?php esc_attr_e( 'Sí', 'workshop' ); ?>' : '<?php esc_attr_e( 'No', 'workshop' ); ?>'"></span>
+                        </td>
+                        <td>
                             <code class="ws-slug-text" x-text="'/' + (l.slug || '')"></code>
                         </td>
                         <td class="ws-actions">
@@ -77,7 +81,7 @@ $rates      = ws_exchange_rates();
                         </td>
                     </tr>
                 </template>
-                <tr x-show="total === 0"><td colspan="9"><p class="ws-empty"><?php esc_html_e( 'Sin resultados.', 'workshop' ); ?></p></td></tr>
+                <tr x-show="total === 0"><td colspan="10"><p class="ws-empty"><?php esc_html_e( 'Sin resultados.', 'workshop' ); ?></p></td></tr>
             </tbody>
         </table>
         <div class="ws-pagination" x-show="total > pageSize">
@@ -256,6 +260,11 @@ $rates      = ws_exchange_rates();
                     <label class="ws-field">
                         <span><?php esc_html_e( 'Activa', 'workshop' ); ?></span>
                         <label class="ws-check"><input type="checkbox" x-model="form.active"><span><?php esc_html_e( 'Visible', 'workshop' ); ?></span></label>
+                    </label>
+                    <label class="ws-field">
+                        <span><?php esc_html_e( 'Punto de venta (POS)', 'workshop' ); ?></span>
+                        <label class="ws-check"><input type="checkbox" x-model="form.pos_enabled"><span><?php esc_html_e( 'Mostrar esta ubicación en el POS', 'workshop' ); ?></span></label>
+                        <small class="ws-muted" style="display:block;margin-top:4px;font-size:.76em"><?php esc_html_e( 'Si lo desmarcas, la ubicación no aparece en el punto de venta ni se puede asignar a empleados para vender. La tienda pública y el inventario no se ven afectados.', 'workshop' ); ?></small>
                     </label>
                 </div>
                 <div class="ws-modal-foot">

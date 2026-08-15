@@ -1624,7 +1624,7 @@
                         store_settings: Object.assign({ currency: '', rate: '', price_source: 'location' }, l.store_settings || {})
                     });
                 } else {
-                    this.form = { type: 'pv', name: '', slug: '', address: '', description: '', photo: '', currency: this.currency, whatsapp: '', delivery_cost: 0, delivery_currency: this.currency, active: true, payment_methods: [], store_settings: { currency: '', rate: '', price_source: 'location' } };
+                    this.form = { type: 'pv', name: '', slug: '', address: '', description: '', photo: '', currency: this.currency, whatsapp: '', delivery_cost: 0, delivery_currency: this.currency, active: true, pos_enabled: true, payment_methods: [], store_settings: { currency: '', rate: '', price_source: 'location' } };
                 }
                 if (!this.form.currency) this.form.currency = this.currency;
                 if (!this.form.delivery_currency) this.form.delivery_currency = this.form.currency || this.currency;
