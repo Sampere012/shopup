@@ -1986,6 +1986,23 @@
                     .then(r => r.json())
                     .then(res => { if (res.success) { toast('success', 'Transferencia realizada'); this.transferOpen = false; this.load(); } else { toast('error', 'Error', res.data && res.data.msg); } });
             },
+            /* ---------- Limpiar por completo (borra el registro de stock, no queda en 0) ---------- */
+            cleanStock(kind, item) {
+                if (!this.canWriteoff) return;
+                const id = kind === 'combo' ? item.combo_id : item.product_id;
+                const locationId = item.location_id || 0;
+                if (!id || !locationId) { toast('error', 'Selecciona una ubicación para limpiar'); return; }
+                const name = item.name || ('#' + id);
+                if (!confirm('¿Eliminar por completo el registro de stock de "' + name + '" en ' + (item.location_name || 'esta ubicación') + '?\n\nNo queda en 0: se borra la fila del inventario. Esta acción no se puede deshacer desde aquí.')) return;
+                $('ws_stock_clean', { kind: kind, id: id, location_id: locationId }).then(res => {
+                    if (res.success) {
+                        toast('success', 'Registro de stock eliminado por completo');
+                        this.load();
+                    } else {
+                        toast('error', 'Error', res.data && res.data.msg);
+                    }
+                });
+            },
             /* ---------- Cuadre de inventario (físico vs virtual, sin caja) ---------- */
             get countFiltered() {
                 const s = this.countSearch.toLowerCase().trim();
@@ -2068,9 +2085,10 @@
         /* Movimientos (solo historial: la creación se hace desde Stock) */
         Alpine.data('wsMovements', (opts) => ({
             ...tableState('movements'),
-            init() { this.restoreTableState(); this.load(); },
+            init() { this.restoreTableState(); this.load(); if (this.canManageStock) this.loadUndo(); },
             locations: opts.locations || [],
             currency: opts.currency || '€',
+            canManageStock: !!opts.canManageStock,
             movements: [],
             search: '',
             // Pestañas: productos | combos (los movimientos de combos se
@@ -2080,14 +2098,56 @@
             locationFilter: '',
             dateFrom: '',
             dateTo: '',
+            // Pila de deshacer/rehacer (últimos cambios del negocio).
+            undoList: [],
+            undoLoading: false,
             setScope(s) { this.scope = s; this.page = 1; this.load(); },
+            get canUndo() { return !!this.undoList.length && !this.undoList[0].undone; },
+            get canRedo() { return !!this.undoList.length && !!this.undoList[0].undone; },
             load() {
                 fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ action: 'ws_movements_list', ws_nonce: WS.nonce, type: this.typeFilter, location_id: this.locationFilter, scope: this.scope, date_from: this.dateFrom, date_to: this.dateTo, search: this.search, sort: this.sortKey, dir: this.sortDir, page: this.page, pageSize: this.pageSize }) })
                     .then(r => r.json()).then(r => { if (r.success) { this.movements = r.data.movements; this.total = r.data.total; this.page = r.data.page; } });
             },
             typeLabel(t) {
-                const m = { entrada: 'Entrada', salida: 'Salida', baja: 'Baja', transferencia: 'Transferencia', pedido: 'Pedido', venta: 'Venta' };
+                const m = { entrada: 'Entrada', salida: 'Salida', baja: 'Baja', transferencia: 'Transferencia', pedido: 'Pedido', venta: 'Venta', revert: 'Reversión' };
                 return m[t] || t;
+            },
+            loadUndo() {
+                this.undoLoading = true;
+                $('ws_undo_list', {}).then(r => {
+                    this.undoLoading = false;
+                    if (r.success) this.undoList = r.data.undo || [];
+                });
+            },
+            undo() {
+                if (!this.canUndo) return;
+                const label = this.undoList[0] ? this.undoList[0].label : '';
+                if (!confirm('¿Deshacer el último cambio?\n\n' + label + '\n\nEl stock volverá al estado anterior a esta operación.')) return;
+                $('ws_undo', {}).then(res => {
+                    if (res.success) { toast('success', 'Cambio deshecho: ' + res.data.label); this.load(); this.loadUndo(); }
+                    else { toast('error', 'Error', res.data && res.data.msg); this.loadUndo(); }
+                });
+            },
+            redo() {
+                if (!this.canRedo) return;
+                const label = this.undoList[0] ? this.undoList[0].label : '';
+                if (!confirm('¿Rehacer el cambio deshecho?\n\n' + label)) return;
+                $('ws_redo', {}).then(res => {
+                    if (res.success) { toast('success', 'Cambio rehecho: ' + res.data.label); this.load(); this.loadUndo(); }
+                    else { toast('error', 'Error', res.data && res.data.msg); this.loadUndo(); }
+                });
+            },
+            // Revierte un movimiento concreto del historial: aplica la
+            // operación inversa (la entrada se descuenta, la salida/baja/venta
+            // se repone, la transferencia se devuelve) y lo marca revertido.
+            revertMovement(m) {
+                if (!m.revertable) return;
+                const who = m.product_name || m.combo_name || ('#' + m.id);
+                if (!confirm('¿Revertir este movimiento?\n\n' + this.typeLabel(m.type) + ' · ' + who + ' × ' + m.qty + '\n\nSe aplicará la operación inversa al stock y quedará marcado como revertido en el historial.')) return;
+                $('ws_movement_revert', { id: m.id }).then(res => {
+                    if (res.success) { toast('success', 'Movimiento revertido'); this.load(); this.loadUndo(); }
+                    else { toast('error', 'Error', res.data && res.data.msg); }
+                });
             }
         }));
 

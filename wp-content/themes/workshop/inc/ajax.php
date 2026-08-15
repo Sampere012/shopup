@@ -606,6 +606,18 @@ function ws_ajax_location_links_save() {
 
 /* ---------------- Stock ---------------- */
 
+/**
+ * Etiqueta para la pila de deshacer de un movimiento de producto: busca el
+ * nombre y arma "Entrada de Coca-Cola × 5" legible para el usuario.
+ */
+function ws_undo_movement_label( $type, $product_id, $qty ) {
+    global $wpdb;
+    $name = $wpdb->get_var( $wpdb->prepare(
+        'SELECT name FROM ' . ws_table_name( 'products' ) . ' WHERE id=%d', (int) $product_id
+    ) );
+    return sprintf( '%s de %s × %s', ucfirst( $type ), $name ? $name : '#' . (int) $product_id, number_format_i18n( (float) $qty, 2 ) );
+}
+
 add_action( 'wp_ajax_ws_stock_move', 'ws_ajax_stock_move' );
 function ws_ajax_stock_move() {
     $type = sanitize_key( $_POST['type'] ?? '' );
@@ -625,6 +637,7 @@ function ws_ajax_stock_move() {
     $qty         = (float) ( $_POST['qty'] ?? 0 );
     $ref         = sanitize_text_field( $_POST['reference'] ?? '' );
     $note        = sanitize_text_field( $_POST['note'] ?? '' );
+    $before      = WS_Stock::undo_snapshot();
 
     // Combo: se mueven sus COMPONENTES (cada producto × cantidad), igual que
     // en el asistente. El movimiento queda registrado por componente.
@@ -639,6 +652,8 @@ function ws_ajax_stock_move() {
             wp_send_json_error( array( 'msg' => $result->get_error_message() ) );
         }
         $wpdb->query( 'COMMIT' );
+        $cname = $wpdb->get_var( $wpdb->prepare( 'SELECT name FROM ' . ws_table_name( 'combos' ) . ' WHERE id=%d', $combo_id ) );
+        WS_Stock::undo_push( $location_id, sprintf( '%s de combo %s × %s', ucfirst( $type ), $cname ? $cname : '#' . $combo_id, number_format_i18n( $qty, 2 ) ), $before, WS_Stock::undo_snapshot() );
         ws_log_audit( 'stock_' . $type, 'combo', $combo_id, array( 'location' => $location_id, 'qty' => $qty ) );
         wp_send_json_success( array( 'qty' => WS_Combos::stock( $combo_id, $location_id ) ) );
     }
@@ -651,6 +666,7 @@ function ws_ajax_stock_move() {
     if ( is_wp_error( $result ) ) {
         wp_send_json_error( array( 'msg' => $result->get_error_message() ) );
     }
+    WS_Stock::undo_push( $location_id, ws_undo_movement_label( $type, $product_id, $qty ), $before, WS_Stock::undo_snapshot() );
     ws_log_audit( 'stock_' . $type, 'movement', $product_id, array( 'location' => $location_id, 'qty' => $qty ) );
     wp_send_json_success( array( 'qty' => WS_Stock::qty( $product_id, $location_id ) ) );
 }
@@ -664,6 +680,7 @@ function ws_ajax_stock_transfer() {
     $to         = (int) ( $_POST['to_location'] ?? 0 );
     $qty        = (float) ( $_POST['qty'] ?? 0 );
     $note       = sanitize_text_field( $_POST['note'] ?? '' );
+    $before     = WS_Stock::undo_snapshot();
     // Combo: transfiere cada componente (qty × N) de forma atómica.
     $result = ( $combo_id > 0 )
         ? WS_Combos::transfer( $combo_id, $from, $to, $qty, '', $note )
@@ -671,8 +688,251 @@ function ws_ajax_stock_transfer() {
     if ( is_wp_error( $result ) ) {
         wp_send_json_error( array( 'msg' => $result->get_error_message() ) );
     }
+    global $wpdb;
+    if ( $combo_id > 0 ) {
+        $cname = $wpdb->get_var( $wpdb->prepare( 'SELECT name FROM ' . ws_table_name( 'combos' ) . ' WHERE id=%d', $combo_id ) );
+        $label = 'Transferencia de combo ' . ( $cname ? $cname : '#' . $combo_id ) . ' × ' . number_format_i18n( $qty, 2 );
+    } else {
+        $label = 'Transferencia de ' . ws_undo_movement_label( 'transferencia', $product_id, $qty );
+    }
+    WS_Stock::undo_push( $from, $label, $before, WS_Stock::undo_snapshot() );
     ws_log_audit( 'stock_transfer', $combo_id > 0 ? 'combo' : 'movement', $combo_id > 0 ? $combo_id : $product_id, array( 'from' => $from, 'to' => $to, 'qty' => $qty ) );
     wp_send_json_success();
+}
+
+add_action( 'wp_ajax_ws_stock_clean', 'ws_ajax_stock_clean' );
+function ws_ajax_stock_clean() {
+    ws_guard( 'stock_writeoff' );
+    $kind        = sanitize_key( $_POST['kind'] ?? '' );
+    $id          = (int) ( $_POST['id'] ?? 0 );
+    $location_id = (int) ( $_POST['location_id'] ?? 0 );
+    if ( ! in_array( $kind, array( 'product', 'combo' ), true ) || ! $id || ! $location_id ) {
+        wp_send_json_error( array( 'msg' => __( 'Datos inválidos.', 'workshop' ) ) );
+    }
+    $allowed = array_map( fn( $l ) => (int) $l->id, ws_user_locations() );
+    if ( ! in_array( $location_id, $allowed, true ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Ubicación no permitida.', 'workshop' ) ) );
+    }
+    global $wpdb;
+    $stock_t = ws_table_name( 'stock' );
+    $before  = WS_Stock::undo_snapshot();
+    $deleted = 0;
+    if ( 'combo' === $kind ) {
+        // El stock de un combo se DERIVA de sus productos: limpiarlo elimina
+        // el registro de stock de TODOS sus componentes en esa ubicación.
+        foreach ( WS_Combos::items( $id ) as $it ) {
+            $res = $wpdb->delete( $stock_t, array(
+                'product_id' => (int) $it->product_id,
+                'location_id' => $location_id,
+            ) );
+            $deleted += (int) $res;
+        }
+    } else {
+        $deleted = (int) $wpdb->delete( $stock_t, array(
+            'product_id' => $id,
+            'location_id' => $location_id,
+        ) );
+    }
+    if ( 'combo' === $kind ) {
+        $name = $wpdb->get_var( $wpdb->prepare( 'SELECT name FROM ' . ws_table_name( 'combos' ) . ' WHERE id=%d', $id ) );
+        $label = 'Limpieza de combo ' . ( $name ? $name : '#' . $id );
+    } else {
+        $name = $wpdb->get_var( $wpdb->prepare( 'SELECT name FROM ' . ws_table_name( 'products' ) . ' WHERE id=%d', $id ) );
+        $label = 'Limpieza de ' . ( $name ? $name : '#' . $id );
+    }
+    WS_Stock::undo_push( $location_id, $label, $before, WS_Stock::undo_snapshot() );
+    ws_log_audit( 'stock_clean', $kind, $id, array( 'location_id' => $location_id, 'deleted' => $deleted ) );
+    wp_send_json_success( array( 'deleted' => $deleted ) );
+}
+
+/**
+ * Revierte un movimiento del historial: aplica la operación INVERSA (una
+ * entrada se descuenta, una salida/baja/venta se repone, una transferencia se
+ * devuelve al origen) y lo marca como revertido. Los movimientos de combos se
+ * registran por componente, así que se revierten TODOS los componentes de esa
+ * operación (mismo combo, tipo, ubicación, referencia y nota, sin revertir).
+ * El movimiento queda marcado (reverted_at) y se registra un nuevo movimiento
+ * tipo 'revert' enlazado (revert_of) para dejar trazabilidad.
+ */
+add_action( 'wp_ajax_ws_movement_revert', 'ws_ajax_movement_revert' );
+function ws_ajax_movement_revert() {
+    ws_guard( 'stock_writeoff' );
+    $id = (int) ( $_POST['id'] ?? 0 );
+    if ( ! $id ) {
+        wp_send_json_error( array( 'msg' => __( 'Movimiento inválido.', 'workshop' ) ) );
+    }
+    global $wpdb;
+    $mv_t    = ws_table_name( 'movements' );
+    $movement = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$mv_t} WHERE id=%d", $id ) );
+    if ( ! $movement ) {
+        wp_send_json_error( array( 'msg' => __( 'Movimiento no encontrado.', 'workshop' ) ) );
+    }
+    $loc_ids = ws_user_location_ids();
+    $owns    = in_array( (int) $movement->location_id, $loc_ids, true )
+        || ( (int) $movement->dest_location_id && in_array( (int) $movement->dest_location_id, $loc_ids, true ) );
+    if ( ! $owns ) {
+        wp_send_json_error( array( 'msg' => __( 'No tienes acceso a este movimiento.', 'workshop' ) ) );
+    }
+    if ( $movement->reverted_at ) {
+        wp_send_json_error( array( 'msg' => __( 'Este movimiento ya fue revertido.', 'workshop' ) ) );
+    }
+    $type = (string) $movement->type;
+    if ( 'revert' === $type || ! in_array( $type, array( 'entrada', 'salida', 'baja', 'venta', 'pedido', 'transferencia' ), true ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Este tipo de movimiento no se puede revertir.', 'workshop' ) ) );
+    }
+
+    // Grupo de la operación: un movimiento de combo genera UNA fila por
+    // componente; se revierten todas juntas (mismo combo, tipo, ubicación,
+    // referencia y nota, y creadas en la misma operación). Para productos,
+    // solo la fila.
+    $group = array();
+    if ( (int) $movement->combo_id > 0 ) {
+        $group = $wpdb->get_results( $wpdb->prepare(
+            "SELECT * FROM {$mv_t}
+             WHERE combo_id=%d AND type=%s AND location_id=%d AND reference=%s AND note=%s
+               AND reverted_at IS NULL",
+            (int) $movement->combo_id, $type, (int) $movement->location_id,
+            $movement->reference, $movement->note
+        ) );
+    }
+    if ( empty( $group ) ) {
+        $group = array( $movement );
+    }
+
+    $before  = WS_Stock::undo_snapshot();
+    $note    = sprintf( __( 'Revertido de #%d', 'workshop' ), $id );
+    $ref     = (string) $movement->reference;
+    $user_id = get_current_user_id();
+
+    $wpdb->query( 'START TRANSACTION' );
+    foreach ( $group as $mv ) {
+        $pid = (int) $mv->product_id;
+        $loc = (int) $mv->location_id;
+        $qty = (float) $mv->qty;
+        if ( 'transferencia' === $type ) {
+            // Se devuelve del destino al origen (como el movimiento inverso).
+            $result = WS_Stock::transfer_in_tx( $pid, (int) $mv->dest_location_id, $loc, $qty, $ref, $note, $user_id, (int) $mv->combo_id, (int) $mv->id );
+        } elseif ( 'entrada' === $type ) {
+            // La entrada se descuenta (reposición inversa).
+            $result = WS_Stock::decrease_in_tx( $pid, $loc, $qty, 'revert', $ref, $note, $user_id, (int) $mv->combo_id, (int) $mv->id );
+        } else {
+            // Salida / baja / venta / pedido: se repone el stock.
+            $result = WS_Stock::increase_in_tx( $pid, $loc, $qty, 'revert', $ref, $note, $user_id, (int) $mv->combo_id, (int) $mv->id );
+        }
+        if ( is_wp_error( $result ) ) {
+            $wpdb->query( 'ROLLBACK' );
+            wp_send_json_error( array( 'msg' => $result->get_error_message() ) );
+        }
+        $wpdb->update( $mv_t, array(
+            'reverted_at' => current_time( 'mysql' ),
+            'reverted_by' => $user_id,
+        ), array( 'id' => (int) $mv->id ) );
+    }
+    $wpdb->query( 'COMMIT' );
+
+    WS_Stock::undo_push( (int) $movement->location_id, 'Reversión de #' . $id . ' (' . $type . ')', $before, WS_Stock::undo_snapshot() );
+    ws_log_audit( 'stock_revert', 'movement', $id, array( 'type' => $type, 'rows' => count( $group ) ) );
+    wp_send_json_success( array( 'reverted' => count( $group ) ) );
+}
+
+/**
+ * Pila de deshacer/rehacer: lista las operaciones recientes del negocio
+ * (en las ubicaciones del usuario) para el panel de Movimientos.
+ */
+add_action( 'wp_ajax_ws_undo_list', 'ws_ajax_undo_list' );
+function ws_ajax_undo_list() {
+    ws_guard( 'stock_writeoff' );
+    global $wpdb;
+    $loc_ids = ws_user_location_ids();
+    if ( empty( $loc_ids ) ) {
+        wp_send_json_success( array( 'undo' => array() ) );
+    }
+    $ph      = implode( ',', array_fill( 0, count( $loc_ids ), '%d' ) );
+    $rows    = $wpdb->get_results( $wpdb->prepare(
+        "SELECT u.id, u.location_id, u.label, u.undone, u.user_id, u.created_at, l.name AS location_name
+         FROM " . ws_table_name( 'undo_stack' ) . " u
+         LEFT JOIN " . ws_table_name( 'locations' ) . " l ON l.id = u.location_id
+         WHERE u.location_id IN ({$ph})
+         ORDER BY u.id DESC LIMIT 20",
+        ...$loc_ids
+    ) );
+    $out = array();
+    foreach ( $rows as $r ) {
+        $out[] = array(
+            'id'            => (int) $r->id,
+            'location_id'   => (int) $r->location_id,
+            'location_name' => $r->location_name ?? '',
+            'label'         => $r->label,
+            'undone'        => (int) $r->undone,
+            'user_name'     => get_the_author_meta( 'display_name', (int) $r->user_id ) ?: '—',
+            'date'          => mysql2date( 'd/m/Y H:i', $r->created_at ),
+        );
+    }
+    wp_send_json_success( array( 'undo' => $out ) );
+}
+
+/**
+ * Deshacer: restaura el stock al estado ANTERIOR a la última operación
+ * (y la marca como deshecha). Solo opera sobre la última no deshecha.
+ */
+add_action( 'wp_ajax_ws_undo', 'ws_ajax_undo' );
+function ws_ajax_undo() {
+    ws_guard( 'stock_writeoff' );
+    $loc_ids = ws_user_location_ids();
+    if ( empty( $loc_ids ) ) {
+        wp_send_json_error( array( 'msg' => __( 'No hay cambios para deshacer.', 'workshop' ) ) );
+    }
+    $ph      = implode( ',', array_fill( 0, count( $loc_ids ), '%d' ) );
+    global $wpdb;
+    $row = $wpdb->get_row( $wpdb->prepare(
+        "SELECT * FROM " . ws_table_name( 'undo_stack' ) . "
+         WHERE location_id IN ({$ph}) AND undone = 0
+         ORDER BY id DESC LIMIT 1",
+        ...$loc_ids
+    ) );
+    if ( ! $row ) {
+        wp_send_json_error( array( 'msg' => __( 'No hay cambios para deshacer.', 'workshop' ) ) );
+    }
+    $before = json_decode( $row->before_data, true );
+    if ( ! is_array( $before ) ) {
+        wp_send_json_error( array( 'msg' => __( 'No se pudo restaurar el estado anterior.', 'workshop' ) ) );
+    }
+    WS_Stock::undo_apply( $before );
+    $wpdb->update( ws_table_name( 'undo_stack' ), array( 'undone' => 1 ), array( 'id' => (int) $row->id ) );
+    ws_log_audit( 'stock_undo', 'movement', 0, array( 'undo_id' => (int) $row->id, 'label' => $row->label ) );
+    wp_send_json_success( array( 'label' => $row->label, 'id' => (int) $row->id ) );
+}
+
+/**
+ * Rehacer: restaura el stock al estado POSTERIOR a la última operación
+ * deshecha (solo si hay un cambio deshecho pendiente de rehacer).
+ */
+add_action( 'wp_ajax_ws_redo', 'ws_ajax_redo' );
+function ws_ajax_redo() {
+    ws_guard( 'stock_writeoff' );
+    $loc_ids = ws_user_location_ids();
+    if ( empty( $loc_ids ) ) {
+        wp_send_json_error( array( 'msg' => __( 'No hay cambios para rehacer.', 'workshop' ) ) );
+    }
+    $ph      = implode( ',', array_fill( 0, count( $loc_ids ), '%d' ) );
+    global $wpdb;
+    $row = $wpdb->get_row( $wpdb->prepare(
+        "SELECT * FROM " . ws_table_name( 'undo_stack' ) . "
+         WHERE location_id IN ({$ph}) AND undone = 1
+         ORDER BY id DESC LIMIT 1",
+        ...$loc_ids
+    ) );
+    if ( ! $row ) {
+        wp_send_json_error( array( 'msg' => __( 'No hay cambios para rehacer.', 'workshop' ) ) );
+    }
+    $after = json_decode( $row->after_data, true );
+    if ( ! is_array( $after ) ) {
+        wp_send_json_error( array( 'msg' => __( 'No se pudo rehacer el cambio.', 'workshop' ) ) );
+    }
+    WS_Stock::undo_apply( $after );
+    $wpdb->update( ws_table_name( 'undo_stack' ), array( 'undone' => 0 ), array( 'id' => (int) $row->id ) );
+    ws_log_audit( 'stock_redo', 'movement', 0, array( 'undo_id' => (int) $row->id, 'label' => $row->label ) );
+    wp_send_json_success( array( 'label' => $row->label, 'id' => (int) $row->id ) );
 }
 
 add_action( 'wp_ajax_ws_store_toggle', 'ws_ajax_store_toggle' );
@@ -743,11 +1003,13 @@ function ws_ajax_stock_batch_move() {
     $items       = isset( $_POST['items'] ) ? (array) json_decode( wp_unslash( $_POST['items'] ), true ) : array();
     $ref         = sanitize_text_field( $_POST['reference'] ?? '' );
     $note        = sanitize_text_field( $_POST['note'] ?? '' );
+    $before      = WS_Stock::undo_snapshot();
 
     $result = WS_Stock::batch_move( $type, $location_id, $items, $ref, $note, 0, $direction );
     if ( is_wp_error( $result ) ) {
         wp_send_json_error( array( 'msg' => $result->get_error_message() ) );
     }
+    WS_Stock::undo_push( $location_id, ucfirst( $type ) . ' múltiple (' . (int) $result . ' ítems)', $before, WS_Stock::undo_snapshot() );
     ws_log_audit( 'stock_' . $type, 'movement', 0, array( 'location' => $location_id, 'direction' => $direction, 'items' => $result ) );
     wp_send_json_success( array( 'count' => $result ) );
 }
@@ -783,6 +1045,7 @@ function ws_ajax_stock_batch_venta() {
     $currency   = '€';
     $total      = 0.0;
 
+    $before_stock = WS_Stock::undo_snapshot();
     $wpdb->query( 'START TRANSACTION' );
     foreach ( $items as $it ) {
         $pid = (int) ( $it['product_id'] ?? 0 );
@@ -884,6 +1147,7 @@ function ws_ajax_stock_batch_venta() {
     }
     $wpdb->query( 'COMMIT' );
 
+    WS_Stock::undo_push( $location_id, 'Venta múltiple (' . count( $sale_items ) . ' ítems)', $before_stock, WS_Stock::undo_snapshot() );
     ws_log_audit( 'stock_venta', 'movement', 0, array( 'location' => $location_id, 'items' => count( $sale_items ), 'sale_id' => $sale_id ) );
     wp_send_json_success( array( 'sale_id' => $sale_id, 'count' => count( $sale_items ) ) );
 }
@@ -895,11 +1159,13 @@ function ws_ajax_stock_batch_transfer() {
     $to   = (int) ( $_POST['to_location'] ?? 0 );
     $items = isset( $_POST['items'] ) ? (array) json_decode( wp_unslash( $_POST['items'] ), true ) : array();
     $note  = sanitize_text_field( $_POST['note'] ?? '' );
+    $before = WS_Stock::undo_snapshot();
 
     $result = WS_Stock::batch_transfer( $from, $to, $items, '', $note );
     if ( is_wp_error( $result ) ) {
         wp_send_json_error( array( 'msg' => $result->get_error_message() ) );
     }
+    WS_Stock::undo_push( $from, 'Transferencia múltiple (' . (int) $result . ' ítems)', $before, WS_Stock::undo_snapshot() );
     ws_log_audit( 'stock_transfer', 'movement', 0, array( 'from' => $from, 'to' => $to, 'items' => $result ) );
     wp_send_json_success( array( 'count' => $result ) );
 }
@@ -936,12 +1202,14 @@ function ws_ajax_movement_add() {
         wp_send_json_error( array( 'msg' => __( 'Datos incompletos.', 'workshop' ) ) );
     }
 
+    $before = WS_Stock::undo_snapshot();
     $result = ( 'entrada' === $direction )
         ? WS_Stock::increase( $product_id, $location_id, $qty, $type, $ref, $note )
         : WS_Stock::decrease( $product_id, $location_id, $qty, $type, $ref, $note );
     if ( is_wp_error( $result ) ) {
         wp_send_json_error( array( 'msg' => $result->get_error_message() ) );
     }
+    WS_Stock::undo_push( $location_id, ws_undo_movement_label( $type, $product_id, $qty ), $before, WS_Stock::undo_snapshot() );
     ws_log_audit( 'movement_' . $type, 'movement', $product_id, array( 'location' => $location_id, 'qty' => $qty, 'direction' => $direction ) );
     wp_send_json_success( array( 'qty' => WS_Stock::qty( $product_id, $location_id ) ) );
 }
@@ -987,6 +1255,7 @@ function ws_ajax_movement_venta() {
         $price = (float) $p->sale_price;
     }
 
+    $before_stock = WS_Stock::undo_snapshot();
     $wpdb->query( 'START TRANSACTION' );
     $stock_res = WS_Stock::decrease_in_tx(
         $product_id, $location_id, $qty, 'venta',
@@ -1030,6 +1299,7 @@ function ws_ajax_movement_venta() {
     }
     $wpdb->query( 'COMMIT' );
 
+    WS_Stock::undo_push( $location_id, 'Venta de ' . ( $p->name ? $p->name : '#' . $product_id ) . ' × ' . number_format_i18n( $qty, 2 ), $before_stock, WS_Stock::undo_snapshot() );
     ws_log_audit( 'stock_venta', 'movement', $product_id, array( 'location' => $location_id, 'qty' => $qty, 'sale_id' => $sale_id ) );
     wp_send_json_success( array( 'qty' => WS_Stock::qty( $product_id, $location_id ), 'sale_id' => $sale_id ) );
 }
@@ -1337,6 +1607,7 @@ function ws_ajax_movements_list() {
         ), $args ) );
         $out = array();
         foreach ( $rows as $m ) {
+            $reverted = (bool) $m->reverted_at;
             $out[] = array(
                 'id'              => (int) $m->id,
                 'type'            => $m->type,
@@ -1351,6 +1622,13 @@ function ws_ajax_movements_list() {
                 'note'            => (string) ( $m->note ?? '' ),
                 'user_name'       => $m->user_name,
                 'date'            => mysql2date( 'd/m/Y H:i', $m->created_at ),
+                // Revertir: los movimientos de tipo conocido y no revertidos
+                // (los 'revert' y los ya revertidos no se pueden volver a
+                // revertir; los tipos personalizados no guardan dirección).
+                'reverted'        => $reverted,
+                'revertable'      => ! $reverted
+                    && in_array( $m->type, array( 'entrada', 'salida', 'baja', 'venta', 'pedido', 'transferencia' ), true ),
+                'revert_of'       => (int) $m->revert_of,
             );
         }
         return $out;

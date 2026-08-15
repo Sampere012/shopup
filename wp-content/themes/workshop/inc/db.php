@@ -171,11 +171,29 @@ function ws_db_tables() {
             reference VARCHAR(120) NOT NULL DEFAULT '',
             note VARCHAR(255) NOT NULL DEFAULT '',
             user_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
+            reverted_at DATETIME NULL,
+            reverted_by BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
+            revert_of BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             KEY product_id (product_id),
             KEY location_id (location_id),
-            KEY type (type)
+            KEY type (type),
+            KEY revert_of (revert_of)
+        ) {charset};",
+
+        'undo_stack' => "CREATE TABLE {prefix}ws_undo_stack (
+            id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            location_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
+            label VARCHAR(255) NOT NULL DEFAULT '',
+            before_data LONGTEXT NULL,
+            after_data LONGTEXT NULL,
+            undone TINYINT(1) NOT NULL DEFAULT 0,
+            user_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY location_id (location_id),
+            KEY undone (undone)
         ) {charset};",
 
         'orders' => "CREATE TABLE {prefix}ws_orders (
@@ -699,6 +717,45 @@ function ws_db_migrate() {
         if ( ! in_array( 'combo_id', $mv_cols, true ) ) {
             $wpdb->query( "ALTER TABLE {$mv_t} ADD COLUMN combo_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0 AFTER product_id" );
         }
+        // Revertir movimientos: marcas de cuándo/quien lo revirtió y enlace
+        // al movimiento original del que es la reversión (revert_of).
+        if ( ! in_array( 'reverted_at', $mv_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$mv_t} ADD COLUMN reverted_at DATETIME NULL AFTER user_id" );
+        }
+        if ( ! in_array( 'reverted_by', $mv_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$mv_t} ADD COLUMN reverted_by BIGINT(20) UNSIGNED NOT NULL DEFAULT 0 AFTER reverted_at" );
+        }
+        if ( ! in_array( 'revert_of', $mv_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$mv_t} ADD COLUMN revert_of BIGINT(20) UNSIGNED NOT NULL DEFAULT 0 AFTER reverted_by" );
+            $wpdb->query( "ALTER TABLE {$mv_t} ADD KEY revert_of (revert_of)" );
+        }
+    }
+
+    // Pila de deshacer/rehacer de movimientos (una por negocio, igual que
+    // movements): guarda una foto del stock ANTES y DESPUÉS de cada operación
+    // para poder deshacerla (restaurar antes) y rehacerla (restaurar después).
+    $ws_undo_suffixes = array( '' );
+    if ( class_exists( 'WS_Business' ) && $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', WS_Business::table() ) ) === WS_Business::table() ) {
+        foreach ( WS_Business::all() as $ws_undo_biz ) {
+            $undo_slug = (string) ( $ws_undo_biz->slug ?? '' );
+            if ( '' !== $undo_slug ) {
+                $ws_undo_suffixes[] = ws_biz_table_suffix( $undo_slug );
+            }
+        }
+    }
+    require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+    foreach ( $ws_undo_suffixes as $ws_undo_suffix ) {
+        $ut = ws_table_for( $ws_undo_suffix, 'undo_stack' );
+        if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $ut ) ) === $ut ) {
+            continue;
+        }
+        $undo_prefix = '' !== $ws_undo_suffix
+            ? $wpdb->prefix . WS_TABLE_PREFIX . $ws_undo_suffix . '_'
+            : $wpdb->prefix;
+        $undo_sql = ws_db_tables()['undo_stack'];
+        $undo_sql = str_replace( '{prefix}', $undo_prefix, $undo_sql );
+        $undo_sql = str_replace( '{charset}', $wpdb->get_charset_collate(), $undo_sql );
+        dbDelta( $undo_sql );
     }
 
     // Columna de moderación en reseñas: estado (pending/approved/rejected).

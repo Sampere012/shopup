@@ -77,7 +77,7 @@ class WS_Stock {
      * Disminuye stock asumiendo que la transacción ya está abierta.
      * Devuelve true si pudo decrementar. El caller gestiona commit/rollback.
      */
-    public static function decrease_in_tx( $product_id, $location_id, $qty, $type, $ref = '', $note = '', $user_id = 0, $combo_id = 0 ) {
+    public static function decrease_in_tx( $product_id, $location_id, $qty, $type, $ref = '', $note = '', $user_id = 0, $combo_id = 0, $revert_of = 0 ) {
         $product_id  = (int) $product_id;
         $location_id = (int) $location_id;
         $qty         = (float) $qty;
@@ -91,7 +91,7 @@ class WS_Stock {
         if ( ! self::_apply_fraction_links( $product_id, $location_id, $qty, '-' ) ) {
             return new WP_Error( 'insufficient', __( 'Stock insuficiente para el movimiento (unidades relacionadas).', 'workshop' ) );
         }
-        self::_log( $type, $product_id, $location_id, 0, $qty, $ref, $note, $user_id, $combo_id );
+        self::_log( $type, $product_id, $location_id, 0, $qty, $ref, $note, $user_id, $combo_id, $revert_of );
         self::_propagate_linked( $product_id, $location_id, $qty, '-', $type, $ref, $note, $user_id, $combo_id );
         return true;
     }
@@ -103,7 +103,7 @@ class WS_Stock {
      * debe tumbar la venta: se anota la diferencia y se avisa al negocio.
      * Asume que la transacción ya está abierta.
      */
-    public static function decrease_partial_in_tx( $product_id, $location_id, $qty, $type = 'salida', $ref = '', $note = '', $user_id = 0, $combo_id = 0 ) {
+    public static function decrease_partial_in_tx( $product_id, $location_id, $qty, $type = 'salida', $ref = '', $note = '', $user_id = 0, $combo_id = 0, $revert_of = 0 ) {
         global $wpdb;
         $product_id  = (int) $product_id;
         $location_id = (int) $location_id;
@@ -127,15 +127,14 @@ class WS_Stock {
         // cantidad en NEGATIVO para que el llamador lo reporte como
         // discrepancia (el inventario quedó desbalanceado entre padre/hijo).
         $frac_ok = self::_apply_fraction_links( $product_id, $location_id, $deducted, '-' );
-        self::_log( $type, $product_id, $location_id, 0, $deducted, $ref, $note, $user_id, $combo_id );
+        self::_log( $type, $product_id, $location_id, 0, $deducted, $ref, $note, $user_id, $combo_id, $revert_of );
         self::_propagate_linked( $product_id, $location_id, $deducted, '-', $type, $ref, $note, $user_id, $combo_id );
         return $frac_ok ? $deducted : ( -1 * $deducted );
     }
 
     /**
      * Aumenta stock asumiendo que la transacción ya está abierta.
-     */
-    public static function increase_in_tx( $product_id, $location_id, $qty, $type, $ref = '', $note = '', $user_id = 0, $combo_id = 0 ) {
+     */    public static function increase_in_tx( $product_id, $location_id, $qty, $type, $ref = '', $note = '', $user_id = 0, $combo_id = 0, $revert_of = 0 ) {
         $product_id  = (int) $product_id;
         $location_id = (int) $location_id;
         $qty         = (float) $qty;
@@ -144,8 +143,9 @@ class WS_Stock {
         }
         self::_upsert_stock( $product_id, $location_id, $qty, '+', null );
         self::_apply_fraction_links( $product_id, $location_id, $qty, '+' );
-        self::_log( $type, $product_id, $location_id, 0, $qty, $ref, $note, $user_id, $combo_id );
+        self::_log( $type, $product_id, $location_id, 0, $qty, $ref, $note, $user_id, $combo_id, $revert_of );
         self::_propagate_linked( $product_id, $location_id, $qty, '+', $type, $ref, $note, $user_id, $combo_id );
+
         return true;
     }
 
@@ -187,7 +187,7 @@ class WS_Stock {
      * abierta (la usa la transferencia de COMBOS para mover los componentes
      * de forma atómica). Registra el movimiento tipo 'transferencia'.
      */
-    public static function transfer_in_tx( $product_id, $from_location, $to_location, $qty, $ref = '', $note = '', $user_id = 0, $combo_id = 0 ) {
+    public static function transfer_in_tx( $product_id, $from_location, $to_location, $qty, $ref = '', $note = '', $user_id = 0, $combo_id = 0, $revert_of = 0 ) {
         global $wpdb;
         $product_id    = (int) $product_id;
         $from_location = (int) $from_location;
@@ -208,7 +208,7 @@ class WS_Stock {
         }
         self::_upsert_stock( $product_id, $to_location, $qty, '+', null );
         self::_apply_fraction_links( $product_id, $to_location, $qty, '+' );
-        self::_log( 'transferencia', $product_id, $from_location, $to_location, $qty, $ref, $note, $user_id, $combo_id );
+        self::_log( 'transferencia', $product_id, $from_location, $to_location, $qty, $ref, $note, $user_id, $combo_id, $revert_of );
         return true;
     }
 
@@ -339,7 +339,7 @@ class WS_Stock {
         }
     }
 
-    protected static function _log( $type, $product_id, $location_id, $dest_location_id, $qty, $ref, $note, $user_id, $combo_id = 0 ) {
+    protected static function _log( $type, $product_id, $location_id, $dest_location_id, $qty, $ref, $note, $user_id, $combo_id = 0, $revert_of = 0 ) {
         global $wpdb;
         $wpdb->insert( self::table( 'movements' ), array(
             'type'             => $type,
@@ -351,7 +351,75 @@ class WS_Stock {
             'reference'        => sanitize_text_field( $ref ),
             'note'             => sanitize_text_field( $note ),
             'user_id'          => $user_id ? $user_id : get_current_user_id(),
+            'revert_of'        => (int) $revert_of,
         ) );
+    }
+
+    /* ---------------- Deshacer / rehacer movimientos ---------------- */
+
+    /**
+     * Foto del stock actual (todo el inventario del negocio actual): la usa
+     * la pila de deshacer para poder volver a un estado exacto. Devuelve
+     * filas [product_id, location_id, qty] ordenadas (JSON estable).
+     */
+    public static function undo_snapshot() {
+        global $wpdb;
+        $rows = $wpdb->get_results( 'SELECT product_id, location_id, qty FROM ' . self::table( 'stock' ) );
+        $out  = array();
+        foreach ( $rows as $r ) {
+            $out[] = array( (int) $r->product_id, (int) $r->location_id, (float) $r->qty );
+        }
+        usort( $out, static function ( $a, $b ) {
+            return ( $a[0] <=> $b[0] ) ?: ( $a[1] <=> $b[1] );
+        } );
+        return $out;
+    }
+
+    /**
+     * Empuja una operación a la pila de deshacer: guarda el antes y el
+     * después (si no hubo cambio real, no guarda nada). Una operación nueva
+     * invalida la cola de REHACER (las entradas deshechas se descartan).
+     */
+    public static function undo_push( $location_id, $label, $before, $after ) {
+        if ( $before === $after ) {
+            return 0;
+        }
+        global $wpdb;
+        $table = self::table( 'undo_stack' );
+        // Nueva operación => se descarta la historia de rehacer.
+        $wpdb->delete( $table, array( 'undone' => 1 ) );
+        $wpdb->insert( $table, array(
+            'location_id' => (int) $location_id,
+            'label'       => sanitize_text_field( $label ),
+            'before_data' => wp_json_encode( $before ),
+            'after_data'  => wp_json_encode( $after ),
+            'undone'      => 0,
+            'user_id'     => get_current_user_id(),
+        ) );
+        return (int) $wpdb->insert_id;
+    }
+
+    /**
+     * Restaura un snapshot: fija el qty EXACTO de cada fila (recrea las filas
+     * eliminadas, sobrescribe las que cambiaron). Las filas que no estaban en
+     * la foto no se tocan.
+     */
+    public static function undo_apply( $data ) {
+        global $wpdb;
+        $table = self::table( 'stock' );
+        foreach ( (array) $data as $row ) {
+            $pid = (int) ( $row[0] ?? 0 );
+            $lid = (int) ( $row[1] ?? 0 );
+            $qty = number_format( (float) ( $row[2] ?? 0 ), 2, '.', '' );
+            if ( ! $pid || ! $lid ) {
+                continue;
+            }
+            $wpdb->query( $wpdb->prepare(
+                "INSERT INTO {$table} (product_id, location_id, qty) VALUES (%d, %d, %s)
+                 ON DUPLICATE KEY UPDATE qty = VALUES(qty)",
+                $pid, $lid, $qty
+            ) );
+        }
     }
 
     /* ---------------- Stock compartido entre ubicaciones ---------------- */

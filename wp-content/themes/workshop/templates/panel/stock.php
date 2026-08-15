@@ -118,6 +118,7 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                                 <template x-if="canEntry"><button class="ws-icon-btn" title="<?php esc_attr_e( 'Entrada', 'workshop' ); ?>" @click="openMove('entrada', c)"><i class="fa-solid fa-down-long"></i></button></template>
                                 <template x-if="canExit"><button class="ws-icon-btn" title="<?php esc_attr_e( 'Salida', 'workshop' ); ?>" @click="openMove('salida', c)"><i class="fa-solid fa-up-long"></i></button></template>
                                 <template x-if="canWriteoff"><button class="ws-icon-btn ws-danger" title="<?php esc_attr_e( 'Baja', 'workshop' ); ?>" @click="openMove('baja', c)"><i class="fa-solid fa-trash-can"></i></button></template>
+                                <template x-if="canWriteoff"><button class="ws-icon-btn ws-icon-btn-clean" title="<?php esc_attr_e( 'Limpiar (elimina el registro de stock por completo, no queda en 0)', 'workshop' ); ?>" @click="cleanStock('combo', c)"><i class="fa-solid fa-eraser"></i></button></template>
                                 <template x-if="canTransfer"><button class="ws-icon-btn" title="<?php esc_attr_e( 'Transferencia', 'workshop' ); ?>" @click="openTransfer(c)"><i class="fa-solid fa-arrow-right-arrow-left"></i></button></template>
                             </td>
                         </tr>
@@ -185,6 +186,7 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                             <template x-if="canEntry"><button class="ws-icon-btn" title="Entrada" @click="openMove('entrada', row)"><i class="fa-solid fa-down-long"></i></button></template>
                             <template x-if="canExit"><button class="ws-icon-btn" title="Salida" @click="openMove('salida', row)"><i class="fa-solid fa-up-long"></i></button></template>
                             <template x-if="canWriteoff"><button class="ws-icon-btn ws-danger" title="Baja" @click="openMove('baja', row)"><i class="fa-solid fa-trash-can"></i></button></template>
+                            <template x-if="canWriteoff"><button class="ws-icon-btn ws-icon-btn-clean" title="Limpiar (elimina el registro de stock por completo, no queda en 0)" @click="cleanStock('product', row)"><i class="fa-solid fa-eraser"></i></button></template>
                             <template x-if="canTransfer"><button class="ws-icon-btn" title="Transferencia" @click="openTransfer(row)"><i class="fa-solid fa-arrow-right-arrow-left"></i></button></template>
                         </td>
                     </tr>

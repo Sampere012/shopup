@@ -107,6 +107,38 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 /* Toggle de visibilidad en la tienda: apagado = oculto del catálogo público. */
 .ws-icon-btn.ws-icon-btn-muted { color: var(--ws-muted); opacity: .6; background: #f9fafb; }
 .ws-icon-btn.ws-icon-btn-muted:hover { opacity: 1; color: var(--ws-primary); background: #eef2ff; border-color: #c7d2fe; }
+/* Limpiar por completo: elimina la fila de stock (no queda en 0). */
+.ws-icon-btn.ws-icon-btn-clean:hover { background: #fffbeb; color: #b45309; border-color: #fde68a; }
+/* Revertir un movimiento: icono + fila marcada + badge. */
+.ws-icon-btn.ws-icon-btn-revert:hover { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+.ws-badge.ws-badge-reverted { background: #f3f4f6; color: #6b7280; border: 1px solid #e5e7eb; }
+.ws-table tr.is-reverted td { opacity: .65; background: #fafafa; }
+.ws-table tr.is-reverted td:first-child { box-shadow: inset 3px 0 0 #d1d5db; }
+/* Barra de deshacer/rehacer en el historial de movimientos. */
+.ws-undo-bar {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    margin: 14px 0 0; padding: 10px 14px;
+    background: linear-gradient(135deg, #eef2ff, #f5f3ff); border: 1px solid #e0e7ff; border-radius: 12px;
+}
+.ws-undo-title { display: flex; align-items: center; gap: 8px; font-weight: 700; color: #4338ca; font-size: .92em; }
+.ws-undo-actions { display: flex; gap: 8px; }
+.ws-btn.ws-btn-undo { background: #fff; color: #4338ca; border: 1px solid #c7d2fe; }
+.ws-btn.ws-btn-undo:hover:not(:disabled) { background: #eef2ff; }
+.ws-btn.ws-btn-redo { background: #fff; color: #0f766e; border: 1px solid #99f6e4; }
+.ws-btn.ws-btn-redo:hover:not(:disabled) { background: #f0fdfa; }
+.ws-undo-panel {
+    margin: 10px 0 0; border: 1px solid var(--ws-border); border-radius: 12px; overflow: hidden;
+}
+.ws-undo-item {
+    display: flex; align-items: center; gap: 10px; padding: 8px 14px; font-size: .85em;
+    border-bottom: 1px solid #f1f2f6; background: #fff;
+}
+.ws-undo-item:last-child { border-bottom: 0; }
+.ws-undo-item > i { color: var(--ws-primary); width: 14px; text-align: center; }
+.ws-undo-item.is-undone > i { color: #0f766e; }
+.ws-undo-item.is-undone .ws-undo-label { text-decoration: line-through; opacity: .7; }
+.ws-undo-label { font-weight: 600; color: var(--ws-text); }
+.ws-undo-meta { margin-left: auto; color: var(--ws-muted); font-size: .8em; white-space: nowrap; }
 /* Badge 'Combo: X' en el historial de movimientos. */
 .ws-move-combo {
     display: inline-flex; align-items: center; gap: 5px; margin-left: 8px;
