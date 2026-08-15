@@ -596,9 +596,12 @@ add_action( 'wp_ajax_ws_location_links_save', 'ws_ajax_location_links_save' );
 function ws_ajax_location_links_save() {
     ws_guard( 'locations_manage' );
     $pairs = isset( $_POST['links'] ) ? json_decode( wp_unslash( (string) $_POST['links'] ), true ) : array();
-    $count = WS_CRUD::set_location_links( is_array( $pairs ) ? $pairs : array() );
-    ws_log_audit( 'location_links_save', 'location', 0, array( 'links' => $count ) );
-    wp_send_json_success( array( 'count' => $count ) );
+    $res   = WS_CRUD::set_location_links( is_array( $pairs ) ? $pairs : array() );
+    if ( empty( $res['ok'] ) ) {
+        wp_send_json_error( array( 'msg' => ! empty( $res['error'] ) ? $res['error'] : __( 'No se pudieron guardar las conexiones.', 'workshop' ) ) );
+    }
+    ws_log_audit( 'location_links_save', 'location', 0, array( 'links' => $res['count'] ) );
+    wp_send_json_success( array( 'count' => $res['count'] ) );
 }
 
 /* ---------------- Stock ---------------- */
@@ -1034,9 +1037,9 @@ function ws_ajax_movement_venta() {
 /* ---------------- Stock list ---------------- */
 
 /**
- * Mapea filas de stock a la respuesta JSON, añadiendo el stock del GRUPO
- * CONECTADO por producto (stock compartido): total sumando todas las
- * ubicaciones vinculadas + desglose por ubicación para el tooltip.
+ * Mapea filas de stock a la respuesta JSON, añadiendo el stock del GRUPO por
+ * producto (stock compartido por línea): total sumando las ubicaciones de la
+ * línea (padres + hijos) + desglose por ubicación para el tooltip.
  */
 function ws_stock_rows_map( $rows, $group = array() ) {
     $out = array();
@@ -1179,10 +1182,11 @@ function ws_ajax_stock_list() {
 
     if ( $low_only ) {
         // "Solo stock bajo" con STOCK DEL GRUPO: el total de las ubicaciones
-        // conectadas (stock compartido) cuenta para el mínimo, no el stock de
-        // cada ubicación. Pre-filtro SQL por ubicación (el grupo bajo implica
-        // que cada ubicación del grupo está baja, así que es un superconjunto)
-        // y luego el filtro definitivo por grupo en PHP con paginación local.
+        // de la línea (padres + hijos, stock compartido) cuenta para el
+        // mínimo, no el stock de cada ubicación. Pre-filtro SQL por ubicación
+        // (el grupo bajo implica que cada ubicación del grupo está baja, así
+        // que es un superconjunto) y luego el filtro definitivo por grupo en
+        // PHP con paginación local.
         $pg   = ws_list_paging();
         $rows = WS_Stock::stock_rows( array(
             'location_ids' => $loc_ids,

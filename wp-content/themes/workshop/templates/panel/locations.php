@@ -102,8 +102,8 @@ $rates      = ws_exchange_rates();
     <div class="ws-card ws-link-card">
         <div class="ws-card-head">
             <div>
-                <h3><i class="fa-solid fa-share-nodes"></i> <?php esc_html_e( 'Conectar ubicaciones · stock compartido', 'workshop' ); ?></h3>
-                <p class="ws-muted"><?php esc_html_e( 'Arrastra desde el asa «conectar» de una ubicación hasta otra para vincularlas: al vender en una, el stock se rebaja en todas las conectadas (por transitividad). El vínculo comparte solo los productos presentes en ambas ubicaciones — los que tiene una sola quedan locales. Haz clic en una línea para desconectarla.', 'workshop' ); ?></p>
+                <h3><i class="fa-solid fa-share-nodes"></i> <?php esc_html_e( 'Conectar ubicaciones · stock compartido por línea', 'workshop' ); ?></h3>
+                <p class="ws-muted"><?php esc_html_e( 'Arrastra desde el asa «conectar» de una ubicación (HIJA) hasta la que la abastece (PADRE): la flecha apunta al padre. El stock que entra o sale en una ubicación se comparte con TODA su línea — sus padres hasta la raíz y sus hijos hasta las hojas — pero NO con los hermanos. Ejemplo: n1→n3 y n2→n3: lo que entra en n1 llega a n3 pero no a n2; lo que entra en n3 (raíz) llega a n1 y a n2. En una cadena n1→n2→n3 todo se comparte. Cada ubicación solo puede tener UN padre (conectarla de nuevo la reasigna). Haz clic en una línea para desconectarla.', 'workshop' ); ?></p>
                 <span class="ws-link-dirty" x-show="isDirty()"><i class="fa-solid fa-circle-exclamation"></i> <?php esc_html_e( 'Cambios sin guardar', 'workshop' ); ?></span>
             </div>
             <div class="ws-link-tools">
@@ -116,10 +116,13 @@ $rates      = ws_exchange_rates();
         <div class="ws-link-canvas" x-ref="canvas" @pointerdown="startPan($event)" @wheel.prevent="onCanvasWheel($event)" :class="panning ? 'is-panning' : ''">
             <div class="ws-link-layer" :style="canvasLayerStyle()">
                 <template x-for="link in displayLinks()" :key="'l' + linkKey(link.a, link.b)">
-                    <div class="ws-link-line" :style="lineStyle(link)" :title="'Desconectar: ' + locName(link.a) + ' ↔ ' + locName(link.b)" @click="removeLink(link)"></div>
+                    <div class="ws-link-line" :style="lineStyle(link)" :title="linkTitle(link)" @click="removeLink(link)"></div>
+                </template>
+                <template x-for="link in displayLinks()" :key="'a' + linkKey(link.a, link.b)">
+                    <span class="ws-link-arrow" :style="arrowStyle(link)" :title="linkTitle(link)"></span>
                 </template>
                 <template x-for="link in displayLinks()" :key="'m' + linkKey(link.a, link.b)">
-                    <span class="ws-link-mid" :style="midStyle(link)" :title="'Desconectar: ' + locName(link.a) + ' ↔ ' + locName(link.b)" @click="removeLink(link)"><i class="fa-solid fa-link"></i></span>
+                    <span class="ws-link-mid" :style="midStyle(link)" :title="linkTitle(link)" @click="removeLink(link)"><i class="fa-solid fa-link"></i></span>
                 </template>
                 <template x-if="linkMode === 'connect' && tempLine && linkFrom">
                     <div class="ws-link-temp" :style="tempLineStyle()"></div>

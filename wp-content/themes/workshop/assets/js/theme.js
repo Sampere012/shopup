@@ -1316,7 +1316,11 @@
                 const l = this.canvasLocations.find(l => l.id === id);
                 return l ? l.name : ('#' + id);
             },
-            linkKey(a, b) { return (a < b ? a + '-' + b : b + '-' + a); },
+            // La dirección importa: la clave es (hijo)-(padre).
+            linkKey(a, b) { return a + '-' + b; },
+            linkTitle(link) {
+                return 'Desconectar: ' + this.locName(link.a) + ' → ' + this.locName(link.b) + ' (' + this.locName(link.b) + ' abastece a ' + this.locName(link.a) + ')';
+            },
             linksKey() { return this.links.map(l => this.linkKey(l.a, l.b)).sort().join('|'); },
             isDirty() { return this.linksKey() !== this.savedLinksKey; },
             displayLinks() { return this.links.filter(l => this.nodePos(l.a) && this.nodePos(l.b)); },
@@ -1362,6 +1366,26 @@
                 return {
                     left: ((p1.x + p2.x) / 2) + '%',
                     top: ((p1.y + p2.y) / 2) + '%'
+                };
+            },
+            // Flecha que marca la DIRECCIÓN del enlace: apunta al PADRE (b).
+            arrowStyle(link) {
+                void this.canvasTick;
+                const rect = this.canvasRect();
+                const p1 = this.nodePos(link.a), p2 = this.nodePos(link.b);
+                if (!p1 || !p2) return { display: 'none' };
+                const x1 = (p1.x / 100) * rect.width, y1 = (p1.y / 100) * rect.height;
+                const x2 = (p2.x / 100) * rect.width, y2 = (p2.y / 100) * rect.height;
+                const dx = x2 - x1, dy = y2 - y1;
+                const len = Math.sqrt(dx * dx + dy * dy);
+                const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+                // ~88% del camino hacia el padre, sin tapar el nodo ni el botón central.
+                const t = len > 70 ? 0.88 : Math.max(0.55, (len - 26) / len);
+                const ax = x1 + dx * t, ay = y1 + dy * t;
+                return {
+                    left: ax + 'px',
+                    top: ay + 'px',
+                    transform: 'translate(-50%, -50%) rotate(' + angle + 'deg)'
                 };
             },
             tempLineStyle() {
@@ -1422,14 +1446,32 @@
                     }
                 });
             },
-            toggleLink(a, b) {
-                const key = this.linkKey(a, b);
+            // Crea (o elimina) un enlace DIRIGIDO hijo -> padre. Reglas:
+            // - El nodo de ORIGEN del arrastre es el HIJO; el de destino el PADRE.
+            // - Un nodo solo puede tener UN padre: conectar de nuevo lo re-padrea.
+            // - No se permiten ciclos (el padre no puede estar en la rama del hijo).
+            connectNodes(child, parent) {
+                if (!child || !parent || child === parent) return;
+                const key = this.linkKey(child, parent);
                 const exists = this.links.some(l => this.linkKey(l.a, l.b) === key);
                 if (exists) {
                     this.links = this.links.filter(l => this.linkKey(l.a, l.b) !== key);
-                } else {
-                    this.links.push(a < b ? { a: a, b: b } : { a: b, b: a });
+                    return;
                 }
+                // Ciclo: el padre propuesto ya depende (directa o indirectamente)
+                // del hijo, o es descendiente suyo.
+                let cur = parent;
+                while (cur) {
+                    if (cur === child) {
+                        toast('error', 'Conexión inválida', this.locName(child) + ' no puede depender de ' + this.locName(parent) + ': crearía un ciclo.');
+                        return;
+                    }
+                    const pl = this.links.find(l => l.a === cur);
+                    cur = pl ? pl.b : 0;
+                }
+                // Re-parenting: el hijo solo tiene un padre.
+                this.links = this.links.filter(l => l.a !== child);
+                this.links.push({ a: child, b: parent });
             },
             removeLink(link) {
                 const key = this.linkKey(link.a, link.b);
@@ -1503,7 +1545,7 @@
                     const nodeEl = el && el.closest ? el.closest('[data-node-id]') : null;
                     const targetId = nodeEl ? parseInt(nodeEl.getAttribute('data-node-id'), 10) : 0;
                     if (targetId && targetId !== this.linkFrom) {
-                        this.toggleLink(this.linkFrom, targetId);
+                        this.connectNodes(this.linkFrom, targetId);
                     }
                     this.linkMode = null;
                     this.linkFrom = null;

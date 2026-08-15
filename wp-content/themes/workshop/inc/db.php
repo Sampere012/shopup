@@ -49,10 +49,11 @@ function ws_db_tables() {
             UNIQUE KEY slug (slug)
         ) {charset};",
 
-        // Conexiones entre ubicaciones (stock compartido): cuando se vende en
-        // una ubicación, el stock se rebaja también en TODAS las conectadas
-        // (transitividad: A-B y B-C implica A-C). Se guarda el par canónico
-        // (location_a < location_b) para que el grafo sea no dirigido.
+        // Conexiones entre ubicaciones (stock compartido) DIRIGIDAS: la fila
+        // (location_a, location_b) significa que b es la SUPERIOR de a (b
+        // abastece a a). El stock que entra/sale en a se comparte con su
+        // línea (padres hasta la raíz + hijos hasta las hojas); los hermanos
+        // no se comparten. La dirección importa: a solo puede tener UN padre.
         'location_links' => "CREATE TABLE {prefix}ws_location_links (
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
             location_a BIGINT(20) UNSIGNED NOT NULL,
@@ -1207,5 +1208,96 @@ function ws_db_migrate() {
                  FROM {$comb_sv} c CROSS JOIN {$loc_sv} l WHERE c.store_visible = 0"
             );
         }
+    }
+
+    // Conexiones de stock compartido: migración a DIRIGIDAS (jerarquía).
+    // Antes el grafo era no dirigido y la propagación inundaba todo el
+    // componente conexo (estrella y cadena eran indistinguibles). Ahora cada
+    // fila (a,b) significa "b es la superior de a" y el stock se comparte solo
+    // por la línea (padres + hijos, nunca hermanos). Se orientan los enlaces
+    // existentes como un árbol UNA sola vez (raíz = el nodo con más enlaces,
+    // empates -> el de menor id); después lo administra el panel de conexiones.
+    if ( ! get_option( 'ws_location_links_directed', false ) ) {
+        $ws_dir_suffixes = array( '' );
+        if ( class_exists( 'WS_Business' ) && $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', WS_Business::table() ) ) === WS_Business::table() ) {
+            foreach ( WS_Business::all() as $ws_dir_biz ) {
+                $dir_slug = (string) ( $ws_dir_biz->slug ?? '' );
+                if ( '' !== $dir_slug ) {
+                    $ws_dir_suffixes[] = ws_biz_table_suffix( $dir_slug );
+                }
+            }
+        }
+        foreach ( $ws_dir_suffixes as $ws_dir_suffix ) {
+            $lk2 = ws_table_for( $ws_dir_suffix, 'location_links' );
+            if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $lk2 ) ) !== $lk2 ) {
+                continue;
+            }
+            $edges = $wpdb->get_results( "SELECT location_a, location_b FROM {$lk2}" );
+            if ( ! $edges ) {
+                continue;
+            }
+            // Grafo no dirigido + grado por nodo.
+            $adj = array();
+            $deg = array();
+            foreach ( $edges as $e ) {
+                $a = (int) $e->location_a;
+                $b = (int) $e->location_b;
+                $adj[ $a ][ $b ] = true;
+                $adj[ $b ][ $a ] = true;
+                $deg[ $a ] = ( $deg[ $a ] ?? 0 ) + 1;
+                $deg[ $b ] = ( $deg[ $b ] ?? 0 ) + 1;
+            }
+            $seen    = array();
+            $oriented = array();
+            foreach ( array_keys( $adj ) as $start ) {
+                if ( isset( $seen[ $start ] ) ) {
+                    continue;
+                }
+                // Componente conexo.
+                $comp = array();
+                $q    = array( $start );
+                $seen[ $start ] = true;
+                while ( $q ) {
+                    $cur = array_shift( $q );
+                    $comp[] = $cur;
+                    foreach ( array_keys( $adj[ $cur ] ?? array() ) as $n ) {
+                        if ( ! isset( $seen[ $n ] ) ) {
+                            $seen[ $n ] = true;
+                            $q[]       = $n;
+                        }
+                    }
+                }
+                // Raíz: mayor grado, empates -> menor id.
+                $root = null;
+                foreach ( $comp as $cid ) {
+                    if ( null === $root
+                        || ( $deg[ $cid ] ?? 0 ) > ( $deg[ $root ] ?? 0 )
+                        || ( ( $deg[ $cid ] ?? 0 ) === ( $deg[ $root ] ?? 0 ) && $cid < $root ) ) {
+                        $root = $cid;
+                    }
+                }
+                // BFS desde la raíz: cada arista del árbol se orienta (hijo -> padre).
+                $q   = array( $root );
+                $vst = array( $root => true );
+                while ( $q ) {
+                    $cur = array_shift( $q );
+                    foreach ( array_keys( $adj[ $cur ] ?? array() ) as $n ) {
+                        if ( isset( $vst[ $n ] ) ) {
+                            continue;
+                        }
+                        $vst[ $n ] = true;
+                        $oriented[] = array( 'a' => $n, 'b' => $cur );
+                        $q[] = $n;
+                    }
+                }
+            }
+            if ( $oriented ) {
+                $wpdb->query( "DELETE FROM {$lk2}" );
+                foreach ( $oriented as $o ) {
+                    $wpdb->insert( $lk2, array( 'location_a' => $o['a'], 'location_b' => $o['b'] ) );
+                }
+            }
+        }
+        update_option( 'ws_location_links_directed', 1, false );
     }
 }

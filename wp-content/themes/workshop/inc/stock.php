@@ -357,10 +357,16 @@ class WS_Stock {
     /* ---------------- Stock compartido entre ubicaciones ---------------- */
 
     /**
-     * IDs de las ubicaciones conectadas por stock compartido, de forma
-     * TRANSITIVA (A-B y B-C implica que A y C también están conectadas), sin
-     * incluir la propia $location_id. Se recorre el grafo con BFS sobre la
-     * tabla de enlaces para cubrir cadenas de cualquier longitud.
+     * IDs de las ubicaciones que COMPARTEN STOCK con $location_id, de forma
+     * JERÁRQUICA (línea familiar), sin incluir la propia.
+     *
+     * Un movimiento en una ubicación se aplica a toda su línea: TODOS sus
+     * padres (hasta la raíz) y TODOS sus hijos/sub-ubicaciones (hasta las
+     * hojas). Los HERMANOS (otras ramas bajo el mismo padre) NO se comparten:
+     *   - n1->n3 y n2->n3 (estrella): lo que entra en n1 llega a n3 pero no a
+     *     n2; lo que entra en n3 (raíz) llega a n1 y n2.
+     *   - n1->n2->n3 (cadena): lo que entra en cualquiera llega a toda la
+     *     línea (cada nodo está en la línea de los demás).
      */
     public static function linked_location_ids( $location_id ) {
         static $cache = array();
@@ -371,13 +377,21 @@ class WS_Stock {
         if ( array_key_exists( $location_id, $cache ) ) {
             return $cache[ $location_id ];
         }
-        $adj  = self::_link_adjacency();
+        $tree = self::_link_tree();
         $out  = array();
         $seen = array( $location_id => true );
+        // Padres: cadena hacia la raíz.
+        $cur = $location_id;
+        while ( isset( $tree['parent'][ $cur ] ) && ! isset( $seen[ $tree['parent'][ $cur ] ] ) ) {
+            $cur = $tree['parent'][ $cur ];
+            $seen[ $cur ] = true;
+            $out[] = $cur;
+        }
+        // Hijos y descendientes (BFS por las ramas propias).
         $queue = array( $location_id );
         while ( $queue ) {
             $cur = array_shift( $queue );
-            foreach ( (array) ( $adj[ $cur ] ?? array() ) as $n ) {
+            foreach ( (array) ( $tree['children'][ $cur ] ?? array() ) as $n ) {
                 if ( isset( $seen[ $n ] ) ) {
                     continue;
                 }
@@ -391,31 +405,36 @@ class WS_Stock {
     }
 
     /**
-     * Adyacencia del grafo de conexiones (stock compartido), cacheada por
-     * petición. Se lee UNA vez y la reutilizan el BFS de propagación y el
-     * cálculo del stock del grupo en los listados.
+     * Árbol DIRIGIDO de conexiones (stock compartido), cacheado por petición.
+     *
+     * Cada fila (location_a, location_b) significa "b es la SUPERIOR de a"
+     * (b abastece a a). Se lee UNA vez y lo reutilizan la propagación por
+     * línea y el cálculo del stock del grupo en los listados.
+     *
+     * Devuelve array( 'parent' => child => parent, 'children' => parent => [hijos] ).
      */
-    protected static function _link_adjacency() {
+    protected static function _link_tree() {
         global $wpdb;
-        static $adj = null;
-        if ( null === $adj ) {
-            $adj = array();
+        static $tree = null;
+        if ( null === $tree ) {
+            $tree = array( 'parent' => array(), 'children' => array() );
             foreach ( $wpdb->get_results( "SELECT location_a, location_b FROM " . self::table( 'location_links' ) ) as $r ) {
                 $a = (int) $r->location_a;
                 $b = (int) $r->location_b;
-                $adj[ $a ][] = $b;
-                $adj[ $b ][] = $a;
+                $tree['parent'][ $a ] = $b;
+                $tree['children'][ $b ][] = $a;
             }
         }
-        return $adj;
+        return $tree;
     }
 
     /**
-     * Stock del GRUPO CONECTADO por producto para filas de stock.
+     * Stock del GRUPO por producto para filas de stock.
      *
      * Para cada fila (producto + ubicación) calcula el total sumando el stock
-     * del producto en TODAS las ubicaciones conectadas transitivamente
-     * (incluida la propia), más el desglose por ubicación para el tooltip.
+     * del producto en TODAS las ubicaciones de SU LÍNEA (padres + hijos,
+     * incluida la propia — los hermanos no cuentan), más el desglose por
+     * ubicación para el tooltip.
      * Devuelve array keyed por "{product_id}:{location_id}" con
      * array( 'total' => float, 'parts' => array de {id, name, qty} ).
      */
@@ -424,7 +443,6 @@ class WS_Stock {
             return array();
         }
         global $wpdb;
-        $adj = self::_link_adjacency();
 
         // Nombres de ubicación (una sola lectura, son pocas).
         $loc_names = array();
@@ -432,28 +450,14 @@ class WS_Stock {
             $loc_names[ (int) $l->id ] = $l->name;
         }
 
-        // Componente (conexión transitiva) por ubicación, cacheado.
+        // Línea familiar (padres + hijos) por ubicación, cacheada.
         $components = array();
-        $component  = function ( $lid ) use ( &$components, $adj ) {
+        $component  = function ( $lid ) use ( &$components ) {
             if ( isset( $components[ $lid ] ) ) {
                 return $components[ $lid ];
             }
-            $out   = array( $lid );
-            $seen  = array( $lid => true );
-            $queue = array( $lid );
-            while ( $queue ) {
-                $cur = array_shift( $queue );
-                foreach ( (array) ( $adj[ $cur ] ?? array() ) as $n ) {
-                    if ( isset( $seen[ $n ] ) ) {
-                        continue;
-                    }
-                    $seen[ $n ] = true;
-                    $out[]     = $n;
-                    $queue[]   = $n;
-                }
-            }
-            $components[ $lid ] = $out;
-            return $out;
+            $components[ $lid ] = array_merge( array( $lid ), self::linked_location_ids( $lid ) );
+            return $components[ $lid ];
         };
 
         // Cantidad por ubicación de los productos implicados: UNA query con
@@ -502,10 +506,11 @@ class WS_Stock {
     }
 
     /**
-     * Conteo de filas de stock BAJO usando el STOCK DEL GRUPO CONECTADO
-     * (stock compartido): una fila (producto + ubicación) cuenta como baja
-     * cuando el total de TODAS las ubicaciones conectadas a esa ubicación es
-     * menor o igual al mínimo del producto — no el stock de cada ubicación.
+     * Conteo de filas de stock BAJO usando el STOCK DEL GRUPO (línea de
+     * stock compartido): una fila (producto + ubicación) cuenta como baja
+     * cuando el total de TODAS las ubicaciones de su línea (padres + hijos,
+     * no hermanos) es menor o igual al mínimo del producto — no el stock de
+     * cada ubicación.
      *
      * Pre-filtra en SQL por stock bajo por ubicación (el grupo bajo implica
      * que todas sus ubicaciones están bajas, así que es un superconjunto) y
@@ -576,13 +581,14 @@ class WS_Stock {
     }
 
     /**
-     * Propaga un movimiento (entrada '+') o salida '-') a las ubicaciones
-     * CONECTADAS por stock compartido: lo que entra/sale en una ubicación se
-     * aplica a todas las demás del componente (transitividad).
+     * Propaga un movimiento (entrada '+') o salida '-') a las ubicaciones de
+     * LA LÍNEA por stock compartido: lo que entra/sale en una ubicación se
+     * aplica a todos sus padres (hasta la raíz) y a todos sus hijos (hasta
+     * las hojas). Los hermanos NO se ven afectados.
      *
-     * - Entrada: aumenta el stock completo en cada vinculada.
-     * - Salida:  descuenta lo disponible en cada vinculada (nunca negativo)
-     *            y anota en el movimiento cuánto faltó si no alcanzó.
+     * - Entrada: aumenta el stock completo en cada ubicación de la línea.
+     * - Salida:  descuenta lo disponible en cada una (nunca negativo) y anota
+     *            en el movimiento cuánto faltó si no alcanzó.
      *
      * Asume que la transacción ya está abierta. Nunca falla: el guard real
      * de stock lo aplica la ubicación de origen; las vinculadas son un espejo.
@@ -593,10 +599,10 @@ class WS_Stock {
             return;
         }
         global $wpdb;
-        // El stock compartido propaga TODOS los movimientos a todas las
-        // vinculadas, de forma transitiva (A-B y B-C => A y C también):
-        // - ENTRADAS ('+'): aumentan el stock del grupo entero y crean la fila
-        //   de stock en la vinculada si no existe.
+        // El stock compartido propaga los movimientos a TODA LA LÍNEA de la
+        // ubicación (padres + hijos; nunca hermanos):
+        // - ENTRADAS ('+'): aumentan el stock de la línea entera y crean la
+        //   fila de stock en la vinculada si no existe.
         // - SALIDAS/ventas/bajas ('-'): descuentan en cada vinculada lo que
         //   tenga disponible (0 si no hay fila), y el movimiento queda
         //   registrado en todas con la nota del faltante cuando no alcanza.

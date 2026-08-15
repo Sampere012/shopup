@@ -648,10 +648,10 @@ class WS_CRUD {
     /* ---------------- Conexiones entre ubicaciones (stock compartido) ---------------- */
 
     /**
-     * Enlaces de stock compartido entre ubicaciones (grafo no dirigido).
-     * Devuelve pares canónicos: array de array( 'a' => int, 'b' => int )
-     * con a < b. Cuando se vende en una ubicación, el stock se rebaja en
-     * todas las conectadas (transitividad).
+     * Enlaces de stock compartido entre ubicaciones (jerarquía DIRIGIDA).
+     * Devuelve pares: array de array( 'a' => int, 'b' => int ) donde b es la
+     * SUPERIOR de a (b abastece a a). El stock se comparte por la línea
+     * (padres + hijos); los hermanos no.
      */
     public static function get_location_links() {
         global $wpdb;
@@ -664,19 +664,25 @@ class WS_CRUD {
     }
 
     /**
-     * Reemplaza todos los enlaces de stock compartido del negocio.
+     * Reemplaza todos los enlaces de stock compartido del negocio (DIRIGIDOS).
+     *
+     * Cada par (a, b) significa "b es la SUPERIOR de a" (b abastece a a): el
+     * stock que entra/sale en a se comparte con su línea (padres y hijos),
+     * pero no con los hermanos. Reglas: una ubicación solo puede tener UN
+     * padre, y no se permiten ciclos.
      *
      * @param array $pairs Lista de pares: array de array( 'a' => int, 'b' => int )
      *                     o array de array( 0 => int, 1 => int ).
-     * @return int Número de enlaces guardados (0 si no había ninguno).
+     * @return array array( 'ok' => bool, 'count' => int, 'error' => string ).
      */
     public static function set_location_links( $pairs ) {
         global $wpdb;
         $table = self::table( 'location_links' );
-        $wpdb->query( "DELETE FROM {$table}" );
 
+        // Normalizar: la dirección importa (a = hijo, b = padre). Si un mismo
+        // hijo llega con dos padres, gana el último (la UI ya hace re-parenting).
         $seen = array();
-        $count = 0;
+        $child_parent = array();
         foreach ( (array) $pairs as $pair ) {
             if ( is_array( $pair ) && isset( $pair['a'] ) && isset( $pair['b'] ) ) {
                 $a = (int) $pair['a'];
@@ -690,22 +696,41 @@ class WS_CRUD {
             if ( ! $a || ! $b || $a === $b ) {
                 continue;
             }
-            if ( $a > $b ) {
-                list( $a, $b ) = array( $b, $a );
-            }
             $key = $a . ':' . $b;
             if ( isset( $seen[ $key ] ) ) {
                 continue;
             }
+            $seen[ $key ] = true;
+            $child_parent[ $a ] = $b;
+        }
+
+        // Validación de ciclos: caminar desde cada hijo hacia la raíz; si
+        // volvemos al hijo, la jerarquía tendría un ciclo.
+        foreach ( array_keys( $child_parent ) as $child ) {
+            $cur   = $child_parent[ $child ];
+            $guard = 0;
+            while ( isset( $child_parent[ $cur ] ) ) {
+                if ( $child_parent[ $cur ] === $child ) {
+                    return array( 'ok' => false, 'count' => 0, 'error' => __( 'Conexión inválida: crea un ciclo en la jerarquía de ubicaciones.', 'workshop' ) );
+                }
+                $cur = $child_parent[ $cur ];
+                if ( ++$guard > count( $child_parent ) + 1 ) {
+                    break;
+                }
+            }
+        }
+
+        $count = 0;
+        $wpdb->query( "DELETE FROM {$table}" );
+        foreach ( $child_parent as $child => $parent ) {
             // Ambos extremos deben ser ubicaciones reales del negocio.
-            if ( ! self::get_location( $a ) || ! self::get_location( $b ) ) {
+            if ( ! self::get_location( $child ) || ! self::get_location( $parent ) ) {
                 continue;
             }
-            $seen[ $key ] = true;
-            $wpdb->insert( $table, array( 'location_a' => $a, 'location_b' => $b ) );
+            $wpdb->insert( $table, array( 'location_a' => $child, 'location_b' => $parent ) );
             $count++;
         }
-        return $count;
+        return array( 'ok' => true, 'count' => $count, 'error' => '' );
     }
 
     /* ---------------- Trabajadores ---------------- */

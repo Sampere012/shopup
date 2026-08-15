@@ -2848,6 +2848,9 @@ ul.ws-topbar-nav { list-style: none; margin: 0 auto; padding: 0; }
     transition: box-shadow .15s, height .15s; }
 .ws-link-line::after { content: ''; position: absolute; inset: -7px 0; }
 .ws-link-line:hover { box-shadow: 0 0 12px rgba(79, 70, 229, .55); height: 4px; }
+.ws-link-arrow { position: absolute; z-index: 1; width: 0; height: 0; pointer-events: none;
+    border-left: 10px solid rgba(79, 70, 229, .9); border-top: 6px solid transparent; border-bottom: 6px solid transparent;
+    filter: drop-shadow(0 1px 2px rgba(79, 70, 229, .4)); }
 .ws-link-mid { position: absolute; z-index: 2; width: 22px; height: 22px; border-radius: 50%; transform: translate(-50%, -50%);
     background: #fff; border: 2px solid var(--ws-primary); color: var(--ws-primary); font-size: .62rem;
     display: grid; place-items: center; cursor: pointer; pointer-events: auto; box-shadow: 0 2px 8px rgba(79, 70, 229, .3);
