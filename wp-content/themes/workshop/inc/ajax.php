@@ -7,11 +7,341 @@
 
 defined( 'ABSPATH' ) || exit;
 
+/* ---------------- Autenticación de la app móvil (token) ---------------- */
+
+/**
+ * CORS para la app móvil: las peticiones con token (header X-WS-Token) pueden
+ * venir del origen file:// de Cordova o de cualquier origen de desarrollo. El
+ * token es una credencial explícita (como una API key), así que el origen
+ * puede ser * sin exponer cookies. Las peticiones sin token no se ven
+ * afectadas (misma política de siempre).
+ */
+add_action( 'init', function () {
+    $action    = (string) ( $_POST['action'] ?? '' );
+    $has_token = isset( $_SERVER['HTTP_X_WS_TOKEN'] ) || ( isset( $_POST['ws_token'] ) && '' !== (string) $_POST['ws_token'] );
+    // Endpoints móviles sin token previo (login) o petición CORS (preflight).
+    $mobile_ep = in_array( $action, array( 'ws_mobile_login', 'ws_mobile_me', 'ws_mobile_logout', 'ws_mobile_state' ), true );
+    $preflight = 'OPTIONS' === ( $_SERVER['REQUEST_METHOD'] ?? '' ) && '' !== ( $_SERVER['HTTP_ACCESS_CONTROL_REQUEST_HEADERS'] ?? '' );
+    if ( $has_token || $mobile_ep || $preflight ) {
+        header( 'Access-Control-Allow-Origin: *' );
+        header( 'Access-Control-Allow-Headers: Content-Type, X-WS-Token' );
+        header( 'Access-Control-Allow-Methods: POST, OPTIONS' );
+        if ( 'OPTIONS' === ( $_SERVER['REQUEST_METHOD'] ?? '' ) ) {
+            status_header( 204 );
+            exit;
+        }
+    }
+} );
+
+/**
+ * Crea un token de sesión móvil para el usuario, con la misma duración que
+ * la sesión web configurada (ws_session_expiration_days; 30 por defecto).
+ * Se guarda hasheado (wp_hash) para que la BD no contenga tokens en claro.
+ */
+function ws_mobile_token_create( $user_id ) {
+    $token = wp_generate_password( 40, false, false );
+    $days  = max( 1, min( 365, (int) get_option( 'ws_session_expiration_days', 30 ) ) );
+    update_user_meta( (int) $user_id, 'ws_mobile_token', wp_hash( $token ) );
+    update_user_meta( (int) $user_id, 'ws_mobile_token_expires', time() + $days * DAY_IN_SECONDS );
+    return array( 'token' => $token, 'expiresAt' => time() + $days * DAY_IN_SECONDS, 'sessionDays' => $days );
+}
+
+/**
+ * Valida el token de la app móvil (header X-WS-Token o campo ws_token) y
+ * devuelve el user_id (0 si no hay token o es inválido/vencido). Sin efectos
+ * secundarios: no cambia el usuario actual (eso lo hace ws_mobile_auth_user
+ * y el filtro determine_current_user). Estático: valida una vez por petición.
+ */
+function ws_mobile_token_user() {
+    static $ws_mt_cached = false;
+    static $ws_mt_uid    = 0;
+    if ( false !== $ws_mt_cached ) {
+        return $ws_mt_uid;
+    }
+    $ws_mt_cached = true;
+    $token = (string) ( $_SERVER['HTTP_X_WS_TOKEN'] ?? ( $_POST['ws_token'] ?? '' ) );
+    if ( '' === $token ) {
+        return 0;
+    }
+    global $wpdb;
+    $row = $wpdb->get_row( $wpdb->prepare(
+        "SELECT user_id FROM {$wpdb->usermeta} WHERE meta_key='ws_mobile_token' AND meta_value=%s",
+        wp_hash( $token )
+    ) );
+    if ( ! $row ) {
+        return 0;
+    }
+    $expires = (int) get_user_meta( (int) $row->user_id, 'ws_mobile_token_expires', true );
+    if ( $expires && $expires < time() ) {
+        delete_user_meta( (int) $row->user_id, 'ws_mobile_token' );
+        delete_user_meta( (int) $row->user_id, 'ws_mobile_token_expires' );
+        return 0;
+    }
+    $ws_mt_uid = (int) $row->user_id;
+    return $ws_mt_uid;
+}
+
+/**
+ * Autentica la petición con el token (equivale a la sesión web): además de
+ * validar, pone al usuario como usuario actual para las comprobaciones de
+ * permisos que corren después (ws_can, roles, etc.).
+ */
+function ws_mobile_auth_user() {
+    $uid = ws_mobile_token_user();
+    if ( $uid ) {
+        wp_set_current_user( $uid );
+    }
+    return $uid;
+}
+
+/**
+ * El token llega por header y WordPress decide el hook AJAX (wp_ajax_* vs
+ * wp_ajax_nopriv_*) según is_user_logged_in() ANTES de ejecutar el handler.
+ * admin_init corre en admin-ajax.php justo antes del dispatch, así que aquí
+ * establecemos el usuario del token y is_user_logged_in() dispara wp_ajax_*.
+ */
+add_action( 'admin_init', function () {
+    if ( empty( $_SERVER['HTTP_X_WS_TOKEN'] ) && empty( $_POST['ws_token'] ) ) {
+        return;
+    }
+    ws_mobile_auth_user();
+} );
+
+/**
+ * Payload de sesión para la app móvil: identidad, rol, permisos y el menú
+ * del panel filtrado por capacidades (mismos ítems que templates/panel.php).
+ */
+function ws_mobile_me_payload() {
+    $user_id = get_current_user_id();
+    $role    = ws_user_role( $user_id );
+    $items   = array(
+        'dashboard' => array( 'icon' => 'fa-gauge-high', 'label' => __( 'Dashboard', 'workshop' ), 'caps' => array() ),
+        'products'  => array( 'icon' => 'fa-boxes-stacked', 'label' => __( 'Productos', 'workshop' ), 'caps' => array( 'products_view' ) ),
+        'locations' => array( 'icon' => 'fa-location-dot', 'label' => __( 'Ubicaciones', 'workshop' ), 'caps' => array( 'locations_view' ) ),
+        'stock'     => array( 'icon' => 'fa-warehouse', 'label' => __( 'Stock', 'workshop' ), 'caps' => array( 'stock_view' ) ),
+        'movements' => array( 'icon' => 'fa-clock-rotate-left', 'label' => __( 'Historial', 'workshop' ), 'caps' => array( 'movements_view' ) ),
+        'orders'    => array( 'icon' => 'fa-receipt', 'label' => __( 'Pedidos', 'workshop' ), 'caps' => array( 'orders_view' ) ),
+        'shifts'    => array( 'icon' => 'fa-calendar-days', 'label' => __( 'Turnos', 'workshop' ), 'caps' => array( 'shifts_view' ) ),
+        'workers'   => array( 'icon' => 'fa-user-gear', 'label' => __( 'Trabajadores', 'workshop' ), 'caps' => array( 'workers_manage' ) ),
+        'customers' => array( 'icon' => 'fa-users', 'label' => __( 'Clientes', 'workshop' ), 'caps' => array( 'customers_view' ) ),
+        'pos'       => array( 'icon' => 'fa-cash-register', 'label' => __( 'POS', 'workshop' ), 'caps' => array( 'pos_sell' ) ),
+        'pos-sales' => array( 'icon' => 'fa-chart-line', 'label' => __( 'Ventas POS', 'workshop' ), 'caps' => array( 'pos_view' ) ),
+        'reviews'   => array( 'icon' => 'fa-star', 'label' => __( 'Valoraciones', 'workshop' ), 'caps' => array( 'reviews_view' ) ),
+        'loyalty'   => array( 'icon' => 'fa-gift', 'label' => __( 'Fidelización', 'workshop' ), 'caps' => array( 'loyalty_manage' ) ),
+        'expenses'  => array( 'icon' => 'fa-money-bill-wave', 'label' => __( 'Gastos', 'workshop' ), 'caps' => array( 'expenses_manage' ) ),
+        'anuncios'  => array( 'icon' => 'fa-bullhorn', 'label' => __( 'Anuncios', 'workshop' ), 'caps' => array( 'settings_manage', 'workers_manage' ) ),
+        'plan'      => array( 'icon' => 'fa-crown', 'label' => __( 'Plan', 'workshop' ), 'caps' => array() ),
+        'permissions' => array( 'icon' => 'fa-shield-halved', 'label' => __( 'Permisos', 'workshop' ), 'caps' => array( 'permissions_manage' ) ),
+        'reports'   => array( 'icon' => 'fa-chart-pie', 'label' => __( 'Reportes', 'workshop' ), 'caps' => array( 'reports_view' ) ),
+        'appearance' => array( 'icon' => 'fa-palette', 'label' => __( 'Apariencia', 'workshop' ), 'caps' => array( 'site_manage', 'layout_manage' ) ),
+        'settings'  => array( 'icon' => 'fa-gear', 'label' => __( 'Configuración', 'workshop' ), 'caps' => array( 'settings_manage' ) ),
+        'account'   => array( 'icon' => 'fa-user', 'label' => __( 'Mi cuenta', 'workshop' ), 'caps' => array() ),
+    );
+    $menu = array();
+    foreach ( $items as $key => $it ) {
+        $visible = true;
+        if ( ! empty( $it['caps'] ) ) {
+            $visible = false;
+            foreach ( $it['caps'] as $cap ) {
+                if ( ws_can( $cap ) ) {
+                    $visible = true;
+                    break;
+                }
+            }
+        }
+        if ( $visible ) {
+            $menu[] = array( 'key' => $key, 'label' => $it['label'], 'icon' => $it['icon'] );
+        }
+    }
+    $caps = array();
+    if ( class_exists( 'WS_Capabilities' ) ) {
+        foreach ( WS_Capabilities::all_caps() as $cap => $_label ) {
+            $caps[ $cap ] = (bool) ws_can( $cap );
+        }
+    }
+    $biz = function_exists( 'ws_current_business' ) ? ws_current_business() : null;
+    return array(
+        'userId'       => $user_id,
+        'name'         => wp_get_current_user()->display_name,
+        'email'        => wp_get_current_user()->user_email,
+        'role'         => $role,
+        'roleLabel'    => ws_role_label( $role ),
+        'business'     => $biz ? (string) ( $biz->slug ?? '' ) : '',
+        'businessName' => $biz ? (string) ( $biz->name ?? '' ) : '',
+        'currency'     => ws_currency_symbol(),
+        'home'         => ws_business_home(),
+        'sessionDays'  => (int) get_option( 'ws_session_expiration_days', 30 ),
+        'caps'         => $caps,
+        'menu'         => $menu,
+        'serverTime'   => current_time( 'mysql' ),
+        'wsVersion'    => defined( 'WS_VERSION' ) ? WS_VERSION : '',
+    );
+}
+
+add_action( 'wp_ajax_ws_mobile_login', 'ws_ajax_mobile_login' );
+add_action( 'wp_ajax_nopriv_ws_mobile_login', 'ws_ajax_mobile_login' );
+function ws_ajax_mobile_login() {
+    $user = sanitize_text_field( $_POST['ws_user'] ?? '' );
+    $pass = (string) ( $_POST['ws_pass'] ?? '' );
+    if ( '' === $user || '' === $pass ) {
+        wp_send_json_error( array( 'msg' => __( 'Usuario y contraseña son obligatorios.', 'workshop' ) ) );
+    }
+    $creds = array(
+        'user_login'    => $user,
+        'user_password' => $pass,
+        'remember'      => true,
+    );
+    $u = wp_signon( $creds, function_exists( 'ws_login_secure_cookie' ) ? ws_login_secure_cookie() : false );
+    if ( is_wp_error( $u ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Usuario o contraseña incorrectos.', 'workshop' ) ) );
+    }
+    wp_set_current_user( $u->ID );
+    $role = ws_user_role( $u->ID );
+    if ( ! $role ) {
+        wp_send_json_error( array( 'msg' => __( 'Esta cuenta no tiene acceso al panel del negocio.', 'workshop' ) ) );
+    }
+    $t = ws_mobile_token_create( $u->ID );
+    ws_log_audit( 'mobile_login', 'user', $u->ID );
+    wp_send_json_success( array(
+        'token'       => $t['token'],
+        'expiresAt'   => $t['expiresAt'],
+        'sessionDays' => $t['sessionDays'],
+        'me'          => ws_mobile_me_payload(),
+    ) );
+}
+
+add_action( 'wp_ajax_ws_mobile_me', 'ws_ajax_mobile_me' );
+add_action( 'wp_ajax_nopriv_ws_mobile_me', 'ws_ajax_mobile_me' );
+function ws_ajax_mobile_me() {
+    if ( ! ws_mobile_auth_user() ) {
+        wp_send_json_success( array( 'loggedIn' => false ) );
+    }
+    wp_send_json_success( array( 'loggedIn' => true, 'me' => ws_mobile_me_payload() ) );
+}
+
+add_action( 'wp_ajax_ws_mobile_logout', 'ws_ajax_mobile_logout' );
+add_action( 'wp_ajax_nopriv_ws_mobile_logout', 'ws_ajax_mobile_logout' );
+function ws_ajax_mobile_logout() {
+    $uid = ws_mobile_auth_user();
+    if ( $uid ) {
+        delete_user_meta( $uid, 'ws_mobile_token' );
+        delete_user_meta( $uid, 'ws_mobile_token_expires' );
+    }
+    wp_send_json_success();
+}
+
+/**
+ * Hash del estado del negocio para el bridge WebSocket de la app: resume los
+ * conteos y el momento del último cambio de las tablas clave (pedidos, stock,
+ * ventas, movimientos). Si cambia algo, el hash cambia y el bridge difunde
+ * 'changes' a las apps conectadas (sincronización en tiempo real).
+ */
+add_action( 'wp_ajax_ws_mobile_state', 'ws_ajax_mobile_state' );
+add_action( 'wp_ajax_nopriv_ws_mobile_state', 'ws_ajax_mobile_state' );
+function ws_ajax_mobile_state() {
+    if ( ! ws_mobile_auth_user() ) {
+        wp_send_json_error( array( 'msg' => __( 'Sesión inválida.', 'workshop' ) ) );
+    }
+    global $wpdb;
+    $tables = array( 'orders', 'stock', 'movements', 'pos_sales', 'products' );
+    $parts = array();
+    foreach ( $tables as $t ) {
+        $table = ws_table_name( $t );
+        if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $table ) ) !== $table ) {
+            continue;
+        }
+        $count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table}" );
+        $max   = $wpdb->get_var( "SELECT MAX(created_at) FROM {$table}" );
+        $parts[ $t ] = $count . ':' . ( $max ? $max : '' );
+    }
+    $hash = md5( wp_json_encode( $parts ) );
+    wp_send_json_success( array( 'hash' => $hash ) );
+}
+
+/**
+ * Configuración del negocio en JSON para la app móvil (módulo Configuración).
+ */
+add_action( 'wp_ajax_ws_settings_get', 'ws_ajax_settings_get' );
+add_action( 'wp_ajax_nopriv_ws_settings_get', 'ws_ajax_settings_get' );
+function ws_ajax_settings_get() {
+    if ( ! ws_mobile_auth_user() && ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Sesión inválida.', 'workshop' ) ) );
+    }
+    if ( ! is_user_logged_in() ) {
+        wp_send_json_error( array( 'msg' => __( 'Debes iniciar sesión.', 'workshop' ) ) );
+    }
+    $rates         = function_exists( 'ws_exchange_rates' ) ? ws_exchange_rates() : array();
+    $payment       = (array) get_option( 'ws_payment_methods', array( 'Efectivo', 'Tarjeta', 'Transferencia' ) );
+    wp_send_json_success( array(
+        'data' => array(
+            'currency'        => get_option( 'ws_currency', '€' ),
+            'currencies'      => get_option( 'ws_currencies', '' ),
+            'rates'           => $rates,
+            'rates_updated'   => get_option( 'ws_rates_updated', '' ),
+            'payment_methods' => $payment,
+            'whatsapp'        => get_option( 'ws_whatsapp', '' ),
+            'session_days'    => (int) get_option( 'ws_session_expiration_days', 30 ),
+        ),
+    ) );
+}
+
+/**
+ * Estado del plan para la app móvil (módulo Plan): suscripción, uso y planes.
+ */
+add_action( 'wp_ajax_ws_plan_info', 'ws_ajax_plan_info' );
+add_action( 'wp_ajax_nopriv_ws_plan_info', 'ws_ajax_plan_info' );
+function ws_ajax_plan_info() {
+    if ( ! ws_mobile_auth_user() && ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Sesión inválida.', 'workshop' ) ) );
+    }
+    if ( ! is_user_logged_in() ) {
+        wp_send_json_error( array( 'msg' => __( 'Debes iniciar sesión.', 'workshop' ) ) );
+    }
+    $biz = function_exists( 'ws_current_business' ) ? ws_current_business() : null;
+    if ( ! $biz ) {
+        wp_send_json_error( array( 'msg' => __( 'Sin negocio.', 'workshop' ) ) );
+    }
+    $d = function_exists( 'ws_subscription_data' ) ? ws_subscription_data( $biz ) : array();
+    $plans = array();
+    if ( class_exists( 'WS_Plans' ) && method_exists( 'WS_Plans', 'all' ) ) {
+        foreach ( WS_Plans::all() as $p ) {
+            $plans[] = array(
+                'id'          => (int) $p->id,
+                'name'        => (string) $p->name,
+                'slug'        => (string) ( $p->slug ?? '' ),
+                'price_text'  => method_exists( 'WS_Plans', 'format_price' ) ? WS_Plans::format_price( $p ) : '',
+                'description' => (string) ( $p->description ?? '' ),
+                'is_trial'    => (int) ( $p->is_trial ?? 0 ) === 1,
+            );
+        }
+    }
+    wp_send_json_success( array(
+        'data' => array(
+            'status'          => (string) ( $d['status'] ?? 'trial' ),
+            'status_label'    => (string) ( $d['status_label'] ?? '' ),
+            'is_trial'        => ! empty( $d['is_trial'] ),
+            'is_active'       => ! empty( $d['is_active'] ),
+            'trial_days_left' => (int) ( $d['trial_days_left'] ?? 0 ),
+            'plan_days_left'  => (int) ( $d['plan_days_left'] ?? 0 ),
+            'plan_name'       => $d['plan'] ? (string) ( $d['plan']->name ?? '' ) : '',
+            'usage'           => $d['usage'] ?? array(),
+            'limits'          => $d['limits'] ?? array(),
+            'locked'          => ! empty( $d['locked'] ),
+            'lock'            => is_string( $d['lock'] ?? null ) ? $d['lock'] : '',
+            'upgrade_pending' => ! empty( $d['upgrade_pending'] ),
+            'upgrade_plan'    => ( $d['upgrade_plan'] ?? null ) ? (string) ( $d['upgrade_plan']->name ?? '' ) : '',
+            'plans'           => $plans,
+        ),
+    ) );
+}
+
 /**
  * Helper: nonce + permiso.
  */
 function ws_guard( $cap, $fallback = '' ) {
-    if ( ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
+    // App móvil: el token (X-WS-Token) autentica sin cookie ni nonce; la
+    // validez del token equivale a la sesión web (misma duración configurada).
+    if ( ! ws_mobile_auth_user() && ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
         wp_send_json_error( array( 'msg' => __( 'Sesión inválida.', 'workshop' ) ) );
     }
     $ok = ws_can( $cap );
@@ -1769,7 +2099,7 @@ function ws_ajax_order_detail() {
 add_action( 'wp_ajax_nopriv_ws_create_order', 'ws_ajax_create_order' );
 add_action( 'wp_ajax_ws_create_order', 'ws_ajax_create_order' );
 function ws_ajax_create_order() {
-    if ( ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
+    if ( ! ws_mobile_auth_user() && ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
         wp_send_json_error( array( 'msg' => __( 'Sesión expirada.', 'workshop' ) ) );
     }
     $location_id = (int) ( $_POST['location_id'] ?? 0 );
@@ -2348,7 +2678,7 @@ function ws_ajax_save_settings() {
 
 add_action( 'wp_ajax_ws_notifications_list', 'ws_ajax_notifications_list' );
 function ws_ajax_notifications_list() {
-    if ( ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
+    if ( ! ws_mobile_auth_user() && ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
         wp_send_json_error( array( 'msg' => __( 'Sesión inválida.', 'workshop' ) ) );
     }
     if ( ! is_user_logged_in() ) {
@@ -2364,7 +2694,7 @@ function ws_ajax_notifications_list() {
 
 add_action( 'wp_ajax_ws_notifications_read', 'ws_ajax_notifications_read' );
 function ws_ajax_notifications_read() {
-    if ( ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
+    if ( ! ws_mobile_auth_user() && ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
         wp_send_json_error( array( 'msg' => __( 'Sesión inválida.', 'workshop' ) ) );
     }
     if ( ! is_user_logged_in() ) {
@@ -2382,7 +2712,7 @@ function ws_ajax_notifications_read() {
 
 add_action( 'wp_ajax_ws_notifications_delete', 'ws_ajax_notifications_delete' );
 function ws_ajax_notifications_delete() {
-    if ( ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
+    if ( ! ws_mobile_auth_user() && ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
         wp_send_json_error( array( 'msg' => __( 'Sesión inválida.', 'workshop' ) ) );
     }
     if ( ! is_user_logged_in() ) {
@@ -2398,7 +2728,7 @@ function ws_ajax_notifications_delete() {
 
 add_action( 'wp_ajax_ws_save_account', 'ws_ajax_save_account' );
 function ws_ajax_save_account() {
-    if ( ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
+    if ( ! ws_mobile_auth_user() && ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
         wp_send_json_error( array( 'msg' => __( 'Sesión inválida.', 'workshop' ) ) );
     }
     if ( ! is_user_logged_in() ) {
@@ -2447,7 +2777,7 @@ function ws_ajax_save_account() {
 
 add_action( 'wp_ajax_ws_change_password', 'ws_ajax_change_password' );
 function ws_ajax_change_password() {
-    if ( ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
+    if ( ! ws_mobile_auth_user() && ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
         wp_send_json_error( array( 'msg' => __( 'Sesión inválida.', 'workshop' ) ) );
     }
     if ( ! is_user_logged_in() ) {
@@ -2620,7 +2950,7 @@ function ws_ajax_get_location_by_slug() {
 add_action( 'wp_ajax_ws_reviews_get', 'ws_ajax_reviews_get' );
 add_action( 'wp_ajax_nopriv_ws_reviews_get', 'ws_ajax_reviews_get' );
 function ws_ajax_reviews_get() {
-    if ( ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
+    if ( ! ws_mobile_auth_user() && ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
         wp_send_json_error( array( 'msg' => __( 'Sesión inválida.', 'workshop' ) ) );
     }
 
@@ -3991,9 +4321,50 @@ function ws_announcements_json() {
     }, ws_announcements_panel() );
 }
 
+add_action( 'wp_ajax_ws_announcements_list', 'ws_ajax_announcements_list' );
+add_action( 'wp_ajax_nopriv_ws_announcements_list', 'ws_ajax_announcements_list' );
+function ws_ajax_announcements_list() {
+    if ( ! ws_mobile_auth_user() && ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Sesión inválida.', 'workshop' ) ) );
+    }
+    if ( ! is_user_logged_in() || ! function_exists( 'ws_announcement_can' ) || ! ws_announcement_can() ) {
+        wp_send_json_error( array( 'msg' => __( 'Sin permiso.', 'workshop' ) ) );
+    }
+    wp_send_json_success( array( 'list' => ws_announcements_json() ) );
+}
+
+/* Permisos: matriz completa (roles × capacidades) para la app móvil. */
+add_action( 'wp_ajax_ws_permissions_get', 'ws_ajax_permissions_get' );
+add_action( 'wp_ajax_nopriv_ws_permissions_get', 'ws_ajax_permissions_get' );
+function ws_ajax_permissions_get() {
+    if ( ! ws_mobile_auth_user() && ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Sesión inválida.', 'workshop' ) ) );
+    }
+    if ( ! is_user_logged_in() || ! ws_can( 'permissions_manage' ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Sin permiso.', 'workshop' ) ) );
+    }
+    $caps = array();
+    if ( class_exists( 'WS_Capabilities' ) ) {
+        $caps = WS_Capabilities::all_caps();
+    }
+    $matrix = class_exists( 'WS_Capabilities' ) ? WS_Capabilities::matrix() : array();
+    $roles = array(
+        'owner'        => ws_role_label( 'ws_owner' ),
+        'storekeeper'  => ws_role_label( 'ws_storekeeper' ),
+        'seller'       => ws_role_label( 'ws_seller' ),
+    );
+    wp_send_json_success( array(
+        'data' => array(
+            'caps'   => $caps,
+            'matrix' => $matrix,
+            'roles'  => $roles,
+        ),
+    ) );
+}
+
 add_action( 'wp_ajax_ws_announcement_save', 'ws_ajax_announcement_save' );
 function ws_ajax_announcement_save() {
-    if ( ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
+    if ( ! ws_mobile_auth_user() && ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
         wp_send_json_error( array( 'msg' => __( 'Sesión expirada.', 'workshop' ) ) );
     }
     if ( ! function_exists( 'ws_announcement_can' ) || ! ws_announcement_can() ) {
@@ -4024,7 +4395,7 @@ function ws_ajax_announcement_save() {
 
 add_action( 'wp_ajax_ws_announcement_toggle', 'ws_ajax_announcement_toggle' );
 function ws_ajax_announcement_toggle() {
-    if ( ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
+    if ( ! ws_mobile_auth_user() && ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
         wp_send_json_error( array( 'msg' => __( 'Sesión expirada.', 'workshop' ) ) );
     }
     if ( ! function_exists( 'ws_announcement_can' ) || ! ws_announcement_can() ) {
@@ -4053,7 +4424,7 @@ function ws_ajax_announcement_toggle() {
 
 add_action( 'wp_ajax_ws_announcement_delete', 'ws_ajax_announcement_delete' );
 function ws_ajax_announcement_delete() {
-    if ( ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
+    if ( ! ws_mobile_auth_user() && ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
         wp_send_json_error( array( 'msg' => __( 'Sesión expirada.', 'workshop' ) ) );
     }
     if ( ! function_exists( 'ws_announcement_can' ) || ! ws_announcement_can() ) {

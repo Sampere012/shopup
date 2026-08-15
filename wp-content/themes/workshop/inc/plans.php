@@ -844,7 +844,7 @@ function ws_handle_plan_request_post() {
 
 add_action( 'wp_ajax_ws_plan_request', 'ws_ajax_plan_request' );
 function ws_ajax_plan_request() {
-    if ( ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) || ! is_user_logged_in() || 'owner' !== ws_user_role() ) {
+    if ( ( ! ws_mobile_auth_user() && ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) || ! is_user_logged_in() || 'owner' !== ws_user_role() ) {
         wp_send_json_error( array( 'msg' => __( 'Sin permiso.', 'workshop' ) ) );
     }
     $biz = ws_current_business();
@@ -860,7 +860,7 @@ function ws_ajax_plan_request() {
 
 add_action( 'wp_ajax_ws_plan_cancel_request', 'ws_ajax_plan_cancel_request' );
 function ws_ajax_plan_cancel_request() {
-    if ( ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) || ! is_user_logged_in() || 'owner' !== ws_user_role() ) {
+    if ( ( ! ws_mobile_auth_user() && ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) || ! is_user_logged_in() || 'owner' !== ws_user_role() ) {
         wp_send_json_error( array( 'msg' => __( 'Sin permiso.', 'workshop' ) ) );
     }
     $biz = ws_current_business();

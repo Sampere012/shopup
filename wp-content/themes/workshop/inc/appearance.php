@@ -219,6 +219,33 @@ function ws_site_theme_inline_css() {
  * site_manage controla identidad/colores/CSS; layout_manage la portada y el pie.
  */
 add_action( 'wp_ajax_ws_save_site_theme', 'ws_ajax_save_site_theme' );
+add_action( 'wp_ajax_ws_appearance_get', 'ws_ajax_appearance_get' );
+add_action( 'wp_ajax_nopriv_ws_appearance_get', 'ws_ajax_appearance_get' );
+function ws_ajax_appearance_get() {
+    if ( ! ws_mobile_auth_user() && ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Sesión inválida.', 'workshop' ) ) );
+    }
+    if ( ! is_user_logged_in() || ( ! ws_can( 'site_manage' ) && ! ws_can( 'layout_manage' ) ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Sin permiso.', 'workshop' ) ) );
+    }
+    $t = function_exists( 'ws_site_theme' ) ? ws_site_theme() : array();
+    wp_send_json_success( array(
+        'data' => array(
+            'name'           => (string) ( $t['name'] ?? '' ),
+            'logo'           => (string) ( $t['logo'] ?? '' ),
+            'favicon'        => (string) ( $t['favicon'] ?? '' ),
+            'primary'        => (string) ( $t['primary'] ?? '#2563eb' ),
+            'accent'         => (string) ( $t['accent'] ?? '#f59e0b' ),
+            'hero_badge'     => (string) ( $t['hero_badge'] ?? '' ),
+            'hero_title'     => (string) ( $t['hero_title'] ?? '' ),
+            'hero_sub'       => (string) ( $t['hero_sub'] ?? '' ),
+            'footer_text'    => (string) ( $t['footer_text'] ?? '' ),
+            'hero_bg'        => (string) ( $t['hero_bg'] ?? '' ),
+            'hero_gradient'  => (string) ( $t['hero_gradient'] ?? '' ),
+        ),
+    ) );
+}
+
 function ws_ajax_save_site_theme() {
     ws_guard( 'site_manage', 'layout_manage' );
     $cur       = ws_site_theme();

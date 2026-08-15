@@ -58,3 +58,8 @@ Thumbs.db
 # Herramientas locales del asistente (ruflo)
 # ------------------------------------------------------------
 .freebuff/
+
+# ------------------------------------------------------------
+# App móvil Cordova (local: se sincroniza desde el tema, no sube a GitHub)
+# ------------------------------------------------------------
+/mobile-app/

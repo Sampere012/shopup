@@ -778,6 +778,52 @@ function ws_xlsx_build( array $sheets ) {
  * Exportación AJAX.
  * ============================================================ */
 
+add_action( 'wp_ajax_ws_reports_summary', 'ws_ajax_reports_summary' );
+add_action( 'wp_ajax_nopriv_ws_reports_summary', 'ws_ajax_reports_summary' );
+function ws_ajax_reports_summary() {
+	ws_guard( 'reports_view' );
+
+	$filters = ws_reports_filters( true );
+	$data    = ws_reports_data( $filters );
+
+	// Serializa los objetos de filas a arrays simples para JSON móvil.
+	$jsonify = static function ( $rows ) {
+		return array_map( static function ( $r ) {
+			return (array) $r;
+		}, (array) $rows );
+	};
+
+	$out = array(
+		'filters'    => array(
+			'location_id'  => (int) $filters['location_id'],
+			'period'       => (int) $filters['period'],
+			'period_label' => $filters['period_label'],
+			'period_start' => $filters['period_start'],
+			'period_end'   => $filters['period_end'],
+			'locations'    => array_map( static function ( $l ) {
+				return array( 'id' => (int) $l->id, 'name' => (string) $l->name );
+			}, $filters['locations'] ),
+		),
+		'currency'       => ws_currency_symbol( $filters['location_id'] ),
+		'sales'          => $jsonify( $data['sales'] ),
+		'by_type'        => $jsonify( $data['by_type'] ),
+		'top_all'        => $jsonify( $data['top_all'] ),
+		'total_sales'    => (float) $data['total_sales'],
+		'total_orders'   => (int) $data['total_orders'],
+		'total_units'    => (int) $data['total_units'],
+		'total_moves'    => (int) $data['total_moves'],
+		'avg_sale'       => (float) $data['avg_sale'],
+		'currency_totals'=> array_map( static function ( $ct ) {
+			$ct = (array) $ct;
+			return array( 'currency' => (string) ( $ct['currency'] ?? '' ), 'total' => (float) ( $ct['total'] ?? 0 ), 'n' => (int) ( $ct['n'] ?? 0 ) );
+		}, $data['currency_totals'] ),
+	);
+	if ( isset( $data['utils'] ) ) {
+		$out['utils'] = (array) $data['utils'];
+	}
+	wp_send_json_success( array( 'data' => $out ) );
+}
+
 add_action( 'wp_ajax_ws_reports_export', 'ws_ajax_reports_export' );
 function ws_ajax_reports_export() {
 	ws_guard( 'reports_view' );
