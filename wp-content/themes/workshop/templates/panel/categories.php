@@ -45,27 +45,33 @@ $ws_cat_flat = array_map( static function ( $c ) {
     <div class="ws-alert ws-alert-info">
         <i class="fa-solid fa-sitemap"></i>
         <span>
-            <?php esc_html_e( 'Organiza tu catálogo en un árbol de categorías y subcategorías. Los productos usan estas categorías (en su formulario y en la tienda). Al eliminar una categoría se poda toda su rama: sus productos pasan a la categoría padre.', 'workshop' ); ?>
+            <?php esc_html_e( 'Organiza tu catálogo en un árbol de categorías y subcategorías (máximo 3 niveles). Crea la primera categoría arriba y pulsa + en una categoría del acordeón para añadirle una subcategoría. Los productos usan estas categorías (en su formulario y en la tienda). Al eliminar una categoría se poda toda su rama: sus productos pasan a la categoría padre.', 'workshop' ); ?>
         </span>
     </div>
 
     <?php if ( $ws_cat_can ) : ?>
     <div class="ws-card">
-        <h3 class="ws-card-title"><i class="fa-solid fa-plus"></i> <span x-text="editingId ? '<?php esc_attr_e( 'Editar categoría', 'workshop' ); ?>' : '<?php esc_attr_e( 'Nueva categoría', 'workshop' ); ?>'"></span></h3>
+        <h3 class="ws-card-title"><i class="fa-solid fa-plus"></i> <span x-text="editingId ? '<?php esc_attr_e( 'Editar categoría', 'workshop' ); ?>' : (form.parent_id ? '<?php esc_attr_e( 'Nueva subcategoría', 'workshop' ); ?>' : '<?php esc_attr_e( 'Nueva categoría', 'workshop' ); ?>')"></span></h3>
         <form class="ws-form ws-grid-2" @submit.prevent="save()">
-            <label class="ws-field">
+            <label class="ws-field ws-span-2">
                 <span><?php esc_html_e( 'Nombre *', 'workshop' ); ?></span>
                 <input type="text" x-model="form.name" required maxlength="150" placeholder="<?php esc_attr_e( 'Ej.: Bebidas', 'workshop' ); ?>">
             </label>
-            <label class="ws-field">
+            <div class="ws-field ws-span-2">
                 <span><?php esc_html_e( 'Categoría padre', 'workshop' ); ?></span>
-                <select x-model.number="form.parent_id">
-                    <option value="0">— <?php esc_html_e( 'Ninguna (categoría raíz)', 'workshop' ); ?> —</option>
-                    <template x-for="c in parentOptions()" :key="c.id">
-                        <option :value="c.id" x-text="c.name"></option>
+                <div class="ws-cat-parent">
+                    <template x-if="form.parent_id">
+                        <span class="ws-badge ws-badge-general">
+                            <i class="fa-solid fa-sitemap"></i>
+                            <span x-text="'<?php esc_attr_e( 'Padre', 'workshop' ); ?>: ' + parentLabel()"></span>
+                            <button type="button" class="ws-cat-parent-clear" @click="form.parent_id = 0" :title="'<?php esc_attr_e( 'Quitar padre (categoría raíz)', 'workshop' ); ?>'"><i class="fa-solid fa-xmark"></i></button>
+                        </span>
                     </template>
-                </select>
-            </label>
+                    <template x-if="!form.parent_id">
+                        <span class="ws-muted"><?php esc_html_e( '— Categoría raíz —', 'workshop' ); ?></span>
+                    </template>
+                </div>
+            </div>
             <label class="ws-field">
                 <span><?php esc_html_e( 'Orden', 'workshop' ); ?></span>
                 <input type="number" min="0" x-model.number="form.sort_order">
@@ -81,7 +87,7 @@ $ws_cat_flat = array_map( static function ( $c ) {
                     <i class="fa-solid" :class="saving ? 'fa-spinner fa-spin' : 'fa-floppy-disk'"></i>
                     <span x-text="saving ? '<?php esc_attr_e( 'Guardando…', 'workshop' ); ?>' : '<?php esc_attr_e( 'Guardar', 'workshop' ); ?>'"></span>
                 </button>
-                <button class="ws-btn ws-btn-secondary" type="button" x-show="editingId" @click="resetForm()"><i class="fa-solid fa-xmark"></i> <?php esc_html_e( 'Cancelar edición', 'workshop' ); ?></button>
+                <button class="ws-btn ws-btn-secondary" type="button" x-show="editingId || form.parent_id" @click="resetForm()"><i class="fa-solid fa-xmark"></i> <?php esc_html_e( 'Cancelar', 'workshop' ); ?></button>
             </div>
         </form>
     </div>
@@ -110,6 +116,7 @@ $ws_cat_flat = array_map( static function ( $c ) {
                         <span class="ws-cat-count" x-show="c.children" :title="c.children + ' <?php esc_attr_e( 'subcategorías', 'workshop' ); ?>'" x-text="c.children"></span>
                         <span class="ws-cat-products"><i class="fa-solid fa-box"></i> <span x-text="c.products"></span></span>
                         <span class="ws-cat-actions" x-show="can" @click.stop>
+                            <button class="ws-icon-btn" title="<?php esc_attr_e( 'Añadir subcategoría', 'workshop' ); ?>" @click="addChild(c)" x-show="canAddChild(c)"><i class="fa-solid fa-plus"></i></button>
                             <button class="ws-icon-btn" title="<?php esc_attr_e( 'Editar', 'workshop' ); ?>" @click="edit(c)"><i class="fa-solid fa-pen"></i></button>
                             <button class="ws-icon-btn ws-danger" title="<?php esc_attr_e( 'Eliminar (podar rama)', 'workshop' ); ?>" @click="remove(c)"><i class="fa-solid fa-trash-can"></i></button>
                         </span>

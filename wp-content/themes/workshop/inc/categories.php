@@ -146,6 +146,11 @@ class WS_Categories {
                 return new WP_Error( 'parent', __( 'La categoría no puede estar dentro de sí misma.', 'workshop' ) );
             }
         }
+        // Jerarquía limitada a 3 niveles (raíz → subcategoría → sub-subcategoría):
+        // si el padre ya está en el nivel 3 no se permiten más hijos.
+        if ( $parent && count( self::path( $parent ) ) >= 3 ) {
+            return new WP_Error( 'depth', __( 'Máximo 3 niveles de categorías.', 'workshop' ) );
+        }
         $fields = array(
             'parent_id'  => $parent,
             'name'       => mb_substr( $name, 0, 150 ),

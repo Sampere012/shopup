@@ -2362,17 +2362,39 @@
                         if (!this.canManage) return;
                         const e = info.event.extendedProps;
                         this.shift = { id: info.event.id, location_id: e.location_id, user_id: e.user_id, shift_date: e.shift_date, time_start: e.time_start, time_end: e.time_end, note: e.note || '' };
+                        this.onWorkerChange();
                         this.shiftOpen = true;
                     },
                     dateClick: (info) => {
                         if (!this.canManage) return;
-                        this.shift = { id: 0, location_id: parseInt(this.locationFilter) || (this.locations[0] ? this.locations[0].id : 0), user_id: this.workers[0] ? this.workers[0].id : 0, shift_date: info.dateStr, time_start: '08:00', time_end: '16:00', note: '' };
+                        this.shift = { id: 0, location_id: 0, user_id: this.workers[0] ? this.workers[0].id : 0, shift_date: info.dateStr, time_start: '08:00', time_end: '16:00', note: '' };
+                        this.onWorkerChange();
                         this.shiftOpen = true;
                     }
                 });
                 this.calendar.render();
             },
             calendarReload() { if (this.calendar) this.calendar.refetchEvents(); },
+            // Ubicaciones donde trabaja el trabajador seleccionado en el turno.
+            workerLocations() {
+                const w = this.workers.find(x => x.id === Number(this.shift.user_id));
+                return w && w.locations ? w.locations : [];
+            },
+            // Ubicaciones disponibles en el desplegable: SOLO las del trabajador.
+            // Si el trabajador no tiene asignadas (legacy), se ofrecen todas las
+            // del negocio a las que el usuario actual tiene acceso.
+            availableLocations() {
+                const ids = this.workerLocations();
+                if (!ids.length) return this.locations;
+                return this.locations.filter(l => ids.indexOf(Number(l.id)) !== -1);
+            },
+            // Al cambiar el trabajador, fuerza una ubicación válida para él.
+            onWorkerChange() {
+                const avail = this.availableLocations();
+                if (!avail.some(l => Number(l.id) === Number(this.shift.location_id))) {
+                    this.shift.location_id = avail.length ? avail[0].id : 0;
+                }
+            },
             saveShift() {
                 const body = new URLSearchParams({ action: 'ws_save_shift', ws_nonce: WS.nonce });
                 Object.keys(this.shift).forEach(k => body.append(k, this.shift[k]));
@@ -2973,21 +2995,21 @@
                     this.form = { name: c.name, parent_id: c.parent_id, sort_order: c.sort_order, active: !!c.active };
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                 },
-                // Padres posibles: todos menos la propia categoría y su rama
-                // (no puede estar dentro de sí misma) al editar. La rama se
-                // detecta por la ruta; el servidor también lo valida.
-                parentOptions() {
-                    const editing = this.list.find((x) => x.id === this.editingId) || null;
-                    const banned = {};
-                    if (editing) {
-                        banned[editing.id] = 1;
-                        this.list.forEach((c) => {
-                            if (c.path === editing.path || c.path.indexOf(editing.path + ' / ') === 0) {
-                                banned[c.id] = 1;
-                            }
-                        });
-                    }
-                    return this.flat.filter((c) => !banned[c.id]);
+                // El "+" de cada nodo abre el formulario con esa categoría como
+                // padre. Máximo 3 niveles: solo pueden tener hijos las categorías
+                // de nivel 1 y 2 (depth 0 y 1); las de nivel 3 no muestran "+".
+                canAddChild(c) {
+                    return this.depth(c) < 2;
+                },
+                parentLabel() {
+                    if (!this.form.parent_id) return '';
+                    const p = this.flat.find((x) => x.id === Number(this.form.parent_id));
+                    return p ? p.name : '';
+                },
+                addChild(c) {
+                    this.editingId = 0;
+                    this.form = { name: '', parent_id: c.id, sort_order: 0, active: true };
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
                 },
                 api(action, extra, cb) {
                     const body = new URLSearchParams();
