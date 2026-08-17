@@ -569,7 +569,11 @@ function ws_save_biz_option( $key, $value ) {
  */
 function ws_create_business_tables( $slug ) {
     global $wpdb;
-    require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+    // dbDelta vive en wp-admin/includes/upgrade.php (solo se carga en
+    // wp-admin): asegurarla siempre antes de usarla.
+    if ( ! function_exists( 'dbDelta' ) ) {
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+    }
     $charset_collate = $wpdb->get_charset_collate();
     $prefix          = $wpdb->prefix . WS_TABLE_PREFIX . ws_biz_table_suffix( $slug ) . '_';
     $skip = array_merge( array( 'businesses' ), ws_global_tables() );

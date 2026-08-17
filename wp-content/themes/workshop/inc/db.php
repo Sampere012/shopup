@@ -620,7 +620,11 @@ function ws_global_tables() {
 
 function ws_db_install() {
     global $wpdb;
-    require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+    // dbDelta vive en wp-admin/includes/upgrade.php (solo se carga en
+    // wp-admin): asegurarla siempre antes de usarla.
+    if ( ! function_exists( 'dbDelta' ) ) {
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+    }
 
     $charset_collate = $wpdb->get_charset_collate();
     foreach ( ws_db_tables() as $key => $sql ) {
@@ -636,6 +640,13 @@ function ws_db_install() {
 add_action( 'init', 'ws_db_migrate' );
 function ws_db_migrate() {
     global $wpdb;
+    // dbDelta vive en wp-admin/includes/upgrade.php (solo se carga en
+    // wp-admin): asegurarla SIEMPRE al inicio de la migración para que ningún
+    // bloque posterior (undo_stack, notificaciones, precios, etc.) falle con
+    // "Call to undefined function dbDelta()" en contextos sin ella.
+    if ( ! function_exists( 'dbDelta' ) ) {
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+    }
     $table = $wpdb->prefix . WS_TABLE_PREFIX . 'products';
     // En instalación nueva la tabla puede no existir todavía (dbDelta corre en
     // ws_lazy_install, también en init): no intentar migrar una tabla ausente.
