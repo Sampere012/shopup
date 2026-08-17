@@ -363,7 +363,11 @@ get_header();
         var message = (form.cf_message.value || '').trim();
 
         if (!name || !phone || !message) {
-            alert('<?php echo esc_js( __( 'Por favor completa tu nombre, teléfono y consulta.', 'workshop' ) ); ?>');
+            if (typeof Swal !== 'undefined') {
+                Swal.fire({ icon: 'warning', title: '<?php echo esc_js( __( 'Datos incompletos', 'workshop' ) ); ?>', text: '<?php echo esc_js( __( 'Por favor completa tu nombre, teléfono y consulta.', 'workshop' ) ); ?>' });
+            } else {
+                console.warn('<?php echo esc_js( __( 'Por favor completa tu nombre, teléfono y consulta.', 'workshop' ) ); ?>');
+            }
             return;
         }
 

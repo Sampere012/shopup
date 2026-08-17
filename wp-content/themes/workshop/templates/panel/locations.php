@@ -106,11 +106,15 @@ $rates      = ws_exchange_rates();
     <div class="ws-card ws-link-card">
         <div class="ws-card-head">
             <div>
-                <h3><i class="fa-solid fa-share-nodes"></i> <?php esc_html_e( 'Conectar ubicaciones · stock compartido por línea', 'workshop' ); ?></h3>
-                <p class="ws-muted"><?php esc_html_e( 'Arrastra desde el asa «conectar» de una ubicación (HIJA) hasta la que la abastece (PADRE): la flecha apunta al padre. El stock que entra o sale en una ubicación se comparte con TODA su línea — sus padres hasta la raíz y sus hijos hasta las hojas — pero NO con los hermanos. Ejemplo: n1→n3 y n2→n3: lo que entra en n1 llega a n3 pero no a n2; lo que entra en n3 (raíz) llega a n1 y a n2. En una cadena n1→n2→n3 todo se comparte. Cada ubicación solo puede tener UN padre (conectarla de nuevo la reasigna). Haz clic en una línea para desconectarla.', 'workshop' ); ?></p>
+                <h3><i class="fa-solid fa-share-nodes"></i> <?php esc_html_e( 'Conectar ubicaciones · stock compartido', 'workshop' ); ?></h3>
+                <p class="ws-muted"><?php esc_html_e( 'Arrastra desde el asa «conectar» de una ubicación (HIJA) hasta la que la abastece (PADRE): la flecha apunta al padre. Las conexiones pueden ser 1 a N o N a M: una ubicación puede depender de varias y abastecer a varias. El stock que entra o sale en una ubicación se comparte con TODAS las ubicaciones conectadas entre sí. En el modo «Conectar» puedes arrastrar un nodo sobre otro para enlazarlos. Haz clic en una línea (o en su botón central) para desconectarla.', 'workshop' ); ?></p>
                 <span class="ws-link-dirty" x-show="isDirty()"><i class="fa-solid fa-circle-exclamation"></i> <?php esc_html_e( 'Cambios sin guardar', 'workshop' ); ?></span>
             </div>
             <div class="ws-link-tools">
+                <div class="ws-link-mode" role="group" aria-label="<?php esc_attr_e( 'Modo del lienzo', 'workshop' ); ?>">
+                    <button type="button" :class="canvasAction === 'move' && 'is-active'" @click="canvasAction = 'move'" title="<?php esc_attr_e( 'Arrastra los nodos para colocarlos', 'workshop' ); ?>"><i class="fa-solid fa-arrows-up-down-left-right"></i> <?php esc_html_e( 'Mover', 'workshop' ); ?></button>
+                    <button type="button" :class="canvasAction === 'connect' && 'is-active'" @click="canvasAction = 'connect'" title="<?php esc_attr_e( 'Arrastra un nodo sobre otro para conectarlos', 'workshop' ); ?>"><i class="fa-solid fa-link"></i> <?php esc_html_e( 'Conectar', 'workshop' ); ?></button>
+                </div>
                 <button class="ws-btn ws-btn-secondary" @click="autoLayout()" title="<?php esc_attr_e( 'Ordena las ubicaciones en círculo', 'workshop' ); ?>"><i class="fa-solid fa-arrows-to-circle"></i> <?php esc_html_e( 'Ordenar', 'workshop' ); ?></button>
                 <button class="ws-btn ws-btn-secondary" @click="clearLinks()"><i class="fa-solid fa-circle-minus"></i> <?php esc_html_e( 'Limpiar', 'workshop' ); ?></button>
                 <button class="ws-btn ws-btn-primary" @click="saveLinks()" :disabled="savingLinks"><i class="fa-solid fa-floppy-disk"></i> <?php esc_html_e( 'Guardar', 'workshop' ); ?></button>

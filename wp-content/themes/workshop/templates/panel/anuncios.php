@@ -258,10 +258,10 @@ document.addEventListener('alpine:init', function () {
                         self.list = json.data.list;
                         self.resetForm();
                         window.Swal ? Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: json.data.msg, showConfirmButton: false, timer: 2500 })
-                                    : alert(json.data.msg);
+                                    : console.info('[ws]', json.data.msg);
                     } else {
                         window.Swal ? Swal.fire({ icon: 'error', title: 'Error', text: (json && json.data && json.data.msg) || 'No se pudo guardar.' })
-                                    : alert((json && json.data && json.data.msg) || 'No se pudo guardar.');
+                                    : console.error('[ws]', (json && json.data && json.data.msg) || 'No se pudo guardar.');
                     }
                 });
             },

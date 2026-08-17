@@ -155,7 +155,10 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                             <span class="ws-badge" :class="row.location_type === 'pv' ? 'ws-badge-pv' : 'ws-badge-wh'" x-text="row.location_name"></span>
                             <small class="ws-loc-desc" x-show="row.location_description" x-text="row.location_description"></small>
                         </td>
-                        <td class="ws-strong" :class="row.group_total <= row.min_stock ? 'ws-text-danger' : ''" x-text="row.qty"></td>
+                        <td>
+                            <span class="ws-strong" :class="row.min_stock > 0 && row.group_total <= row.min_stock ? 'ws-text-danger' : ''" x-text="row.qty"></span>
+                            <span class="ws-badge ws-badge-low" x-show="row.min_stock > 0 && row.group_total <= row.min_stock" x-cloak><i class="fa-solid fa-triangle-exclamation"></i> <?php esc_html_e( 'Bajo', 'workshop' ); ?></span>
+                        </td>
                         <td>
                             <template x-if="row.group_parts && row.group_parts.length > 1">
                                 <span class="ws-group-badge" :title="groupTitle(row)">

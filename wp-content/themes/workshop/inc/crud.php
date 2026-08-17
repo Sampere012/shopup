@@ -669,10 +669,11 @@ class WS_CRUD {
     /**
      * Reemplaza todos los enlaces de stock compartido del negocio (DIRIGIDOS).
      *
-     * Cada par (a, b) significa "b es la SUPERIOR de a" (b abastece a a): el
-     * stock que entra/sale en a se comparte con su línea (padres y hijos),
-     * pero no con los hermanos. Reglas: una ubicación solo puede tener UN
-     * padre, y no se permiten ciclos.
+     * Cada par (a, b) significa "b es la SUPERIOR de a" (b abastece a a).
+     * Las conexiones pueden ser 1 a N o N a M: un mismo nodo puede tener
+     * VARIOS padres (aparecer como 'a' en varios pares) y varios hijos. El
+     * stock se comparte entre TODAS las ubicaciones conectadas entre sí
+     * (componente conexo). No se permiten ciclos.
      *
      * @param array $pairs Lista de pares: array de array( 'a' => int, 'b' => int )
      *                     o array de array( 0 => int, 1 => int ).
@@ -682,10 +683,10 @@ class WS_CRUD {
         global $wpdb;
         $table = self::table( 'location_links' );
 
-        // Normalizar: la dirección importa (a = hijo, b = padre). Si un mismo
-        // hijo llega con dos padres, gana el último (la UI ya hace re-parenting).
+        // Normalizar: la dirección importa (a = hijo, b = padre). Un hijo
+        // puede tener VARIOS padres; solo se descartan pares duplicados.
         $seen = array();
-        $child_parent = array();
+        $edges = array(); // array( child => array de parents ).
         foreach ( (array) $pairs as $pair ) {
             if ( is_array( $pair ) && isset( $pair['a'] ) && isset( $pair['b'] ) ) {
                 $a = (int) $pair['a'];
@@ -704,34 +705,56 @@ class WS_CRUD {
                 continue;
             }
             $seen[ $key ] = true;
-            $child_parent[ $a ] = $b;
+            if ( ! isset( $edges[ $a ] ) ) {
+                $edges[ $a ] = array();
+            }
+            if ( ! in_array( $b, $edges[ $a ], true ) ) {
+                $edges[ $a ][] = $b;
+            }
         }
 
-        // Validación de ciclos: caminar desde cada hijo hacia la raíz; si
-        // volvemos al hijo, la jerarquía tendría un ciclo.
-        foreach ( array_keys( $child_parent ) as $child ) {
-            $cur   = $child_parent[ $child ];
-            $guard = 0;
-            while ( isset( $child_parent[ $cur ] ) ) {
-                if ( $child_parent[ $cur ] === $child ) {
-                    return array( 'ok' => false, 'count' => 0, 'error' => __( 'Conexión inválida: crea un ciclo en la jerarquía de ubicaciones.', 'workshop' ) );
-                }
-                $cur = $child_parent[ $cur ];
-                if ( ++$guard > count( $child_parent ) + 1 ) {
-                    break;
-                }
+        // Validación de ciclos sobre el GRAFO DIRIGIDO completo (DFS con
+        // colores): cada nodo puede tener varios padres, así que no basta
+        // con caminar una única cadena hacia la raíz.
+        $visiting = array();
+        $done     = array();
+        $has_cycle = false;
+        $visit = function ( $node ) use ( &$visit, &$visiting, &$done, &$has_cycle, $edges ) {
+            if ( $has_cycle || isset( $done[ $node ] ) ) {
+                return;
             }
+            if ( isset( $visiting[ $node ] ) ) {
+                $has_cycle = true;
+                return;
+            }
+            $visiting[ $node ] = true;
+            foreach ( (array) ( $edges[ $node ] ?? array() ) as $next ) {
+                $visit( $next );
+            }
+            unset( $visiting[ $node ] );
+            $done[ $node ] = true;
+        };
+        foreach ( array_keys( $edges ) as $node ) {
+            $visit( $node );
+            if ( $has_cycle ) {
+                break;
+            }
+        }
+        if ( $has_cycle ) {
+            return array( 'ok' => false, 'count' => 0, 'error' => __( 'Conexión inválida: crea un ciclo en la jerarquía de ubicaciones.', 'workshop' ) );
         }
 
         $count = 0;
         $wpdb->query( "DELETE FROM {$table}" );
-        foreach ( $child_parent as $child => $parent ) {
-            // Ambos extremos deben ser ubicaciones reales del negocio.
-            if ( ! self::get_location( $child ) || ! self::get_location( $parent ) ) {
-                continue;
+        foreach ( $edges as $child => $parents ) {
+            foreach ( $parents as $parent ) {
+                // Ambos extremos deben ser ubicaciones reales del negocio.
+                if ( ! self::get_location( $child ) || ! self::get_location( $parent ) ) {
+                    continue;
+                }
+                $wpdb->insert( $table, array( 'location_a' => $child, 'location_b' => $parent ) );
+                $count++;
             }
-            $wpdb->insert( $table, array( 'location_a' => $child, 'location_b' => $parent ) );
-            $count++;
         }
         return array( 'ok' => true, 'count' => $count, 'error' => '' );
     }

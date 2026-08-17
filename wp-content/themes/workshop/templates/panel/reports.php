@@ -316,7 +316,7 @@ if ( $ws_biz && ! empty( $ws_biz->slug ) ) {
                 if (typeof Swal !== 'undefined') {
                     Swal.fire({ icon: 'error', title: '<?php esc_html_e( 'Exportar', 'workshop' ); ?>', text: (err && err.message) || '<?php esc_html_e( 'No se pudo exportar.', 'workshop' ); ?>' });
                 } else {
-                    alert((err && err.message) || '<?php esc_html_e( 'No se pudo exportar.', 'workshop' ); ?>');
+                    console.error('[ws]', (err && err.message) || '<?php esc_html_e( 'No se pudo exportar.', 'workshop' ); ?>');
                 }
             })
             .finally(function () {

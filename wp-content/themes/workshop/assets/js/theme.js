@@ -109,8 +109,23 @@
         if (typeof Swal !== 'undefined') {
             return Swal.fire({ icon: icon || 'success', title: title || '', text: text || '', toast: true, position: 'top-end', showConfirmButton: false, timer: 2500 });
         }
-        alert((title || '') + ' ' + (text || ''));
+        // Fallback no bloqueante (sweetalert2 siempre se encola en el tema,
+        // pero si algo fallara, nunca usamos alert() nativo).
+        console[icon === 'error' ? 'error' : 'info']('[ws]', title, text);
     };
+
+    // Confirmación no bloqueante con SweetAlert2 (o fallback de consola).
+    const wsConfirm = (opts) => {
+        if (typeof Swal !== 'undefined') {
+            return Swal.fire(Object.assign({ icon: 'warning', showCancelButton: true, confirmButtonText: 'Aceptar', cancelButtonText: 'Cancelar' }, opts));
+        }
+        return Promise.resolve({ isConfirmed: window.confirm(opts.text || opts.title || '') });
+    };
+
+    // Escapa HTML para insertar texto de usuario en diálogos (títulos/textos).
+    const escapeHtml = (s) => String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
     // Exponer toast globalmente para scripts inline de los paneles
     // (p. ej. la exportación de reportes).
@@ -1135,6 +1150,10 @@
             linkMode: null,
             linkFrom: null,
             linkMoveId: null,
+            // Acción del lienzo: 'move' (arrastrar nodo) o 'connect' (arrastrar
+            // un nodo sobre otro crea la conexión). El asa «conectar» siempre
+            // crea conexión aunque el modo sea 'move'.
+            canvasAction: 'move',
             tempLine: null,
             hoverNode: 0,
             savingLinks: false,
@@ -1448,8 +1467,9 @@
             },
             // Crea (o elimina) un enlace DIRIGIDO hijo -> padre. Reglas:
             // - El nodo de ORIGEN del arrastre es el HIJO; el de destino el PADRE.
-            // - Un nodo solo puede tener UN padre: conectar de nuevo lo re-padrea.
-            // - No se permiten ciclos (el padre no puede estar en la rama del hijo).
+            // - Las conexiones son 1 a N o N a M: un nodo puede tener VARIOS
+            //   padres y varios hijos (conectar de nuevo AÑADE, no reasigna).
+            // - No se permiten ciclos (el padre no puede depender del hijo).
             connectNodes(child, parent) {
                 if (!child || !parent || child === parent) return;
                 const key = this.linkKey(child, parent);
@@ -1458,20 +1478,26 @@
                     this.links = this.links.filter(l => this.linkKey(l.a, l.b) !== key);
                     return;
                 }
-                // Ciclo: el padre propuesto ya depende (directa o indirectamente)
-                // del hijo, o es descendiente suyo.
-                let cur = parent;
-                while (cur) {
-                    if (cur === child) {
-                        toast('error', 'Conexión inválida', this.locName(child) + ' no puede depender de ' + this.locName(parent) + ': crearía un ciclo.');
-                        return;
-                    }
-                    const pl = this.links.find(l => l.a === cur);
-                    cur = pl ? pl.b : 0;
+                if (this.wouldCycle(child, parent)) {
+                    toast('error', 'Conexión inválida', this.locName(child) + ' no puede depender de ' + this.locName(parent) + ': crearía un ciclo.');
+                    return;
                 }
-                // Re-parenting: el hijo solo tiene un padre.
-                this.links = this.links.filter(l => l.a !== child);
                 this.links.push({ a: child, b: parent });
+            },
+            // ¿El padre propuesto ya depende (directa o indirectamente) del
+            // hijo? Cada nodo puede tener varios padres: BFS sobre TODOS los
+            // caminos hacia arriba.
+            wouldCycle(child, parent) {
+                const queue = [parent];
+                const seen = {};
+                while (queue.length) {
+                    const cur = queue.shift();
+                    if (cur === child) return true;
+                    if (seen[cur]) continue;
+                    seen[cur] = true;
+                    this.links.forEach(l => { if (l.a === cur) queue.push(l.b); });
+                }
+                return false;
             },
             removeLink(link) {
                 const key = this.linkKey(link.a, link.b);
@@ -1517,6 +1543,12 @@
             },
             startMove(id, evt) {
                 if (evt) evt.preventDefault();
+                // En modo 'connect', arrastrar el NODO también conecta: al
+                // soltarlo sobre otro nodo se crea el enlace (este -> destino).
+                if (this.canvasAction === 'connect') {
+                    this.startConnect(id, evt);
+                    return;
+                }
                 this.linkMode = 'move';
                 this.linkMoveId = id;
                 this._pm = (e) => this.onLinkPointerMove(e);
@@ -1552,6 +1584,16 @@
                     this.tempLine = null;
                     this.hoverNode = 0;
                 } else if (this.linkMode === 'move') {
+                    // Drag & drop: al soltar un nodo SOBRE otro se crea la
+                    // conexión (este -> destino) cuando el modo es 'connect'.
+                    if (this.canvasAction === 'connect') {
+                        const el = document.elementFromPoint(evt.clientX, evt.clientY);
+                        const nodeEl = el && el.closest ? el.closest('[data-node-id]') : null;
+                        const targetId = nodeEl ? parseInt(nodeEl.getAttribute('data-node-id'), 10) : 0;
+                        if (targetId && targetId !== this.linkMoveId) {
+                            this.connectNodes(this.linkMoveId, targetId);
+                        }
+                    }
                     this.linkMode = null;
                     this.linkMoveId = null;
                     this.persistNodePositions();
@@ -1993,14 +2035,23 @@
                 const locationId = item.location_id || 0;
                 if (!id || !locationId) { toast('error', 'Selecciona una ubicación para limpiar'); return; }
                 const name = item.name || ('#' + id);
-                if (!confirm('¿Eliminar por completo el registro de stock de "' + name + '" en ' + (item.location_name || 'esta ubicación') + '?\n\nNo queda en 0: se borra la fila del inventario. Esta acción no se puede deshacer desde aquí.')) return;
-                $('ws_stock_clean', { kind: kind, id: id, location_id: locationId }).then(res => {
-                    if (res.success) {
-                        toast('success', 'Registro de stock eliminado por completo');
-                        this.load();
-                    } else {
-                        toast('error', 'Error', res.data && res.data.msg);
-                    }
+                wsConfirm({
+                    title: '¿Eliminar el registro de stock por completo?',
+                    html: 'Se borrará la fila de inventario de <strong>' + escapeHtml(name) + '</strong> en ' + escapeHtml(item.location_name || 'esta ubicación')
+                        + '<br><small class="ws-muted">Si la ubicación tiene stock compartido, también se eliminará en las ubicaciones conectadas.</small>'
+                        + '<br><small class="ws-muted">No queda en 0: se elimina la fila. Esta acción no se puede deshacer desde aquí.</small>',
+                    confirmButtonText: 'Eliminar',
+                    confirmButtonColor: '#dc2626'
+                }).then(r => {
+                    if (!r.isConfirmed) return;
+                    $('ws_stock_clean', { kind: kind, id: id, location_id: locationId }).then(res => {
+                        if (res.success) {
+                            toast('success', 'Registro de stock eliminado por completo');
+                            this.load();
+                        } else {
+                            toast('error', 'Error', res.data && res.data.msg);
+                        }
+                    });
                 });
             },
             /* ---------- Cuadre de inventario (físico vs virtual, sin caja) ---------- */
@@ -2101,6 +2152,8 @@
             // Pila de deshacer/rehacer (últimos cambios del negocio).
             undoList: [],
             undoLoading: false,
+            // Historial colapsable debajo de la tabla.
+            undoOpen: true,
             setScope(s) { this.scope = s; this.page = 1; this.load(); },
             get canUndo() { return !!this.undoList.length && !this.undoList[0].undone; },
             get canRedo() { return !!this.undoList.length && !!this.undoList[0].undone; },
@@ -2122,19 +2175,31 @@
             undo() {
                 if (!this.canUndo) return;
                 const label = this.undoList[0] ? this.undoList[0].label : '';
-                if (!confirm('¿Deshacer el último cambio?\n\n' + label + '\n\nEl stock volverá al estado anterior a esta operación.')) return;
-                $('ws_undo', {}).then(res => {
-                    if (res.success) { toast('success', 'Cambio deshecho: ' + res.data.label); this.load(); this.loadUndo(); }
-                    else { toast('error', 'Error', res.data && res.data.msg); this.loadUndo(); }
+                wsConfirm({
+                    title: '¿Deshacer el último cambio?',
+                    html: '<span class="ws-undo-label">' + escapeHtml(label) + '</span><br><small class="ws-muted">El stock volverá al estado anterior a esta operación.</small>',
+                    confirmButtonText: 'Deshacer'
+                }).then(r => {
+                    if (!r.isConfirmed) return;
+                    $('ws_undo', {}).then(res => {
+                        if (res.success) { toast('success', 'Cambio deshecho: ' + res.data.label); this.load(); this.loadUndo(); }
+                        else { toast('error', 'Error', res.data && res.data.msg); this.loadUndo(); }
+                    });
                 });
             },
             redo() {
                 if (!this.canRedo) return;
                 const label = this.undoList[0] ? this.undoList[0].label : '';
-                if (!confirm('¿Rehacer el cambio deshecho?\n\n' + label)) return;
-                $('ws_redo', {}).then(res => {
-                    if (res.success) { toast('success', 'Cambio rehecho: ' + res.data.label); this.load(); this.loadUndo(); }
-                    else { toast('error', 'Error', res.data && res.data.msg); this.loadUndo(); }
+                wsConfirm({
+                    title: '¿Rehacer el cambio deshecho?',
+                    html: '<span class="ws-undo-label">' + escapeHtml(label) + '</span>',
+                    confirmButtonText: 'Rehacer'
+                }).then(r => {
+                    if (!r.isConfirmed) return;
+                    $('ws_redo', {}).then(res => {
+                        if (res.success) { toast('success', 'Cambio rehecho: ' + res.data.label); this.load(); this.loadUndo(); }
+                        else { toast('error', 'Error', res.data && res.data.msg); this.loadUndo(); }
+                    });
                 });
             },
             // Revierte un movimiento concreto del historial: aplica la
@@ -2143,10 +2208,17 @@
             revertMovement(m) {
                 if (!m.revertable) return;
                 const who = m.product_name || m.combo_name || ('#' + m.id);
-                if (!confirm('¿Revertir este movimiento?\n\n' + this.typeLabel(m.type) + ' · ' + who + ' × ' + m.qty + '\n\nSe aplicará la operación inversa al stock y quedará marcado como revertido en el historial.')) return;
-                $('ws_movement_revert', { id: m.id }).then(res => {
-                    if (res.success) { toast('success', 'Movimiento revertido'); this.load(); this.loadUndo(); }
-                    else { toast('error', 'Error', res.data && res.data.msg); }
+                wsConfirm({
+                    title: '¿Revertir este movimiento?',
+                    html: '<strong>' + escapeHtml(this.typeLabel(m.type)) + '</strong> · ' + escapeHtml(who) + ' × <b>' + m.qty + '</b><br><small class="ws-muted">Se aplicará la operación inversa al stock y quedará marcado como revertido en el historial.</small>',
+                    confirmButtonText: 'Revertir',
+                    confirmButtonColor: '#1d4ed8'
+                }).then(r => {
+                    if (!r.isConfirmed) return;
+                    $('ws_movement_revert', { id: m.id }).then(res => {
+                        if (res.success) { toast('success', 'Movimiento revertido'); this.load(); this.loadUndo(); }
+                        else { toast('error', 'Error', res.data && res.data.msg); }
+                    });
                 });
             }
         }));
@@ -2888,11 +2960,9 @@
                         if (json && json.success) {
                             this.refresh(json);
                             this.resetForm();
-                            window.Swal ? Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Categoría guardada', showConfirmButton: false, timer: 2000 })
-                                        : alert('Categoría guardada');
+                            toast('success', 'Categoría guardada');
                         } else {
-                            window.Swal ? Swal.fire({ icon: 'error', title: 'Error', text: (json && json.data && json.data.msg) || 'No se pudo guardar.' })
-                                        : alert((json && json.data && json.data.msg) || 'No se pudo guardar.');
+                            toast('error', 'Error', (json && json.data && json.data.msg) || 'No se pudo guardar.');
                         }
                     });
                 },
@@ -2905,11 +2975,8 @@
                     const msg = c.children > 0
                         ? 'Se PODARÁ esta categoría y sus subcategorías. Los productos pasarán a la categoría padre. ¿Continuar?'
                         : '¿Eliminar esta categoría? Sus productos pasarán a la categoría padre.';
-                    if (window.Swal) {
-                        Swal.fire({ title: 'Eliminar categoría', text: msg, icon: 'warning', showCancelButton: true,
-                            confirmButtonText: 'Sí, podar', cancelButtonText: 'Cancelar' })
-                            .then((r) => { if (r.isConfirmed) { doRemove(); } });
-                    } else if (confirm(msg)) { doRemove(); }
+                    wsConfirm({ title: 'Eliminar categoría', text: msg, confirmButtonText: 'Sí, podar' })
+                        .then((r) => { if (r.isConfirmed) { doRemove(); } });
                 }
             };
         });
@@ -3055,11 +3122,9 @@
                             if (json && json.success) {
                                 this.resetForm();
                                 this.load();
-                                window.Swal ? Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Gasto guardado', showConfirmButton: false, timer: 2000 })
-                                            : alert('Gasto guardado');
+                                toast('success', 'Gasto guardado');
                             } else {
-                                window.Swal ? Swal.fire({ icon: 'error', title: 'Error', text: (json && json.data && json.data.msg) || 'No se pudo guardar.' })
-                                            : alert((json && json.data && json.data.msg) || 'No se pudo guardar.');
+                                toast('error', 'Error', (json && json.data && json.data.msg) || 'No se pudo guardar.');
                             }
                         });
                         return;
@@ -3076,11 +3141,9 @@
                             this.resetForm();
                             this.load();
                             if (failed === 0) {
-                                window.Swal ? Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: months + ' gastos guardados', showConfirmButton: false, timer: 2400 })
-                                            : alert(months + ' gastos guardados');
+                                toast('success', months + ' gastos guardados');
                             } else {
-                                window.Swal ? Swal.fire({ icon: 'warning', title: 'Parcial', text: (months - failed) + ' de ' + months + ' gastos guardados. Revisa los meses siguientes.' })
-                                            : alert((months - failed) + ' de ' + months + ' gastos guardados.');
+                                Swal.fire({ icon: 'warning', title: 'Parcial', text: (months - failed) + ' de ' + months + ' gastos guardados. Revisa los meses siguientes.' });
                             }
                             return;
                         }
@@ -3109,11 +3172,8 @@
                             if (json && json.success) { this.load(); }
                         });
                     };
-                    if (window.Swal) {
-                        Swal.fire({ title: 'Eliminar gasto', text: '¿Eliminar este gasto?', icon: 'warning', showCancelButton: true,
-                            confirmButtonText: 'Sí, eliminar', cancelButtonText: 'Cancelar' })
-                            .then((r) => { if (r.isConfirmed) { doRemove(); } });
-                    } else if (confirm('¿Eliminar este gasto?')) { doRemove(); }
+                    wsConfirm({ title: 'Eliminar gasto', text: '¿Eliminar este gasto?', confirmButtonText: 'Sí, eliminar' })
+                        .then((r) => { if (r.isConfirmed) { doRemove(); } });
                 }
             };
         });

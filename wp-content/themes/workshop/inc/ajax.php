@@ -1052,22 +1052,32 @@ function ws_ajax_stock_clean() {
     global $wpdb;
     $stock_t = ws_table_name( 'stock' );
     $before  = WS_Stock::undo_snapshot();
+    // Las ubicaciones CONECTADAS por stock compartido también se limpian:
+    // un borrado es un movimiento más y debe verse reflejado en toda la
+    // conexión (igual que entrada/salida/venta).
+    $clean_locations = array_merge( array( $location_id ), WS_Stock::linked_location_ids( $location_id ) );
+    $clean_locations = array_values( array_unique( array_map( 'intval', $clean_locations ) ) );
     $deleted = 0;
     if ( 'combo' === $kind ) {
         // El stock de un combo se DERIVA de sus productos: limpiarlo elimina
-        // el registro de stock de TODOS sus componentes en esa ubicación.
+        // el registro de stock de TODOS sus componentes en cada ubicación
+        // (la elegida y sus conectadas).
         foreach ( WS_Combos::items( $id ) as $it ) {
-            $res = $wpdb->delete( $stock_t, array(
-                'product_id' => (int) $it->product_id,
-                'location_id' => $location_id,
-            ) );
-            $deleted += (int) $res;
+            foreach ( $clean_locations as $clean_loc ) {
+                $res = $wpdb->delete( $stock_t, array(
+                    'product_id'  => (int) $it->product_id,
+                    'location_id' => $clean_loc,
+                ) );
+                $deleted += (int) $res;
+            }
         }
     } else {
-        $deleted = (int) $wpdb->delete( $stock_t, array(
-            'product_id' => $id,
-            'location_id' => $location_id,
-        ) );
+        foreach ( $clean_locations as $clean_loc ) {
+            $deleted += (int) $wpdb->delete( $stock_t, array(
+                'product_id'  => $id,
+                'location_id' => $clean_loc,
+            ) );
+        }
     }
     if ( 'combo' === $kind ) {
         $name = $wpdb->get_var( $wpdb->prepare( 'SELECT name FROM ' . ws_table_name( 'combos' ) . ' WHERE id=%d', $id ) );
@@ -1075,6 +1085,9 @@ function ws_ajax_stock_clean() {
     } else {
         $name = $wpdb->get_var( $wpdb->prepare( 'SELECT name FROM ' . ws_table_name( 'products' ) . ' WHERE id=%d', $id ) );
         $label = 'Limpieza de ' . ( $name ? $name : '#' . $id );
+    }
+    if ( count( $clean_locations ) > 1 ) {
+        $label .= sprintf( ' (%d ubicaciones conectadas)', count( $clean_locations ) - 1 );
     }
     WS_Stock::undo_push( $location_id, $label, $before, WS_Stock::undo_snapshot() );
     ws_log_audit( 'stock_clean', $kind, $id, array( 'location_id' => $location_id, 'deleted' => $deleted ) );

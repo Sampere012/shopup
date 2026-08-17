@@ -23,36 +23,12 @@ $can_manage    = ws_can( 'stock_writeoff' );
             <button type="button" class="ws-tab" :class="scope === 'combos' && 'is-active'" @click="setScope('combos')"><i class="fa-solid fa-layer-group"></i> <?php esc_html_e( 'Combos', 'workshop' ); ?></button>
         </div>
 
-        <!-- Deshacer / rehacer: revierte o reaplica el último cambio de stock -->
-        <div class="ws-undo-bar" x-show="canManageStock" x-cloak>
-            <div class="ws-undo-title"><i class="fa-solid fa-clock-rotate-left"></i> <?php esc_html_e( 'Deshacer / rehacer movimientos', 'workshop' ); ?></div>
-            <div class="ws-undo-actions">
-                <button type="button" class="ws-btn ws-btn-sm ws-btn-undo" @click="undo()" :disabled="!canUndo" :title="canUndo ? undoList[0].label : ''">
-                    <i class="fa-solid fa-rotate-left"></i> <?php esc_html_e( 'Deshacer', 'workshop' ); ?>
-                </button>
-                <button type="button" class="ws-btn ws-btn-sm ws-btn-redo" @click="redo()" :disabled="!canRedo" :title="canRedo ? undoList[0].label : ''">
-                    <i class="fa-solid fa-rotate-right"></i> <?php esc_html_e( 'Rehacer', 'workshop' ); ?>
-                </button>
-            </div>
-        </div>
-        <div class="ws-undo-panel" x-show="canManageStock && undoList.length" x-cloak>
-            <template x-for="u in undoList" :key="u.id">
-                <div class="ws-undo-item" :class="u.undone && 'is-undone'">
-                    <i class="fa-solid" :class="u.undone ? 'fa-rotate-right' : 'fa-rotate-left'"></i>
-                    <span class="ws-undo-label" x-text="u.label"></span>
-                    <span class="ws-undo-meta">
-                        <span x-text="u.location_name || '—'"></span> · <span x-text="u.user_name"></span> · <span x-text="u.date"></span>
-                    </span>
-                    <span class="ws-badge" x-show="u.undone"><?php esc_html_e( 'deshecho', 'workshop' ); ?></span>
-                </div>
-            </template>
-        </div>
         <div class="ws-stock-head">
-            <div class="ws-search">
-                <i class="fa-solid fa-magnifying-glass"></i>
-                <input type="search" placeholder="<?php esc_attr_e( 'Buscar…', 'workshop' ); ?>" x-model="search" @keyup.enter="onSearch()" @input="onSearch()">
-            </div>
             <div class="ws-stock-filters">
+                <div class="ws-search">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                    <input type="search" placeholder="<?php esc_attr_e( 'Buscar…', 'workshop' ); ?>" x-model="search" @keyup.enter="onSearch()" @input="onSearch()">
+                </div>
                 <select x-model="typeFilter" @change="onFilter()">
                     <option value=""><?php esc_html_e( 'Todos los tipos', 'workshop' ); ?></option>
                     <option value="entrada"><?php esc_html_e( 'Entrada', 'workshop' ); ?></option>
@@ -68,6 +44,16 @@ $can_manage    = ws_can( 'stock_writeoff' );
                 </select>
                 <input type="date" x-model="dateFrom" @change="onFilter()" aria-label="<?php esc_attr_e( 'Desde', 'workshop' ); ?>" title="<?php esc_attr_e( 'Desde', 'workshop' ); ?>">
                 <input type="date" x-model="dateTo" @change="onFilter()" aria-label="<?php esc_attr_e( 'Hasta', 'workshop' ); ?>" title="<?php esc_attr_e( 'Hasta', 'workshop' ); ?>">
+            </div>
+            <!-- Deshacer / rehacer: revierte o reaplica el último cambio de stock -->
+            <div class="ws-undo-actions" x-show="canManageStock" x-cloak>
+                <span class="ws-undo-title"><i class="fa-solid fa-clock-rotate-left"></i> <?php esc_html_e( 'Deshacer / rehacer', 'workshop' ); ?></span>
+                <button type="button" class="ws-btn ws-btn-sm ws-btn-undo" @click="undo()" :disabled="!canUndo" :title="canUndo ? undoList[0].label : ''">
+                    <i class="fa-solid fa-rotate-left"></i> <?php esc_html_e( 'Deshacer', 'workshop' ); ?>
+                </button>
+                <button type="button" class="ws-btn ws-btn-sm ws-btn-redo" @click="redo()" :disabled="!canRedo" :title="canRedo ? undoList[0].label : ''">
+                    <i class="fa-solid fa-rotate-right"></i> <?php esc_html_e( 'Rehacer', 'workshop' ); ?>
+                </button>
             </div>
         </div>
 
@@ -125,6 +111,27 @@ $can_manage    = ws_can( 'stock_writeoff' );
                 <select class="ws-page-size" x-model.number="pageSize" @change="changePageSize()">
                     <option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option>
                 </select>
+            </div>
+        </div>
+
+        <!-- Historial de deshacer/rehacer: DEBAJO de la tabla, colapsable -->
+        <div class="ws-undo-panel" x-show="canManageStock && undoList.length" x-cloak>
+            <div class="ws-undo-panel-head" @click="undoOpen = !undoOpen">
+                <span class="ws-undo-title"><i class="fa-solid fa-clock-rotate-left"></i> <?php esc_html_e( 'Historial de deshacer / rehacer', 'workshop' ); ?></span>
+                <span class="ws-undo-count" x-text="undoList.length + (undoList.length === 1 ? ' operación' : ' operaciones')"></span>
+                <i class="fa-solid" :class="undoOpen ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+            </div>
+            <div x-show="undoOpen" x-collapse>
+                <template x-for="u in undoList" :key="u.id">
+                    <div class="ws-undo-item" :class="u.undone && 'is-undone'">
+                        <i class="fa-solid" :class="u.undone ? 'fa-rotate-right' : 'fa-rotate-left'"></i>
+                        <span class="ws-undo-label" x-text="u.label"></span>
+                        <span class="ws-undo-meta">
+                            <span x-text="u.location_name || '—'"></span> · <span x-text="u.user_name"></span> · <span x-text="u.date"></span>
+                        </span>
+                        <span class="ws-badge" x-show="u.undone"><?php esc_html_e( 'deshecho', 'workshop' ); ?></span>
+                    </div>
+                </template>
             </div>
         </div>
     </div>
