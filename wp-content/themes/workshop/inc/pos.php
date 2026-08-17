@@ -67,6 +67,10 @@ class WS_POS {
             $where[] = $wpdb->prepare( 'status = %s', $args['status'] );
         }
         
+        if ( ! empty( $args['payment_method'] ) ) {
+            $where[] = $wpdb->prepare( 'payment_method = %s', $args['payment_method'] );
+        }
+        
         if ( ! empty( $args['search'] ) ) {
             $like = '%' . $wpdb->esc_like( $args['search'] ) . '%';
             $where[] = $wpdb->prepare( '(s.number LIKE %s OR s.customer_name LIKE %s)', $like, $like );

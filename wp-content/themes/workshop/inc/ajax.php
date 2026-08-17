@@ -3306,6 +3306,7 @@ function ws_ajax_pos_sales_get() {
         'seller_id' => (int) ( $_POST['seller_id'] ?? 0 ),
         'search' => sanitize_text_field( $_POST['search'] ?? '' ),
         'status' => sanitize_key( $_POST['status'] ?? '' ),
+        'payment_method' => sanitize_key( $_POST['payment_method'] ?? '' ),
         'date_from' => sanitize_text_field( $_POST['date_from'] ?? '' ),
         'date_to' => sanitize_text_field( $_POST['date_to'] ?? '' ),
         'orderby' => sanitize_key( $_POST['sort'] ?? '' ),
