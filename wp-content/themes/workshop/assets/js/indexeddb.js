@@ -16,6 +16,27 @@
     };
 
     let db = null;
+    let initPromise = null;
+
+    // Espera a que la BD esté lista. Si aún no se abrió, devuelve el db cuando
+    // se abra; si la apertura falla (almacenamiento bloqueado por el navegador,
+    // p. ej. Tracking Prevention), resuelve null para que las operaciones se
+    // degraden sin romper la app.
+    function whenReady() {
+        if (db) { return Promise.resolve(db); }
+        if (!window.indexedDB) {
+            // Almacenamiento bloqueado/indisponible (Tracking Prevention, modo
+            // incógnito, navegador sin soporte): degradar sin romper la app.
+            return Promise.resolve(null);
+        }
+        if (initPromise) { return initPromise.then(() => db).catch(() => null); }
+        try {
+            initPromise = initDB();
+        } catch (e) {
+            initPromise = Promise.reject(e);
+        }
+        return initPromise.then(() => db).catch(() => null);
+    }
 
     // Inicializar IndexedDB
     function initDB() {
@@ -87,92 +108,80 @@
 
     // Operaciones genéricas
     function getAll(storeName) {
-        return new Promise((resolve, reject) => {
-            if (!db) {
-                console.warn('IndexedDB no inicializado');
-                resolve([]);
-                return;
-            }
-            const transaction = db.transaction(storeName, 'readonly');
-            const store = transaction.objectStore(storeName);
-            const request = store.getAll();
-            request.onerror = () => reject(request.error);
-            request.onsuccess = () => resolve(request.result);
+        return whenReady().then((ready) => {
+            if (!ready) { return []; }
+            return new Promise((resolve, reject) => {
+                const transaction = ready.transaction(storeName, 'readonly');
+                const store = transaction.objectStore(storeName);
+                const request = store.getAll();
+                request.onerror = () => reject(request.error);
+                request.onsuccess = () => resolve(request.result);
+            });
         });
     }
 
     function get(storeName, key) {
-        return new Promise((resolve, reject) => {
-            if (!db) {
-                console.warn('IndexedDB no inicializado');
-                resolve(null);
-                return;
-            }
-            const transaction = db.transaction(storeName, 'readonly');
-            const store = transaction.objectStore(storeName);
-            const request = store.get(key);
-            request.onerror = () => reject(request.error);
-            request.onsuccess = () => resolve(request.result);
+        return whenReady().then((ready) => {
+            if (!ready) { return null; }
+            return new Promise((resolve, reject) => {
+                const transaction = ready.transaction(storeName, 'readonly');
+                const store = transaction.objectStore(storeName);
+                const request = store.get(key);
+                request.onerror = () => reject(request.error);
+                request.onsuccess = () => resolve(request.result);
+            });
         });
     }
 
     function put(storeName, data) {
-        return new Promise((resolve, reject) => {
-            if (!db) {
-                console.warn('IndexedDB no inicializado');
-                resolve(null);
-                return;
-            }
-            const transaction = db.transaction(storeName, 'readwrite');
-            const store = transaction.objectStore(storeName);
-            const request = store.put(data);
-            request.onerror = () => reject(request.error);
-            request.onsuccess = () => resolve(request.result);
+        return whenReady().then((ready) => {
+            if (!ready) { return null; }
+            return new Promise((resolve, reject) => {
+                const transaction = ready.transaction(storeName, 'readwrite');
+                const store = transaction.objectStore(storeName);
+                const request = store.put(data);
+                request.onerror = () => reject(request.error);
+                request.onsuccess = () => resolve(request.result);
+            });
         });
     }
 
     function add(storeName, data) {
-        return new Promise((resolve, reject) => {
-            if (!db) {
-                console.warn('IndexedDB no inicializado');
-                resolve(null);
-                return;
-            }
-            const transaction = db.transaction(storeName, 'readwrite');
-            const store = transaction.objectStore(storeName);
-            const request = store.add(data);
-            request.onerror = () => reject(request.error);
-            request.onsuccess = () => resolve(request.result);
+        return whenReady().then((ready) => {
+            if (!ready) { return null; }
+            return new Promise((resolve, reject) => {
+                const transaction = ready.transaction(storeName, 'readwrite');
+                const store = transaction.objectStore(storeName);
+                const request = store.add(data);
+                request.onerror = () => reject(request.error);
+                request.onsuccess = () => resolve(request.result);
+            });
         });
     }
 
     function deleteItem(storeName, key) {
-        return new Promise((resolve, reject) => {
-            if (!db) {
-                console.warn('IndexedDB no inicializado');
-                resolve();
-                return;
-            }
-            const transaction = db.transaction(storeName, 'readwrite');
-            const store = transaction.objectStore(storeName);
-            const request = store.delete(key);
-            request.onerror = () => reject(request.error);
-            request.onsuccess = () => resolve();
+        return whenReady().then((ready) => {
+            if (!ready) { return; }
+            return new Promise((resolve, reject) => {
+                const transaction = ready.transaction(storeName, 'readwrite');
+                const store = transaction.objectStore(storeName);
+                const request = store.delete(key);
+                request.onerror = () => reject(request.error);
+                request.onsuccess = () => resolve();
+            });
         });
     }
 
     function clearStore(storeName) {
-        return new Promise((resolve, reject) => {
-            if (!db) {
-                console.warn('IndexedDB no inicializado');
-                resolve();
-                return;
-            }
-            const transaction = db.transaction(storeName, 'readwrite');
-            const store = transaction.objectStore(storeName);
-            const request = store.clear();
-            request.onerror = () => reject(request.error);
-            request.onsuccess = () => resolve();
+        return whenReady().then((ready) => {
+            if (!ready) { return; }
+            return new Promise((resolve, reject) => {
+                const transaction = ready.transaction(storeName, 'readwrite');
+                const store = transaction.objectStore(storeName);
+                const request = store.clear();
+                request.onerror = () => reject(request.error);
+                request.onsuccess = () => resolve();
+            });
         });
     }
 
@@ -246,10 +255,11 @@
         getDB: () => db
     };
 
-    // Inicializar al cargar
+    // Inicializar al cargar (usa whenReady: si una operación ya lo pidió,
+    // no se abre la BD dos veces).
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initDB);
+        document.addEventListener('DOMContentLoaded', () => whenReady());
     } else {
-        initDB();
+        whenReady();
     }
 })();
