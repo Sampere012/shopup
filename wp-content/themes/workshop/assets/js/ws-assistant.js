@@ -2048,6 +2048,29 @@
         }, forceOpen ? 900 : 0);
     }
 
+    // Aviso de NUEVA VERSIÓN del APK nativo (panel Android): consulta la
+    // versión publicada (ws_app_version) y, si el administrador publicó una
+    // versión distinta a la última anunciada, el bot la anuncia UNA vez por
+    // versión (localStorage) con el enlace directo de descarga. Así la web
+    // avisa sola cuando hay una actualización, sin esperar a que pregunten.
+    function notifyApkUpdate() {
+        if (locked) { return; }
+        api('ws_app_version', {}, function (json) {
+            var info = (json && json.success && json.data) ? json.data : null;
+            if (!info || !info.has_apk || !info.apk_url || !info.version) { return; }
+            var v = String(info.version);
+            var announced = getF('ws_app_announced_apk');
+            if (!announced) { setF('ws_app_announced_apk', v); return; } // baseline: no avisar de la actual
+            if (announced === v) { return; }
+            setF('ws_app_announced_apk', v);
+            var msg = '📦 La app del panel tiene una versión nueva: v' + v + ' ya está disponible.' +
+                (info.changelog ? ' Novedades: ' + info.changelog : '') +
+                ' Descárgala para actualizar la app que usas en el móvil (tus datos se conservan).';
+            appendMsg(msg, false);
+            appendChips([{ label: 'Descargar app', icon: 'fa-download', cls: 'wsb-chip-success', url: info.apk_url }]);
+        });
+    }
+
     // Aplica la actualización: pide al service worker comprobar/instalar la
     // nueva versión (SKIP_WAITING + update) y recarga para que tome control.
     function applyAppUpdate() {
@@ -2654,8 +2677,10 @@
             // pendientes (stock, pedidos, anuncios…) como mensajes normales,
             // sin que el usuario tenga que preguntar por ellas.
             showPendingAlerts(false);
-            // Aviso de nueva versión de la app (si está instalada).
+            // Aviso de nueva versión de la app (si está instalada) y del APK
+            // nativo cuando el administrador publica una actualización.
             checkAppUpdate(false);
+            notifyApkUpdate();
         } else if (!C.logged) {
             reply(guestWelcome() + ' ' + S.registerHook, [
                 { label: 'Buscar producto', icon: 'fa-magnifying-glass', send: 'buscar' },

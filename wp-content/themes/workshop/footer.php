@@ -35,6 +35,9 @@ if ( ! $ws_hide_footer ) :
                 <?php if ( function_exists( 'ws_app_has_download' ) && ws_app_has_download() ) : ?>
                     <a class="ws-btn ws-btn-primary ws-btn-sm" href="<?php echo esc_url( ws_app_apk_url() ); ?>" download>
                         <i class="fa-solid fa-download"></i> <?php esc_html_e( 'Descargar app', 'workshop' ); ?>
+                        <?php $ws_app_ver = ws_app_version_info(); if ( ! empty( $ws_app_ver['version'] ) ) : ?>
+                            <span class="ws-badge ws-badge-sm">v<?php echo esc_html( $ws_app_ver['version'] ); ?></span>
+                        <?php endif; ?>
                     </a>
                 <?php endif; ?>
                 <?php if ( $ws_c_wa ) : ?>
