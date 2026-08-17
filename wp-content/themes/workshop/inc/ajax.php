@@ -281,6 +281,7 @@ function ws_ajax_settings_get() {
             'payment_methods' => $payment,
             'whatsapp'        => get_option( 'ws_whatsapp', '' ),
             'session_days'    => (int) get_option( 'ws_session_expiration_days', 30 ),
+            'cloudinary'      => (int) ( class_exists( 'WS_Business' ) && WS_Business::has_cloudinary() ),
         ),
     ) );
 }

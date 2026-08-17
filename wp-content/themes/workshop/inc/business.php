@@ -686,6 +686,13 @@ add_action( 'wp_ajax_ws_upload_image', 'ws_ajax_upload_image' );
 function ws_ajax_upload_image() {
     ws_guard( 'products_edit', 'site_manage' );
 
+    // Subir desde el dispositivo requiere Cloudinary configurado para el
+    // negocio: sin él no hay donde alojar la imagen (el fallback a la media
+    // de WordPress queda reservado a los administradores del sitio).
+    if ( ! class_exists( 'WS_Business' ) || ! WS_Business::has_cloudinary() ) {
+        wp_send_json_error( array( 'msg' => __( 'La subida de imágenes requiere que el administrador active Cloudinary en tu negocio.', 'workshop' ) ) );
+    }
+
     if ( empty( $_FILES['file'] ) || empty( $_FILES['file']['tmp_name'] ) ) {
         wp_send_json_error( array( 'msg' => __( 'No se recibió ningún archivo.', 'workshop' ) ) );
     }

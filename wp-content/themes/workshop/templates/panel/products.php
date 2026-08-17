@@ -46,6 +46,7 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
     'canDelete'   => $can_delete,
     'canCreate'   => $can_create,
     'canFraction' => $can_fraction,
+    'hasCloudinary' => (bool) ( class_exists( 'WS_Business' ) && WS_Business::has_cloudinary() ),
 ) ) ); ?>)">
 
     <div class="ws-tabs">
@@ -473,7 +474,7 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
                                 <div class="ws-gallery-empty"><i class="fa-solid fa-images"></i> <?php esc_html_e( 'Sin imágenes adicionales', 'workshop' ); ?></div>
                             </template>
                         </div>
-                        <div class="ws-gallery-actions">
+                        <div class="ws-gallery-actions" x-show="hasCloudinary">
                             <label class="ws-btn ws-btn-secondary" style="display:inline-flex;cursor:pointer">
                                 <i class="fa-solid fa-cloud-arrow-up"></i> <?php esc_html_e( 'Subir desde el dispositivo', 'workshop' ); ?>
                                 <input type="file" accept="image/jpeg,image/png,image/gif,image/webp,image/svg+xml,image/avif" multiple style="display:none" @change="uploadGallery($event)">
@@ -483,7 +484,8 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
                             </div>
                             <button type="button" class="ws-btn ws-btn-secondary" @click="addGalleryUrl()"><i class="fa-solid fa-plus"></i> <?php esc_html_e( 'Añadir', 'workshop' ); ?></button>
                         </div>
-                        <p class="ws-muted" style="font-size:.8em;margin:4px 0 0"><?php esc_html_e( 'Se muestra en la tienda, en el POS y en la app. La primera imagen es la principal.', 'workshop' ); ?></p>
+                        <p class="ws-muted" style="font-size:.8em;margin:4px 0 0" x-show="hasCloudinary"><?php esc_html_e( 'Se muestra en la tienda, en el POS y en la app. La primera imagen es la principal.', 'workshop' ); ?></p>
+                        <p class="ws-muted" style="font-size:.8em;margin:4px 0 0" x-show="!hasCloudinary"><?php esc_html_e( 'Para subir más imágenes, el administrador debe activar Cloudinary en tu negocio. Mientras tanto puedes usar una URL en cada producto.', 'workshop' ); ?></p>
                     </div>
                     <label class="ws-field ws-span-2">
                         <span><?php esc_html_e( 'Descripción', 'workshop' ); ?></span>

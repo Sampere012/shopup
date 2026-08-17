@@ -787,6 +787,7 @@
             canDelete: opts.canDelete,
             canCreate: opts.canCreate,
             canFraction: opts.canFraction,
+            hasCloudinary: opts.hasCloudinary === true,
             products: [],
             search: '',
             formOpen: false,
