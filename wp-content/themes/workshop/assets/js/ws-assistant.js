@@ -2113,7 +2113,7 @@
             }
         },
         installApp: {
-            keys: ['instalar la app', 'instalar app', 'instalar la aplicacion', 'instalar aplicacion', 'instalar la app movil', 'instalar la aplicacion movil', 'descargar la app', 'descargar app', 'bajar la app', 'apk', 'app apk', 'aplicacion movil', 'como instalo la app', 'como descargo la app', 'instalar app en mi telefono', 'instalar la app en mi telefono', 'poner la app en mi telefono'],
+            keys: ['instalar la app', 'instalar app', 'instalar la aplicacion', 'instalar aplicacion', 'instalar la app movil', 'instalar la aplicacion movil', 'descargar la app', 'descargar app', 'bajar la app', 'apk', 'app apk', 'aplicacion movil', 'como instalo la app', 'como descargo la app', 'instalar app en mi telefono', 'instalar la app en mi telefono', 'poner la app en mi telefono', 'get app', 'obtener app', 'download app', 'get the app'],
             run: function () {
                 if (locked) { actions.locked.run(); return; }
                 var api = window.WSPWA_API || null;
@@ -2132,19 +2132,39 @@
                         }
                     } }], 'app:howto');
                 };
-                if (api && api.canInstall()) {
-                    reply('Puedo instalarla ahora mismo 👇 Toca "Instalar ahora" y confirma el aviso del navegador. La app quedará en tu pantalla de inicio con el icono de Workshop, abre en pantalla completa y funciona sin conexión.', [
-                        { label: 'Instalar ahora', icon: 'fa-download', cls: 'wsb-chip-success', click: function () {
-                            api.install(function (ok) {
-                                appendMsg(ok ? '✅ Instalación iniciada: confirma el aviso del navegador y la app quedará en tu pantalla de inicio. ¡Lista para usar sin conexión!' : 'No se pudo mostrar la instalación ahora; te explico cómo hacerla manualmente 👇', false);
-                                if (!ok) { howTo(); }
-                            });
-                        } },
-                        { label: 'Cómo hacerlo manualmente', icon: 'fa-circle-question', click: howTo }
-                    ], 'app:install');
-                } else {
-                    howTo();
-                }
+                // Descarga nativa (APK) si el administrador la publicó.
+                var appInfo = function () {
+                    return new Promise(function (resolve) {
+                        api('ws_app_version', {}, function (json) {
+                            resolve((json && json.success && json.data) ? json.data : null);
+                        });
+                    });
+                };
+                appInfo().then(function (info) {
+                    if (info && info.has_apk && info.apk_url) {
+                        var chips = [{ label: 'Descargar app', icon: 'fa-download', cls: 'wsb-chip-success', url: info.apk_url }];
+                        if (api && api.canInstall()) {
+                            chips.push({ label: 'O instalar la PWA', icon: 'fa-mobile-screen-button', click: function () {
+                                api.install(function (ok) { appendMsg(ok ? '✅ Instalación iniciada.' : 'Tu navegador no ofreció la instalación; prueba a recargar la página.', false); });
+                            } });
+                        }
+                        reply('La app móvil de ShopUp Panel está disponible en tu dispositivo 👇 Es la app nativa (Android): funciona sin conexión y sincroniza todo automáticamente.\n\nVersión actual: ' + (info.version || '—') + (info.changelog ? '\nNovedades: ' + info.changelog : '') + '\n\nToca "Descargar app" para bajar e instalar el archivo .apk.', chips, 'app:download');
+                        return;
+                    }
+                    if (api && api.canInstall()) {
+                        reply('Puedo instalarla ahora mismo 👇 Toca "Instalar ahora" y confirma el aviso del navegador. La app quedará en tu pantalla de inicio con el icono de Workshop, abre en pantalla completa y funciona sin conexión.', [
+                            { label: 'Instalar ahora', icon: 'fa-download', cls: 'wsb-chip-success', click: function () {
+                                api.install(function (ok) {
+                                    appendMsg(ok ? '✅ Instalación iniciada: confirma el aviso del navegador y la app quedará en tu pantalla de inicio. ¡Lista para usar sin conexión!' : 'No se pudo mostrar la instalación ahora; te explico cómo hacerla manualmente 👇', false);
+                                    if (!ok) { howTo(); }
+                                });
+                            } },
+                            { label: 'Cómo hacerlo manualmente', icon: 'fa-circle-question', click: howTo }
+                        ], 'app:install');
+                    } else {
+                        howTo();
+                    }
+                });
             }
         },
         createProduct: {

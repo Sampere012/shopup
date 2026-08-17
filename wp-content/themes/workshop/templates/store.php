@@ -503,9 +503,20 @@ get_header();
             </div>
             <template x-if="activeProduct">
                 <div class="ws-store-modal-body">
-                    <div class="ws-store-modal-img">
-                        <img x-show="activeProduct.image" :src="activeProduct.image" :alt="activeProduct.name">
-                        <i x-show="!activeProduct.image" class="fa-solid fa-box-open"></i>
+                    <div class="ws-store-modal-media">
+                        <div class="ws-store-modal-img">
+                            <img x-show="activeImg" :src="activeImg" :alt="activeProduct.name">
+                            <i x-show="!activeImg" class="fa-solid fa-box-open"></i>
+                        </div>
+                        <template x-if="galleryImages().length > 1">
+                            <div class="ws-store-modal-thumbs">
+                                <template x-for="(u, i) in galleryImages()" :key="i">
+                                    <button type="button" class="ws-store-modal-thumb" :class="u === activeImg ? 'is-active' : ''" @click="activeImg = u">
+                                        <img :src="u" :alt="activeProduct.name" loading="lazy">
+                                    </button>
+                                </template>
+                            </div>
+                        </template>
                     </div>
                     <div class="ws-store-modal-info">
                         <p class="ws-product-barcode" x-text="activeProduct.barcode"></p>
@@ -585,6 +596,7 @@ window.WS_STORE_DATA = <?php echo wp_json_encode( array(
             'name'         => $p->name,
             'barcode'      => $p->barcode,
             'image'        => $p->image ? ws_image_url( $p->image ) : '',
+            'gallery'      => array_map( 'ws_image_url', WS_CRUD::product_gallery( $p ) ),
             'description'  => $p->description ?? '',
             'category_id'  => (int) ( $p->category_id ?? 0 ),
             'category'     => (string) ( $p->category ?? '' ),

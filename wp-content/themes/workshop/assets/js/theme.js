@@ -337,6 +337,7 @@
             // Modal de producto.
             productOpen: false,
             activeProduct: null,
+            activeImg: '',
             modalQty: 1,
             // Valoraciones de la TIENDA (las estrellas valoran al negocio,
             // no a los productos individuales).
@@ -533,10 +534,19 @@
             // --- Modal de producto ---
             openProduct(p) {
                 this.activeProduct = p;
+                this.activeImg = (p && (p.image || (p.gallery || [])[0])) || '';
                 this.modalQty = 1;
                 this.productOpen = true;
             },
-            closeProduct() { this.productOpen = false; this.activeProduct = null; },
+            closeProduct() { this.productOpen = false; this.activeProduct = null; this.activeImg = ''; },
+            galleryImages() {
+                const p = this.activeProduct;
+                if (!p) return [];
+                const imgs = [];
+                if (p.image) imgs.push(p.image);
+                (p.gallery || []).forEach(u => { if (imgs.indexOf(u) === -1) imgs.push(u); });
+                return imgs;
+            },
             // --- Valoraciones de la tienda ---
             // Hash persistente del visitante: identifica al anónimo en el
             // servidor para que solo pueda enviar UNA reseña por tienda
@@ -783,6 +793,8 @@
             importModal: false,
             dragOver: false,
             form: {},
+            galleryUrl: '',
+            galleryUploading: false,
             /* Edición masiva: ids seleccionados + modal de campo único. */
             selected: [],
             bulkOpen: false,
@@ -985,7 +997,9 @@
                 return p[2] + '/' + p[1] + '/' + p[0];
             },
             openForm(p) {
-                this.form = p ? Object.assign({}, p) : { name: '', barcode: '', category_id: 0, description: '', image: '', cost_price: 0, sale_price: 0, transfer_pct: 0, currency: this.currency, show_equiv: 1, supplier_id: 0, min_stock: 0, production_date: '', expiry_date: '', fraction_parent: 0, fraction_qty: 0 };
+                this.galleryUrl = '';
+                this.form = p ? Object.assign({}, p) : { name: '', barcode: '', category_id: 0, description: '', image: '', gallery: [], cost_price: 0, sale_price: 0, transfer_pct: 0, currency: this.currency, show_equiv: 1, supplier_id: 0, min_stock: 0, production_date: '', expiry_date: '', fraction_parent: 0, fraction_qty: 0 };
+                if (!Array.isArray(this.form.gallery)) this.form.gallery = Array.isArray(p && p.gallery) ? p.gallery.slice() : [];
                 if (this.form.category_id === undefined) this.form.category_id = 0;
                 if (!this.form.currency) this.form.currency = this.currency;
                 if (this.form.show_equiv === undefined) this.form.show_equiv = 1;
@@ -996,6 +1010,39 @@
                 }
                 this.formOpen = true;
             },
+            addGalleryUrl() {
+                const u = (this.galleryUrl || '').trim();
+                if (!u) return;
+                if (!Array.isArray(this.form.gallery)) this.form.gallery = [];
+                if (this.form.gallery.indexOf(u) === -1) this.form.gallery.push(u);
+                this.galleryUrl = '';
+            },
+            removeGallery(i) {
+                if (Array.isArray(this.form.gallery)) this.form.gallery.splice(i, 1);
+            },
+            uploadGallery(ev) {
+                const files = ev.target.files || [];
+                if (!files.length) return;
+                this.galleryUploading = true;
+                const uploadNext = (idx) => {
+                    if (idx >= files.length) { this.galleryUploading = false; ev.target.value = ''; return; }
+                    const fd = new FormData();
+                    fd.append('action', 'ws_upload_image');
+                    fd.append('ws_nonce', WS.nonce);
+                    fd.append('file', files[idx]);
+                    fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', body: fd })
+                        .then(r => r.json())
+                        .then(res => {
+                            if (res.success && res.data && res.data.url) {
+                                if (!Array.isArray(this.form.gallery)) this.form.gallery = [];
+                                if (this.form.gallery.indexOf(res.data.url) === -1) this.form.gallery.push(res.data.url);
+                            } else { toast('error', 'Subida', res.data && res.data.msg || 'No se pudo subir la imagen'); }
+                            uploadNext(idx + 1);
+                        })
+                        .catch(() => { toast('error', 'Subida', 'Error de red'); uploadNext(idx + 1); });
+                };
+                uploadNext(0);
+            },
             parentCandidates() {
                 // Candidatos a "producto madre": productos que no son hijos.
                 return (this.products || []).filter(p => !p.is_combo && !p.fraction_parent && Number(p.id) !== Number(this.form.id || 0));
@@ -1005,12 +1052,18 @@
                 this.form = Object.assign({}, p);
                 delete this.form.id;
                 this.form.name = (p.name || '') + ' (copia)';
+                this.form.gallery = Array.isArray(p.gallery) ? p.gallery.slice() : [];
                 this.formOpen = true;
                 toast('info', 'Clonado', 'Revisa y guarda el nuevo producto');
             },
             save() {
                 const body = new URLSearchParams({ action: 'ws_save_product', ws_nonce: WS.nonce });
-                Object.keys(this.form).forEach(k => body.append(k, this.form[k] === null || this.form[k] === undefined ? '' : this.form[k]));
+                Object.keys(this.form).forEach(k => {
+                    let v = this.form[k];
+                    if (k === 'gallery') v = JSON.stringify(Array.isArray(v) ? v : []);
+                    if (v === null || v === undefined) v = '';
+                    body.append(k, v);
+                });
                 fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body })
                     .then(r => r.json())
                     .then(res => {

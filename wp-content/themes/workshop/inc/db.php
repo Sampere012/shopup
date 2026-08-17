@@ -130,6 +130,7 @@ function ws_db_tables() {
             category VARCHAR(100) NOT NULL DEFAULT '',
             description TEXT NULL,
             image VARCHAR(255) NOT NULL DEFAULT '',
+            gallery TEXT NULL,
             cost_price DECIMAL(12,2) NOT NULL DEFAULT 0,
             sale_price DECIMAL(12,2) NOT NULL DEFAULT 0,
             transfer_pct DECIMAL(5,2) NOT NULL DEFAULT 0,
@@ -666,6 +667,29 @@ function ws_db_migrate() {
     if ( ! in_array( 'store_visible', $cols, true ) ) {
         $wpdb->query( "ALTER TABLE {$table} ADD COLUMN store_visible TINYINT(1) NOT NULL DEFAULT 1 AFTER active" );
     }
+    // Galería de imágenes del producto (JSON: lista de URLs). Se aplica al
+    // negocio por defecto y a cada negocio con slug (mismo patrón que la
+    // configuración de tienda por ubicación de más abajo).
+    $ws_gallery_suffixes = array( '' );
+    if ( class_exists( 'WS_Business' ) && $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', WS_Business::table() ) ) === WS_Business::table() ) {
+        foreach ( WS_Business::all() as $ws_gallery_biz ) {
+            $gl_slug = (string) ( $ws_gallery_biz->slug ?? '' );
+            if ( '' !== $gl_slug ) {
+                $ws_gallery_suffixes[] = ws_biz_table_suffix( $gl_slug );
+            }
+        }
+    }
+    foreach ( $ws_gallery_suffixes as $ws_gallery_suffix ) {
+        $gl_t = ws_table_for( $ws_gallery_suffix, 'products' );
+        if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $gl_t ) ) !== $gl_t ) {
+            continue;
+        }
+        $gl_cols = $wpdb->get_col( "SHOW COLUMNS FROM {$gl_t}", 0 );
+        if ( ! in_array( 'gallery', $gl_cols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$gl_t} ADD COLUMN gallery TEXT NULL AFTER image" );
+        }
+    }
+
     // Configuración de la TIENDA PÚBLICA por ubicación (JSON): moneda en la
     // que se muestran los precios y qué tasa de cambio mostrar (o ninguna).
     // Se migra la tabla por defecto y la de cada negocio con slug (mismo

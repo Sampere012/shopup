@@ -460,6 +460,31 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
                         <span><?php esc_html_e( 'Imagen URL', 'workshop' ); ?></span>
                         <input type="url" x-model="form.image" placeholder="https://…">
                     </label>
+                    <div class="ws-field ws-span-2">
+                        <span><?php esc_html_e( 'Galería de imágenes', 'workshop' ); ?></span>
+                        <div class="ws-gallery">
+                            <template x-for="(url, i) in (form.gallery || [])" :key="i">
+                                <div class="ws-gallery-item">
+                                    <img :src="url" alt="" loading="lazy">
+                                    <button type="button" class="ws-gallery-remove" @click="removeGallery(i)" title="<?php esc_attr_e( 'Quitar imagen', 'workshop' ); ?>"><i class="fa-solid fa-xmark"></i></button>
+                                </div>
+                            </template>
+                            <template x-if="(form.gallery || []).length === 0">
+                                <div class="ws-gallery-empty"><i class="fa-solid fa-images"></i> <?php esc_html_e( 'Sin imágenes adicionales', 'workshop' ); ?></div>
+                            </template>
+                        </div>
+                        <div class="ws-gallery-actions">
+                            <label class="ws-btn ws-btn-secondary" style="display:inline-flex;cursor:pointer">
+                                <i class="fa-solid fa-cloud-arrow-up"></i> <?php esc_html_e( 'Subir desde el dispositivo', 'workshop' ); ?>
+                                <input type="file" accept="image/jpeg,image/png,image/gif,image/webp,image/svg+xml,image/avif" multiple style="display:none" @change="uploadGallery($event)">
+                            </label>
+                            <div class="ws-field" style="flex:1;margin:0">
+                                <input type="url" x-model="galleryUrl" placeholder="https://… <?php esc_attr_e( 'o pega la URL de una imagen', 'workshop' ); ?>">
+                            </div>
+                            <button type="button" class="ws-btn ws-btn-secondary" @click="addGalleryUrl()"><i class="fa-solid fa-plus"></i> <?php esc_html_e( 'Añadir', 'workshop' ); ?></button>
+                        </div>
+                        <p class="ws-muted" style="font-size:.8em;margin:4px 0 0"><?php esc_html_e( 'Se muestra en la tienda, en el POS y en la app. La primera imagen es la principal.', 'workshop' ); ?></p>
+                    </div>
                     <label class="ws-field ws-span-2">
                         <span><?php esc_html_e( 'Descripción', 'workshop' ); ?></span>
                         <textarea x-model="form.description" rows="2"></textarea>

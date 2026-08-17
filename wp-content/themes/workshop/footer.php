@@ -32,6 +32,11 @@ if ( ! $ws_hide_footer ) :
                 <span><?php esc_html_e( 'Nuestro equipo está listo para resolver tus dudas.', 'workshop' ); ?></span>
             </div>
             <div class="ws-footer-help-actions">
+                <?php if ( function_exists( 'ws_app_has_download' ) && ws_app_has_download() ) : ?>
+                    <a class="ws-btn ws-btn-primary ws-btn-sm" href="<?php echo esc_url( ws_app_apk_url() ); ?>" download>
+                        <i class="fa-solid fa-download"></i> <?php esc_html_e( 'Descargar app', 'workshop' ); ?>
+                    </a>
+                <?php endif; ?>
                 <?php if ( $ws_c_wa ) : ?>
                     <a class="ws-btn ws-btn-wa ws-btn-sm" href="https://wa.me/<?php echo esc_attr( preg_replace( '/[^0-9]/', '', $ws_c_wa ) ); ?>" target="_blank" rel="noopener"><i class="fa-brands fa-whatsapp"></i> <?php esc_html_e( 'WhatsApp', 'workshop' ); ?></a>
                 <?php endif; ?>

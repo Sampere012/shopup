@@ -559,6 +559,14 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-thumb { width: 42px; height: 42px; border-radius: 10px; background: #f3f4f6; display: flex; align-items: center; justify-content: center; color: var(--ws-muted); overflow: hidden; flex-shrink: 0; }
 .ws-thumb img { width: 100%; height: 100%; object-fit: cover; }
 
+/* ---------- Galería de imágenes (formulario de producto) ---------- */
+.ws-gallery { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0; }
+.ws-gallery-item { position: relative; width: 72px; height: 72px; border-radius: 10px; overflow: hidden; border: 1px solid #e2e8f0; }
+.ws-gallery-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ws-gallery-remove { position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; border: none; border-radius: 50%; background: rgba(15,23,42,.65); color: #fff; font-size: .7em; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.ws-gallery-empty { border: 1px dashed #cbd5e1; border-radius: 10px; padding: 14px; color: var(--ws-muted); font-size: .85em; display: flex; align-items: center; gap: 8px; }
+.ws-gallery-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
 /* ---------- Badges ---------- */
 .ws-badge { display: inline-block; padding: 4px 11px; border-radius: 999px; font-size: .76em; font-weight: 700; background: #f3f4f6; color: #475569; }
 .ws-badge-pv { background: #eef2ff; color: var(--ws-primary-dark); }
@@ -1578,6 +1586,11 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
     display: flex; align-items: center; justify-content: center; color: var(--ws-primary-light); font-size: 3.4rem;
 }
 .ws-store-modal-img img { width: 100%; height: 100%; object-fit: cover; }
+.ws-store-modal-media { min-width: 0; }
+.ws-store-modal-thumbs { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.ws-store-modal-thumb { width: 52px; height: 52px; border-radius: 10px; overflow: hidden; border: 2px solid transparent; cursor: pointer; padding: 0; background: #f3f4f6; }
+.ws-store-modal-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ws-store-modal-thumb.is-active { border-color: var(--ws-primary); }
 .ws-store-modal-info { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
 .ws-product-desc { color: var(--ws-muted); font-size: .9em; margin: 0; line-height: 1.6; }
 .ws-price-lg { font-size: 1.5rem; }

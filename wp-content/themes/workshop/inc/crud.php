@@ -99,6 +99,21 @@ class WS_CRUD {
     }
 
     /**
+     * Galería de imágenes del producto (JSON en BD -> array de URLs).
+     */
+    public static function product_gallery( $row ) {
+        $gallery = (string) ( $row->gallery ?? '' );
+        if ( '' === $gallery ) {
+            return array();
+        }
+        $decoded = json_decode( $gallery, true );
+        if ( ! is_array( $decoded ) ) {
+            return array();
+        }
+        return array_values( array_filter( array_map( 'esc_url_raw', $decoded ) ) );
+    }
+
+    /**
      * True si ya existe otro producto con ese barcode (excluyendo $exclude_id).
      */
     protected static function barcode_taken( $barcode, $exclude_id = 0 ) {
@@ -135,12 +150,27 @@ class WS_CRUD {
         if ( $production_date && $expiry_date && $expiry_date < $production_date ) {
             return new WP_Error( 'dates', __( 'La fecha de vencimiento no puede ser anterior a la de producción.', 'workshop' ) );
         }
+        // Galería de imágenes: lista de URLs (JSON). Si llega sin la clave se
+        // conserva el valor actual (los clientes viejos no envían gallery).
+        $gallery = null;
+        if ( isset( $data['gallery'] ) ) {
+            if ( is_array( $data['gallery'] ) ) {
+                $gallery = $data['gallery'];
+            } else {
+                $gallery = json_decode( wp_unslash( (string) $data['gallery'] ), true );
+                if ( ! is_array( $gallery ) ) {
+                    $gallery = array();
+                }
+            }
+            $gallery = array_values( array_filter( array_map( 'esc_url_raw', (array) $gallery ) ) );
+        }
         $fields = array(
             'name'          => sanitize_text_field( $data['name'] ?? '' ),
             'barcode'       => $unique,
             'category'      => sanitize_text_field( $data['category'] ?? '' ),
             'description'   => sanitize_textarea_field( $data['description'] ?? '' ),
             'image'         => esc_url_raw( $data['image'] ?? '' ),
+            'gallery'       => null === $gallery ? null : wp_json_encode( $gallery ),
             'cost_price'    => (float) ( $data['cost_price'] ?? 0 ),
             'sale_price'    => (float) ( $data['sale_price'] ?? 0 ),
             'transfer_pct'  => (float) ( $data['transfer_pct'] ?? 0 ),

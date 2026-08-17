@@ -1006,7 +1006,7 @@ class WS_Stock {
     public static function stock_rows( $args = array() ) {
         global $wpdb;
         $where = self::stock_rows_where( $args );
-        $sql = "SELECT s.*, p.name, p.barcode, p.category, p.category_id, p.min_stock, p.sale_price, p.cost_price, p.transfer_pct, p.currency, p.show_equiv, p.image, p.description, p.store_visible,
+        $sql = "SELECT s.*, p.name, p.barcode, p.category, p.category_id, p.min_stock, p.sale_price, p.cost_price, p.transfer_pct, p.currency, p.show_equiv, p.image, p.gallery, p.description, p.store_visible,
                 l.name AS location_name, l.type AS location_type, l.description AS location_description
                 FROM " . self::table( 'stock' ) . " s
                 INNER JOIN " . self::table( 'products' ) . " p ON p.id = s.product_id
