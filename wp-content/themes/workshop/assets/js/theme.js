@@ -115,11 +115,14 @@
     };
 
     // Confirmación no bloqueante con SweetAlert2 (o fallback de consola).
+    // Nunca cae a window.confirm() nativo: si SweetAlert2 no cargara (CDN
+    // bloqueado), se cancela silenciosamente y se avisa por consola.
     const wsConfirm = (opts) => {
         if (typeof Swal !== 'undefined') {
             return Swal.fire(Object.assign({ icon: 'warning', showCancelButton: true, confirmButtonText: 'Aceptar', cancelButtonText: 'Cancelar' }, opts));
         }
-        return Promise.resolve({ isConfirmed: window.confirm(opts.text || opts.title || '') });
+        console.warn('[ws] SweetAlert2 no disponible, acción cancelada:', opts.title || opts.text || '');
+        return Promise.resolve({ isConfirmed: false });
     };
 
     // Escapa HTML para insertar texto de usuario en diálogos (títulos/textos).
@@ -1358,6 +1361,16 @@
                 const r = el.getBoundingClientRect();
                 return { width: r.width || 800, height: r.height || 460 };
             },
+            // Altura dinámica: el lienzo crece con la cantidad de ubicaciones
+            // para que los nodos no queden amontonados ni pegados entre sí.
+            canvasHeight() {
+                const n = Math.max(1, this.canvasLocations.length);
+                return Math.max(380, Math.min(820, 140 + n * 56));
+            },
+            canvasHeightStyle() {
+                void this.canvasTick;
+                return { height: this.canvasHeight() + 'px' };
+            },
             // Las líneas de conexión son divs rotados (en píxeles): el x-for
             // dentro de <svg> no recibe el scope del bucle en Alpine y rompe
             // con 'link is not defined'.
@@ -1443,14 +1456,21 @@
                 this.persistNodePositions();
             },
             autoLayout() {
-                const rect = this.$refs.canvas ? this.$refs.canvas.getBoundingClientRect() : { width: 800, height: 460 };
+                const rect = this.canvasRect();
                 const cx = rect.width / 2;
                 const cy = rect.height / 2;
-                const radius = Math.min(rect.height / 2 - 40, 80 + this.nodes.length * 16);
-                this.nodes.forEach((n, i) => {
-                    const angle = (2 * Math.PI * i) / Math.max(1, this.nodes.length) - Math.PI / 2;
-                    n.x = ((cx + radius * Math.cos(angle)) / rect.width) * 100;
-                    n.y = ((cy + radius * Math.sin(angle)) / rect.height) * 100;
+                const n = Math.max(1, this.nodes.length);
+                // Radio necesario para que los nodos quepan con separación
+                // mínima entre adyacentes (perímetro = n * separación).
+                const sep = 130;
+                const rNeed = (n * sep) / (2 * Math.PI);
+                // Radio máximo que cabe en el lienzo (margen para el nodo).
+                const rMax = Math.min(rect.width / 2 - 70, rect.height / 2 - 70);
+                const radius = Math.min(Math.max(90, rNeed), rMax);
+                this.nodes.forEach((nn, i) => {
+                    const angle = (2 * Math.PI * i) / n - Math.PI / 2;
+                    nn.x = ((cx + radius * Math.cos(angle)) / rect.width) * 100;
+                    nn.y = ((cy + radius * Math.sin(angle)) / rect.height) * 100;
                 });
                 this.persistNodePositions();
             },

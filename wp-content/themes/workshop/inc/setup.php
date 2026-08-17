@@ -46,8 +46,11 @@ function ws_enqueue_assets() {
     $font = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap';
     wp_enqueue_style( 'ws-fonts', $font, array(), null );
 
-    $sweetalert = 'https://cdn.jsdelivr.net/npm/sweetalert2@11';
-    wp_enqueue_script( 'ws-sweetalert', $sweetalert, array(), '11', true );
+    // SweetAlert2 local (no CDN): el bloqueo de rastreadores de algunos
+    // navegadores (Tracking Prevention / Brave) bloquea cdn.jsdelivr.net y
+    // hacía que wsConfirm cayera al confirm() nativo.
+    wp_enqueue_style( 'ws-sweetalert', WS_URL . 'assets/css/vendor-sweetalert2.min.css', array(), '11.26.25' );
+    wp_enqueue_script( 'ws-sweetalert', WS_URL . 'assets/js/vendor/sweetalert2.min.js', array(), '11.26.25', true );
 
     $fullcalendar_css = 'https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.css';
     wp_enqueue_style( 'ws-fullcalendar', $fullcalendar_css, array(), '6.1.10' );

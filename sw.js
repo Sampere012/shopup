@@ -1,8 +1,8 @@
 /* Workshop MultiTienda Service Worker */
-const CACHE_NAME = 'workshop-v92';
-const STATIC_CACHE = 'workshop-static-v58';
-const DYNAMIC_CACHE = 'workshop-dynamic-v58';
-const DATA_CACHE = 'workshop-data-v58';
+const CACHE_NAME = 'workshop-v93';
+const STATIC_CACHE = 'workshop-static-v59';
+const DYNAMIC_CACHE = 'workshop-dynamic-v59';
+const DATA_CACHE = 'workshop-data-v59';
 
 // URLs estáticas para cachear inmediatamente
 // El SW se sirve desde /workshop/sw.js (local) o /sw.js (producción), así que
@@ -15,6 +15,7 @@ const BASE_PATH = '/workshop';
 const STATIC_ASSETS = [
     BASE_PATH + '/manifest.json',
     BASE_PATH + '/wp-content/themes/workshop/assets/css/theme.css',
+    BASE_PATH + '/wp-content/themes/workshop/assets/css/vendor-sweetalert2.min.css',
     BASE_PATH + '/wp-content/themes/workshop/assets/css/ws-assistant.css',
     BASE_PATH + '/wp-content/themes/workshop/assets/js/theme.js',
     BASE_PATH + '/wp-content/themes/workshop/assets/js/sw-register.js',
@@ -26,6 +27,7 @@ const STATIC_ASSETS = [
     BASE_PATH + '/wp-content/themes/workshop/assets/js/panel-offline.js',
     BASE_PATH + '/wp-content/themes/workshop/assets/js/ws-assistant.js',
     BASE_PATH + '/wp-content/themes/workshop/assets/js/vendor/alpine-collapse.min.js',
+    BASE_PATH + '/wp-content/themes/workshop/assets/js/vendor/sweetalert2.min.js',
     BASE_PATH + '/wp-content/themes/workshop/assets/js/vendor/alpine.min.js',
     BASE_PATH + '/wp-content/themes/workshop/assets/images/icon-72.png',
     BASE_PATH + '/wp-content/themes/workshop/assets/images/icon-192.png',

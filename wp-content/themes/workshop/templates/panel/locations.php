@@ -121,7 +121,7 @@ $rates      = ws_exchange_rates();
             </div>
         </div>
 
-        <div class="ws-link-canvas" x-ref="canvas" @pointerdown="startPan($event)" @wheel.prevent="onCanvasWheel($event)" :class="panning ? 'is-panning' : ''">
+        <div class="ws-link-canvas" x-ref="canvas" :style="canvasHeightStyle()" @pointerdown="startPan($event)" @wheel.prevent="onCanvasWheel($event)" :class="panning ? 'is-panning' : ''">
             <div class="ws-link-layer" :style="canvasLayerStyle()">
                 <template x-for="link in displayLinks()" :key="'l' + linkKey(link.a, link.b)">
                     <div class="ws-link-line" :style="lineStyle(link)" :title="linkTitle(link)" @click="removeLink(link)"></div>
