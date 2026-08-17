@@ -24,7 +24,7 @@ if ( ! $ws_hide_footer ) :
         $ws_c_email  = trim( (string) ( $ws_contact['email'] ?? '' ) );
         $ws_c_phone  = trim( (string) ( $ws_contact['phone'] ?? '' ) );
         $ws_c_wa     = trim( (string) ( $ws_contact['whatsapp'] ?? '' ) );
-        if ( $ws_c_email || $ws_c_phone || $ws_c_wa ) :
+        if ( $ws_c_email || $ws_c_phone || $ws_c_wa || ( function_exists( 'ws_app_has_download' ) && ws_app_has_download() ) ) :
         ?>
         <div class="ws-footer-help">
             <div class="ws-footer-help-text">

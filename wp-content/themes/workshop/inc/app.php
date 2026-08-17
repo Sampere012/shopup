@@ -45,8 +45,14 @@ function ws_app_settings() {
  * URL de descarga del APK, o '' si no está configurada.
  */
 function ws_app_apk_url() {
-	$s = ws_app_settings();
-	return trim( (string) ( $s['apk_url'] ?? '' ) );
+	$s   = ws_app_settings();
+	$url = trim( (string) ( $s['apk_url'] ?? '' ) );
+	// Ruta relativa (p.ej. /app/shopup-panel.apk): resolver contra el sitio
+	// para que funcione en cualquier dominio (local, producción, subcarpeta).
+	if ( '' !== $url && '/' === $url[0] ) {
+		$url = home_url( $url );
+	}
+	return $url;
 }
 
 /**
