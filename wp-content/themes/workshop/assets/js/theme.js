@@ -438,6 +438,22 @@
                     return (p.name || '').toLowerCase().includes(s) || (p.barcode || '').toLowerCase().includes(s);
                 });
             },
+            // Combos y productos separados (estilo POS: secciones agrupadas).
+            get filteredCombos() { return this.filtered.filter(p => p.is_combo); },
+            get filteredProducts() { return this.filtered.filter(p => !p.is_combo); },
+            // Detalle de combo: abre un modal con la imagen, precio y todos los componentes.
+            storeComboDetail: null,
+            storeComboActiveImg: '',
+            openStoreComboDetail(p) {
+                this.storeComboDetail = p;
+                this.storeComboActiveImg = (p && (p.image)) || '';
+            },
+            closeStoreComboDetail() { this.storeComboDetail = null; this.storeComboActiveImg = ''; },
+            addComboToCartFromDetail() {
+                if (!this.storeComboDetail) return;
+                this.add(this.storeComboDetail);
+                this.closeStoreComboDetail();
+            },
             // IDs de una categoría y de todas sus subcategorías (ramas del árbol).
             categoryBranchIds(id) {
                 const set = new Set([Number(id)]);

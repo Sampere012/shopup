@@ -207,53 +207,95 @@ get_header();
                 <p class="ws-empty"><?php esc_html_e( 'Esta tienda aún no tiene productos disponibles.', 'workshop' ); ?></p>
             <?php endif; ?>
 
-            <div class="ws-product-grid">
-                <template x-for="p in filtered" :key="p.id">
-                    <div class="ws-product-card" :data-pid="p.id" :class="(inCart(p.id) > 0 ? 'is-in-cart ' : '') + (p.is_combo ? 'ws-is-combo' : '')" @click="openProduct(p)" role="button" :aria-label="'Ver ' + p.name">
-                        <span class="ws-product-out" x-show="p.qty <= 0"><?php esc_html_e( 'Agotado', 'workshop' ); ?></span>
-                        <span class="ws-product-incart" x-show="inCart(p.id) > 0"><i class="fa-solid fa-check"></i> <span x-text="'En pedido: ' + inCart(p.id)"></span></span>
-                        <div class="ws-product-img">
-                            <img x-show="p.image" :src="p.image" :alt="p.name" loading="lazy">
-                            <i x-show="!p.image" class="fa-solid fa-box-open"></i>
+            <!-- Combos agrupados en su propia sección (estilo POS) -->
+            <div class="ws-pos-section" x-show="filteredCombos.length > 0" x-cloak>
+                <h4 class="ws-pos-section-title"><i class="fa-solid fa-layer-group"></i> <?php esc_html_e( 'Combos', 'workshop' ); ?> <small class="ws-muted" x-text="'(' + filteredCombos.length + ')'" style="font-weight:400;margin-left:4px"></small></h4>
+                <div class="ws-product-grid">
+                    <template x-for="p in filteredCombos" :key="p.id">
+                        <div class="ws-product-card ws-is-combo" :data-pid="p.id" :class="inCart(p.id) > 0 ? 'is-in-cart' : ''" @click="openStoreComboDetail(p)" role="button" :aria-label="'Ver combo ' + p.name">
+                            <span class="ws-product-out" x-show="p.qty <= 0"><?php esc_html_e( 'Agotado', 'workshop' ); ?></span>
+                            <span class="ws-product-incart" x-show="inCart(p.id) > 0"><i class="fa-solid fa-check"></i> <span x-text="'En pedido: ' + inCart(p.id)"></span></span>
+                            <div class="ws-product-img">
+                                <img x-show="p.image" :src="p.image" :alt="p.name" loading="lazy">
+                                <i x-show="!p.image" class="fa-solid fa-layer-group"></i>
+                            </div>
+                            <div class="ws-product-info">
+                                <div class="ws-product-title">
+                                    <h3 x-text="p.name"></h3>
+                                    <span class="ws-combo-badge" title="<?php esc_attr_e( 'Este producto es un combo', 'workshop' ); ?>"><i class="fa-solid fa-layer-group"></i> <?php esc_html_e( 'Combo', 'workshop' ); ?></span>
+                                </div>
+                                <div class="ws-product-row">
+                                    <span class="ws-price" x-text="priceInfo(p).main"></span>
+                                    <span class="ws-price-equiv" x-show="priceInfo(p).equiv" x-text="priceInfo(p).equiv"></span>
+                                    <span class="ws-stock-badge" :class="p.qty > 0 ? 'ws-text-success' : 'ws-text-danger'" x-text="stockLabel(p)"></span>
+                                </div>
+                                <!-- Componentes del combo (máx 4 chips) -->
+                                <div class="ws-combo-items ws-store-combo-items" x-show="(p.combo_items || []).length">
+                                    <span class="ws-combo-items-label"><i class="fa-solid fa-cubes"></i> <?php esc_html_e( 'Contiene', 'workshop' ); ?></span>
+                                    <template x-for="it in (p.combo_items || []).slice(0, 4)" :key="it.product_id">
+                                        <span class="ws-combo-chip"><i class="fa-solid fa-box"></i><span x-text="it.name"></span><b x-text="'×' + it.qty"></b></span>
+                                    </template>
+                                    <button type="button" class="ws-combo-more" x-show="(p.combo_items || []).length > 4" @click.stop="openStoreComboDetail(p)">
+                                        <i class="fa-solid fa-layer-group"></i> +<span x-text="(p.combo_items || []).length - 4"></span> <?php esc_html_e( 'ver más', 'workshop' ); ?>
+                                    </button>
+                                </div>
+                                <div class="ws-product-actions">
+                                    <button class="ws-btn ws-btn-ghost ws-btn-sm ws-btn-block" @click.stop="openStoreComboDetail(p)">
+                                        <i class="fa-solid fa-eye"></i> <?php esc_html_e( 'Ver combo', 'workshop' ); ?>
+                                    </button>
+                                    <button class="ws-btn ws-btn-sm ws-btn-block"
+                                            :class="inCart(p.id) > 0 ? 'ws-btn-success' : 'ws-btn-primary'"
+                                            :disabled="p.qty <= 0"
+                                            @click.stop="add(p)">
+                                        <i class="fa-solid" :class="inCart(p.id) > 0 ? 'fa-circle-check' : 'fa-cart-plus'"></i>
+                                        <span x-text="inCart(p.id) > 0 ? 'Añadido ✓' : 'Añadir'"></span>
+                                    </button>
+                                </div>
+                            </div>
                         </div>
-                        <div class="ws-product-info">
-                            <div class="ws-product-title">
-                                <h3 x-text="p.name"></h3>
-                                <span class="ws-combo-badge" x-show="p.is_combo" title="<?php esc_attr_e( 'Este producto es un combo', 'workshop' ); ?>"><i class="fa-solid fa-layer-group"></i> <?php esc_html_e( 'Combo', 'workshop' ); ?></span>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Productos sueltos -->
+            <div class="ws-pos-section" x-show="filteredProducts.length > 0" x-cloak>
+                <h4 class="ws-pos-section-title"><i class="fa-solid fa-box"></i> <?php esc_html_e( 'Productos', 'workshop' ); ?> <small class="ws-muted" x-text="'(' + filteredProducts.length + ')'" style="font-weight:400;margin-left:4px"></small></h4>
+                <div class="ws-product-grid">
+                    <template x-for="p in filteredProducts" :key="p.id">
+                        <div class="ws-product-card" :data-pid="p.id" :class="inCart(p.id) > 0 ? 'is-in-cart' : ''" @click="openProduct(p)" role="button" :aria-label="'Ver ' + p.name">
+                            <span class="ws-product-out" x-show="p.qty <= 0"><?php esc_html_e( 'Agotado', 'workshop' ); ?></span>
+                            <span class="ws-product-incart" x-show="inCart(p.id) > 0"><i class="fa-solid fa-check"></i> <span x-text="'En pedido: ' + inCart(p.id)"></span></span>
+                            <div class="ws-product-img">
+                                <img x-show="p.image" :src="p.image" :alt="p.name" loading="lazy">
+                                <i x-show="!p.image" class="fa-solid fa-box-open"></i>
                             </div>
-                            <!-- La categoría de un combo es 'Combo': ya lo indica la badge, no repetirlo debajo del nombre. -->
-                            <span class="ws-product-category" x-show="p.category && !p.is_combo" x-text="p.category"></span>
-                            <div class="ws-product-row">
-                                <span class="ws-price" x-text="priceInfo(p).main"></span>
-                                <span class="ws-price-equiv" x-show="priceInfo(p).equiv" x-text="priceInfo(p).equiv"></span>
-                                <span class="ws-price-transfer" x-show="p.transfer_pct > 0" x-text="transferLine(p)"></span>
-                                <span class="ws-stock-badge" :class="p.qty > 0 ? 'ws-text-success' : 'ws-text-danger'" x-text="stockLabel(p)"></span>
-                            </div>
-                            <div class="ws-combo-items ws-store-combo-items" x-show="p.is_combo && (p.combo_items || []).length">
-                                <span class="ws-combo-items-label"><i class="fa-solid fa-cubes"></i> <?php esc_html_e( 'Contiene', 'workshop' ); ?></span>
-                                <!-- Solo los primeros 4 componentes para no estirar el card; el resto se ve en el modal. -->
-                                <template x-for="it in (p.combo_items || []).slice(0, 4)" :key="it.product_id">
-                                    <span class="ws-combo-chip"><i class="fa-solid fa-box"></i><span x-text="it.name"></span><b x-text="'×' + it.qty"></b></span>
-                                </template>
-                                <button type="button" class="ws-combo-more" x-show="(p.combo_items || []).length > 4" @click.stop="openProduct(p)" :title="'<?php esc_attr_e( 'Ver todos los productos del combo', 'workshop' ); ?>'">
-                                    <i class="fa-solid fa-layer-group"></i> +<span x-text="(p.combo_items || []).length - 4"></span> <?php esc_html_e( 'ver más', 'workshop' ); ?>
-                                </button>
-                            </div>
-                            <div class="ws-product-actions">
-                                <button class="ws-btn ws-btn-ghost ws-btn-sm ws-btn-block" @click.stop="openProduct(p)">
-                                    <i class="fa-solid fa-eye"></i> <?php esc_html_e( 'Ver', 'workshop' ); ?>
-                                </button>
-                                <button class="ws-btn ws-btn-sm ws-btn-block"
-                                        :class="inCart(p.id) > 0 ? 'ws-btn-success' : 'ws-btn-primary'"
-                                        :disabled="p.qty <= 0"
-                                        @click.stop="add(p)">
-                                    <i class="fa-solid" :class="inCart(p.id) > 0 ? 'fa-circle-check' : 'fa-cart-plus'"></i>
-                                    <span x-text="inCart(p.id) > 0 ? 'Añadido ✓' : 'Añadir'"></span>
-                                </button>
+                            <div class="ws-product-info">
+                                <div class="ws-product-title">
+                                    <h3 x-text="p.name"></h3>
+                                </div>
+                                <span class="ws-product-category" x-show="p.category" x-text="p.category"></span>
+                                <div class="ws-product-row">
+                                    <span class="ws-price" x-text="priceInfo(p).main"></span>
+                                    <span class="ws-price-equiv" x-show="priceInfo(p).equiv" x-text="priceInfo(p).equiv"></span>
+                                    <span class="ws-price-transfer" x-show="p.transfer_pct > 0" x-text="transferLine(p)"></span>
+                                    <span class="ws-stock-badge" :class="p.qty > 0 ? 'ws-text-success' : 'ws-text-danger'" x-text="stockLabel(p)"></span>
+                                </div>
+                                <div class="ws-product-actions">
+                                    <button class="ws-btn ws-btn-ghost ws-btn-sm ws-btn-block" @click.stop="openProduct(p)">
+                                        <i class="fa-solid fa-eye"></i> <?php esc_html_e( 'Ver', 'workshop' ); ?>
+                                    </button>
+                                    <button class="ws-btn ws-btn-sm ws-btn-block"
+                                            :class="inCart(p.id) > 0 ? 'ws-btn-success' : 'ws-btn-primary'"
+                                            :disabled="p.qty <= 0"
+                                            @click.stop="add(p)">
+                                        <i class="fa-solid" :class="inCart(p.id) > 0 ? 'fa-circle-check' : 'fa-cart-plus'"></i>
+                                        <span x-text="inCart(p.id) > 0 ? 'Añadido ✓' : 'Añadir'"></span>
+                                    </button>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                </template>
+                    </template>
+                </div>
             </div>
 
             <!-- Consultar estado de pedido -->
@@ -489,7 +531,7 @@ get_header();
         </div>
     </div>
 
-    <!-- Modal de producto: fuera del overlay del carrito para que se pueda
+    <!-- Modal de producto (normal): fuera del overlay del carrito para que se pueda
          abrir desde la tarjeta sin abrir el carrito. -->
     <div class="ws-modal ws-store-modal" x-show="productOpen" x-cloak @click.self="closeProduct()" @keydown.escape.window="closeProduct()">
         <div class="ws-modal-backdrop" @click="closeProduct()"></div>
@@ -497,7 +539,6 @@ get_header();
             <div class="ws-modal-head">
                 <div class="ws-store-modal-title">
                     <h3 x-text="activeProduct ? activeProduct.name : ''"></h3>
-                    <span class="ws-combo-badge" x-show="activeProduct && activeProduct.is_combo" title="<?php esc_attr_e( 'Este producto es un combo', 'workshop' ); ?>"><i class="fa-solid fa-layer-group"></i> <?php esc_html_e( 'Combo', 'workshop' ); ?></span>
                 </div>
                 <button class="ws-cart-close" @click="closeProduct()"><i class="fa-solid fa-xmark"></i></button>
             </div>
@@ -521,12 +562,6 @@ get_header();
                     <div class="ws-store-modal-info">
                         <p class="ws-product-barcode" x-text="activeProduct.barcode"></p>
                         <p class="ws-product-desc" x-show="activeProduct.description" x-text="activeProduct.description"></p>
-                        <div class="ws-combo-items ws-store-combo-items" x-show="activeProduct.is_combo && (activeProduct.combo_items || []).length">
-                            <span class="ws-combo-items-label"><i class="fa-solid fa-cubes"></i> <?php esc_html_e( 'Contiene', 'workshop' ); ?></span>
-                            <template x-for="it in (activeProduct.combo_items || [])" :key="it.product_id">
-                                <span class="ws-combo-chip"><i class="fa-solid fa-box"></i><span x-text="it.name"></span><b x-text="'×' + it.qty"></b></span>
-                            </template>
-                        </div>
                         <div class="ws-product-row">
                             <span class="ws-price ws-price-lg" x-text="priceInfo(activeProduct).main"></span>
                             <span class="ws-price-equiv" x-show="priceInfo(activeProduct).equiv" x-text="priceInfo(activeProduct).equiv"></span>
@@ -542,6 +577,46 @@ get_header();
                             </div>
                         </div>
                         <button class="ws-btn ws-btn-primary ws-btn-block" :disabled="activeProduct.qty <= 0" @click="addFromModal()">
+                            <i class="fa-solid fa-cart-plus"></i> <?php esc_html_e( 'Añadir al pedido', 'workshop' ); ?>
+                        </button>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- Modal de combo (estilo POS): imagen grande, badge combo, precio, stock y todos los componentes -->
+    <div class="ws-modal ws-store-modal" x-show="storeComboDetail" x-cloak @click.self="closeStoreComboDetail()" @keydown.escape.window="closeStoreComboDetail()">
+        <div class="ws-modal-backdrop" @click="closeStoreComboDetail()"></div>
+        <div class="ws-modal-box">
+            <div class="ws-modal-head">
+                <div class="ws-store-modal-title">
+                    <h3 x-text="storeComboDetail ? storeComboDetail.name : ''"></h3>
+                    <span class="ws-combo-badge"><i class="fa-solid fa-layer-group"></i> <?php esc_html_e( 'Combo', 'workshop' ); ?></span>
+                </div>
+                <button class="ws-cart-close" @click="closeStoreComboDetail()"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <template x-if="storeComboDetail">
+                <div class="ws-store-modal-body">
+                    <div class="ws-store-modal-media">
+                        <div class="ws-store-modal-img">
+                            <img x-show="storeComboActiveImg" :src="storeComboActiveImg" :alt="storeComboDetail.name">
+                            <i x-show="!storeComboActiveImg" class="fa-solid fa-layer-group"></i>
+                        </div>
+                    </div>
+                    <div class="ws-store-modal-info">
+                        <div class="ws-product-row">
+                            <span class="ws-price ws-price-lg" x-text="priceInfo(storeComboDetail).main"></span>
+                            <span class="ws-price-equiv" x-show="priceInfo(storeComboDetail).equiv" x-text="priceInfo(storeComboDetail).equiv"></span>
+                        </div>
+                        <p class="ws-stock-badge" :class="storeComboDetail.qty > 0 ? 'ws-text-success' : 'ws-text-danger'" x-text="stockLabel(storeComboDetail)"></p>
+                        <div class="ws-combo-items ws-store-combo-items" x-show="(storeComboDetail.combo_items || []).length">
+                            <span class="ws-combo-items-label"><i class="fa-solid fa-cubes"></i> <?php esc_html_e( 'Contiene', 'workshop' ); ?></span>
+                            <template x-for="it in (storeComboDetail.combo_items || [])" :key="it.product_id">
+                                <span class="ws-combo-chip"><i class="fa-solid fa-box"></i><span x-text="it.name"></span><b x-text="'×' + it.qty"></b></span>
+                            </template>
+                        </div>
+                        <button class="ws-btn ws-btn-primary ws-btn-block" :disabled="storeComboDetail.qty <= 0" @click="addComboToCartFromDetail()">
                             <i class="fa-solid fa-cart-plus"></i> <?php esc_html_e( 'Añadir al pedido', 'workshop' ); ?>
                         </button>
                     </div>

@@ -226,8 +226,15 @@ function ws_ajax_mobile_logout() {
     if ( $uid ) {
         delete_user_meta( $uid, 'ws_mobile_token' );
         delete_user_meta( $uid, 'ws_mobile_token_expires' );
+        // Destruir también la sesión WP (cookie) para que el panel deje
+        // de renderizarse al abrir de nuevo la app en el WebView.
+        wp_destroy_current_session();
     }
-    wp_send_json_success();
+    $biz = function_exists( 'ws_current_business' ) ? ws_current_business() : null;
+    $login_url = $biz && ! empty( $biz->slug )
+        ? home_url( '/' . $biz->slug . '/login/' )
+        : home_url( '/login/' );
+    wp_send_json_success( array( 'loginUrl' => $login_url ) );
 }
 
 /**
