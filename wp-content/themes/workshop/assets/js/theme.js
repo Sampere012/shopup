@@ -9,9 +9,8 @@
         body: new URLSearchParams(Object.assign({ action: path, ws_nonce: WS.nonce }, data || {}))
     }).then(r => r.json());
 
-    // Exponer el helper AJAX globalmente para que los módulos offline
-    // (offline-queue.js, panel-offline.js) puedan reenviar peticiones al
-    // sincronizar la cola.
+    // Exponer el helper AJAX globalmente para que el resto del tema pueda
+    // hacer peticiones al servidor.
     window.$ = $;
 
     /* ---------- Loader global + guard genérico de envíos ---------- */
@@ -3813,19 +3812,6 @@
         },
 
         get: async function() {
-            // Primero intentar obtener de IndexedDB (offline)
-            if (window.WSIndexedDB) {
-                try {
-                    const offlineCart = await WSIndexedDB.getCartItems();
-                    if (offlineCart.length > 0) {
-                        return offlineCart;
-                    }
-                } catch (e) {
-                    console.log('Error obteniendo carrito offline:', e);
-                }
-            }
-            
-            // Si no hay datos offline, intentar del servidor
             return $('ws_cart_get', {
                 session_id: this.sessionId,
                 location_id: this.locationId,
@@ -3842,123 +3828,41 @@
                 user_id: WS.userId
             };
 
-            // Si está offline, guardar en IndexedDB
-            if (!navigator.onLine && window.WSIndexedDB) {
-                await WSIndexedDB.saveCartItem(cartItem);
+            const response = await $('ws_cart_add', cartItem);
+            if (response.success) {
                 this.updateCartCount();
-                return { offline: true };
             }
-
-            // Si está online, enviar al servidor
-            try {
-                const response = await $('ws_cart_add', cartItem);
-                if (response.success) {
-                    this.updateCartCount();
-                    return response;
-                }
-            } catch (error) {
-                // Si falla, guardar en IndexedDB y cola
-                if (window.WSIndexedDB && window.WSOfflineQueue) {
-                    await WSIndexedDB.saveCartItem(cartItem);
-                    await WSOfflineQueue.addToQueue(WSOfflineQueue.QUEUE_ACTIONS.CART_ADD, cartItem);
-                    this.updateCartCount();
-                    return { offline: true };
-                }
-                throw error;
-            }
+            return response;
         },
 
         update: async function(cartId, qty) {
-            // Si está offline, actualizar en IndexedDB
-            if (!navigator.onLine && window.WSIndexedDB) {
-                const item = await WSIndexedDB.getCartItem(cartId);
-                if (item) {
-                    item.qty = qty;
-                    await WSIndexedDB.saveCartItem(item);
-                    this.updateCartCount();
-                    return { offline: true };
-                }
+            const response = await $('ws_cart_update', { cart_id: cartId, qty: qty });
+            if (response.success) {
+                this.updateCartCount();
             }
-
-            try {
-                const response = await $('ws_cart_update', { cart_id: cartId, qty: qty });
-                if (response.success) {
-                    this.updateCartCount();
-                    return response;
-                }
-            } catch (error) {
-                if (window.WSIndexedDB && window.WSOfflineQueue) {
-                    const item = await WSIndexedDB.getCartItem(cartId);
-                    if (item) {
-                        item.qty = qty;
-                        await WSIndexedDB.saveCartItem(item);
-                        await WSOfflineQueue.addToQueue(WSOfflineQueue.QUEUE_ACTIONS.CART_UPDATE, { cart_id: cartId, qty: qty });
-                        this.updateCartCount();
-                        return { offline: true };
-                    }
-                }
-                throw error;
-            }
+            return response;
         },
 
         remove: async function(cartId) {
-            // Si está offline, eliminar de IndexedDB
-            if (!navigator.onLine && window.WSIndexedDB) {
-                await WSIndexedDB.deleteCartItem(cartId);
+            const response = await $('ws_cart_remove', { cart_id: cartId });
+            if (response.success) {
                 this.updateCartCount();
-                return { offline: true };
             }
-
-            try {
-                const response = await $('ws_cart_remove', { cart_id: cartId });
-                if (response.success) {
-                    this.updateCartCount();
-                    return response;
-                }
-            } catch (error) {
-                if (window.WSIndexedDB && window.WSOfflineQueue) {
-                    await WSIndexedDB.deleteCartItem(cartId);
-                    await WSOfflineQueue.addToQueue(WSOfflineQueue.QUEUE_ACTIONS.CART_REMOVE, { cart_id: cartId });
-                    this.updateCartCount();
-                    return { offline: true };
-                }
-                throw error;
-            }
+            return response;
         },
 
         clear: async function() {
-            if (!navigator.onLine && window.WSIndexedDB) {
-                await WSIndexedDB.clearCart();
+            const response = await $('ws_cart_clear', {
+                session_id: this.sessionId,
+                location_id: this.locationId
+            });
+            if (response.success) {
                 this.updateCartCount();
-                return { offline: true };
             }
-
-            try {
-                const response = await $('ws_cart_clear', {
-                    session_id: this.sessionId,
-                    location_id: this.locationId
-                });
-                if (response.success) {
-                    this.updateCartCount();
-                    return response;
-                }
-            } catch (error) {
-                if (window.WSIndexedDB) {
-                    await WSIndexedDB.clearCart();
-                    this.updateCartCount();
-                    return { offline: true };
-                }
-                throw error;
-            }
+            return response;
         },
 
         getTotal: async function() {
-            // Calcular desde IndexedDB si está offline
-            if (!navigator.onLine && window.WSIndexedDB) {
-                const items = await WSIndexedDB.getCartItems();
-                return items.reduce((total, item) => total + (item.qty * item.price), 0);
-            }
-
             return $('ws_cart_total', {
                 session_id: this.sessionId,
                 location_id: this.locationId
@@ -3966,12 +3870,6 @@
         },
 
         getCount: async function() {
-            // Contar desde IndexedDB si está offline
-            if (!navigator.onLine && window.WSIndexedDB) {
-                const items = await WSIndexedDB.getCartItems();
-                return items.reduce((count, item) => count + item.qty, 0);
-            }
-
             return $('ws_cart_count', {
                 session_id: this.sessionId,
                 location_id: this.locationId

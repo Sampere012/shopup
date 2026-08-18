@@ -511,12 +511,7 @@
                     { label: 'Guía del panel', icon: 'fa-list-ol', send: 'guia del panel' },
                     { label: 'Ver tiendas', icon: 'fa-store', send: 'ver tiendas' }
                 ];
-            // Si la app aún no está instalada en este dispositivo, se ofrece
-            // instalarla desde el propio bot (sin esperar al aviso del navegador).
-            var apiNow = window.WSPWA_API || null;
-            if (!(apiNow && apiNow.isStandalone())) {
-                bpChips.push({ label: 'Instalar app', icon: 'fa-mobile-screen-button', send: 'instalar la app' });
-            }
+            bpChips.push({ label: 'Descargar app', icon: 'fa-download', send: 'descargar la app' });
             return { msg: bpMsg, chips: bpChips, track: 'boot:panel' + (p.key || '') };
         }
         return null;
@@ -2021,33 +2016,6 @@
         showPendingAlerts(false);
     }
 
-    // Aviso de NUEVA VERSIÓN cuando la app está instalada (PWA): el servidor
-    // manda la versión actual (WSBOT.version) y se compara con la que este
-    // dispositivo conoce. Si cambió y la app está instalada, el bot avisa una
-    // sola vez por versión (localStorage) y ofrece actualizar.
-    function checkAppUpdate(forceOpen) {
-        if (locked) { return; }
-        if (!C.version) { return; }
-        var cur = String(C.version);
-        var known = getF('ws_app_known_version');
-        var notified = getF('ws_app_notified_version');
-        if (!known) { setF('ws_app_known_version', cur); return; }
-        if (known === cur || notified === cur) { return; }
-        var api = window.WSPWA_API || null;
-        if (!(api && api.isStandalone())) { return; }
-        setF('ws_app_notified_version', cur);
-        var msg = '📦 Hay una nueva versión de la app instalada: v' + cur + ' ya está disponible. Toca "Actualizar ahora" y la app se recargará con los cambios nuevos (tus datos no se pierden).';
-        var chips = [{ label: 'Actualizar ahora', icon: 'fa-rotate', cls: 'wsb-chip-success', click: applyAppUpdate }];
-        if (forceOpen && !open) {
-            setOpen(true);
-            if (!body.children.length) { boot(); }
-        }
-        window.setTimeout(function () {
-            appendMsg(msg, false);
-            appendChips(chips);
-        }, forceOpen ? 900 : 0);
-    }
-
     // Aviso de NUEVA VERSIÓN del APK nativo (panel Android): consulta la
     // versión publicada (ws_app_version) y, si el administrador publicó una
     // versión distinta a la última anunciada, el bot la anuncia UNA vez por
@@ -2069,25 +2037,6 @@
             appendMsg(msg, false);
             appendChips([{ label: 'Descargar app', icon: 'fa-download', cls: 'wsb-chip-success', url: info.apk_url }]);
         });
-    }
-
-    // Aplica la actualización: pide al service worker comprobar/instalar la
-    // nueva versión (SKIP_WAITING + update) y recarga para que tome control.
-    function applyAppUpdate() {
-        var reload = function () { window.location.reload(); };
-        try {
-            if ('serviceWorker' in navigator) {
-                navigator.serviceWorker.getRegistration().then(function (reg) {
-                    if (reg) {
-                        try {
-                            if (reg.waiting) { reg.waiting.postMessage({ type: 'SKIP_WAITING' }); }
-                        } catch (e) {}
-                        try { reg.update(); } catch (e) {}
-                        window.setTimeout(reload, 1200);
-                    } else { reload(); }
-                }).catch(reload);
-            } else { reload(); }
-        } catch (e) { reload(); }
     }
 
     // Visitantes con carrito: el bot se adelanta al terminar el pedido.
@@ -2128,7 +2077,7 @@
                 if (isPanel) {
                     var ids = Object.keys(C.shortcuts.panel || {});
                     var chips = chipsFor(ids.slice(0, 6));
-                    chips.push({ label: 'Instalar app', icon: 'fa-mobile-screen-button', send: 'instalar la app' });
+                    chips.push({ label: 'Descargar app', icon: 'fa-download', send: 'descargar la app' });
                     reply(S.atajosTitle, chips, 'atajos');
                 } else {
                     reply(S.noAtajos, chipsFor(['marketplace', 'ayuda', 'contacto']), 'atajos');
@@ -2139,57 +2088,14 @@
             keys: ['instalar la app', 'instalar app', 'instalar la aplicacion', 'instalar aplicacion', 'instalar la app movil', 'instalar la aplicacion movil', 'descargar la app', 'descargar app', 'bajar la app', 'apk', 'app apk', 'aplicacion movil', 'como instalo la app', 'como descargo la app', 'instalar app en mi telefono', 'instalar la app en mi telefono', 'poner la app en mi telefono', 'get app', 'obtener app', 'download app', 'get the app'],
             run: function () {
                 if (locked) { actions.locked.run(); return; }
-                // pwa = API del service worker (objeto con métodos isStandalone/
-                // canInstall/install). Cuidado: NO se llama como función; el AJAX
-                // del widget es api() y no debe quedar tapado por esta variable.
-                var pwa = window.WSPWA_API || null;
-                if (pwa && pwa.isStandalone()) {
-                    reply('La app ya está instalada en tu dispositivo ✅ Funciona sin conexión: lo que haces sin señal (ventas, entradas, pedidos) se guarda y se sincroniza solo al reconectar. ¿Necesitas algo más?', [{ label: 'Atajos', icon: 'fa-bolt', send: 'atajos' }], 'app:installed');
-                    return;
-                }
-                var howTo = function () {
-                    reply('Para instalarla según tu dispositivo:\n\nAndroid (Chrome): menú ⋮ → "Agregar a pantalla de inicio" o "Instalar aplicación".\niPhone/iPad (Safari): botón Compartir → "Agregar a pantalla de inicio".\nEscritorio (Chrome/Edge): icono "Instalar" de la barra de direcciones.\n\nEs una app web (PWA): se instala como una app normal, abre en pantalla completa y funciona sin internet.', [{ label: 'Instalar ahora', icon: 'fa-download', cls: 'wsb-chip-success', click: function () {
-                        if (pwa && pwa.canInstall()) {
-                            pwa.install(function (ok) {
-                                appendMsg(ok ? '✅ Instalación iniciada: confirma el aviso del navegador y la app quedará en tu pantalla de inicio.' : 'El navegador no ofreció la instalación ahora. Sigue los pasos de arriba; en Android/Chrome prueba a recargar la página.', false);
-                            });
-                        } else {
-                            appendMsg('Tu navegador no ofrece instalación directa por ahora; usa los pasos de arriba para añadirla a tu pantalla de inicio.', false);
-                        }
-                    } }], 'app:howto');
-                };
-                // Descarga nativa (APK) si el administrador la publicó.
-                var appInfo = function () {
-                    return new Promise(function (resolve) {
-                        api('ws_app_version', {}, function (json) {
-                            resolve((json && json.success && json.data) ? json.data : null);
-                        });
-                    });
-                };
-                appInfo().then(function (info) {
-                    if (info && info.has_apk && info.apk_url) {
-                        var chips = [{ label: 'Descargar app', icon: 'fa-download', cls: 'wsb-chip-success', url: info.apk_url }];
-                        if (pwa && pwa.canInstall()) {
-                            chips.push({ label: 'O instalar la PWA', icon: 'fa-mobile-screen-button', click: function () {
-                                pwa.install(function (ok) { appendMsg(ok ? '✅ Instalación iniciada.' : 'Tu navegador no ofreció la instalación; prueba a recargar la página.', false); });
-                            } });
-                        }
-                        reply('La app móvil de ShopUp Panel está disponible en tu dispositivo 👇 Es la app nativa (Android): funciona sin conexión y sincroniza todo automáticamente.\n\nVersión actual: ' + (info.version || '—') + (info.changelog ? '\nNovedades: ' + info.changelog : '') + '\n\nToca "Descargar app" para bajar e instalar el archivo .apk.', chips, 'app:download');
+                api('ws_app_version', {}, function (json) {
+                    var info = (json && json.success && json.data) ? json.data : null;
+                    if (!info || !info.has_apk || !info.apk_url) {
+                        reply('La app de ShopUp Panel es una app nativa de Android que se descarga como archivo .apk. Ahora mismo la descarga no está disponible; prueba más tarde o pídesela a tu administrador.', [], 'app:no-download');
                         return;
                     }
-                    if (pwa && pwa.canInstall()) {
-                        reply('Puedo instalarla ahora mismo 👇 Toca "Instalar ahora" y confirma el aviso del navegador. La app quedará en tu pantalla de inicio con el icono de Workshop, abre en pantalla completa y funciona sin conexión.', [
-                            { label: 'Instalar ahora', icon: 'fa-download', cls: 'wsb-chip-success', click: function () {
-                                pwa.install(function (ok) {
-                                    appendMsg(ok ? '✅ Instalación iniciada: confirma el aviso del navegador y la app quedará en tu pantalla de inicio. ¡Lista para usar sin conexión!' : 'No se pudo mostrar la instalación ahora; te explico cómo hacerla manualmente 👇', false);
-                                    if (!ok) { howTo(); }
-                                });
-                            } },
-                            { label: 'Cómo hacerlo manualmente', icon: 'fa-circle-question', click: howTo }
-                        ], 'app:install');
-                    } else {
-                        howTo();
-                    }
+                    var chips = [{ label: 'Descargar app', icon: 'fa-download', cls: 'wsb-chip-success', url: info.apk_url }];
+                    reply('La app de ShopUp Panel para Android se descarga desde aquí 👇\n\nVersión: ' + (info.version || '—') + (info.changelog ? '\nNovedades: ' + info.changelog : '') + '\n\nToca "Descargar app" para bajar el archivo .apk e instalarlo en tu móvil. La app funciona sin conexión y sincroniza todo automáticamente.', chips, 'app:download');
                 });
             }
         },
@@ -2617,7 +2523,7 @@
         if (locked) { actions.locked.run(); }
         else if (isPanel) {
             var allChips = chipsFor(Object.keys(C.shortcuts.panel || {}));
-            allChips.push({ label: 'Instalar app', icon: 'fa-mobile-screen-button', send: 'instalar la app' });
+            allChips.push({ label: 'Descargar app', icon: 'fa-download', send: 'descargar la app' });
             reply(S.atajosTitle, allChips, 'atajos-btn');
         } else {
             reply(S.noAtajos, chipsFor(['marketplace', 'ayuda', 'contacto']), 'atajos-btn');
@@ -2677,9 +2583,8 @@
             // pendientes (stock, pedidos, anuncios…) como mensajes normales,
             // sin que el usuario tenga que preguntar por ellas.
             showPendingAlerts(false);
-            // Aviso de nueva versión de la app (si está instalada) y del APK
-            // nativo cuando el administrador publica una actualización.
-            checkAppUpdate(false);
+            // Aviso de nueva versión del APK nativo cuando el administrador
+            // publica una actualización.
             notifyApkUpdate();
         } else if (!C.logged) {
             reply(guestWelcome() + ' ' + S.registerHook, [
@@ -2765,11 +2670,5 @@
     if (isPanel && !locked) {
         checkNotifications();
         window.setInterval(checkNotifications, 60000);
-    }
-    // Usuarios con la app instalada: si hay una nueva versión, el bot se abre
-    // solo para avisarles (una vez por versión) y ofrecer actualizar sin
-    // esperar a que el navegador lo haga.
-    if (!locked) {
-        window.setTimeout(function () { checkAppUpdate(true); }, 3500);
     }
 })();

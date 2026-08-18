@@ -33,10 +33,14 @@ if ( ! $ws_hide_footer ) :
             </div>
             <div class="ws-footer-help-actions">
                 <?php if ( function_exists( 'ws_app_has_download' ) && ws_app_has_download() ) : ?>
-                    <a class="ws-btn ws-btn-primary ws-btn-sm" href="<?php echo esc_url( ws_app_apk_url() ); ?>" download>
-                        <i class="fa-solid fa-download"></i> <?php esc_html_e( 'Descargar app', 'workshop' ); ?>
+                    <a class="ws-store-badge" href="<?php echo esc_url( ws_app_apk_url() ); ?>" download title="<?php esc_attr_e( 'Descargar la app de ShopUp Panel (Android)', 'workshop' ); ?>">
+                        <span class="ws-store-badge-icon"><i class="fa-brands fa-android" aria-hidden="true"></i></span>
+                        <span class="ws-store-badge-text">
+                            <span class="ws-store-badge-line"><?php esc_html_e( 'Disponible en', 'workshop' ); ?></span>
+                            <span class="ws-store-badge-name"><?php esc_html_e( 'ShopUp Panel · Android', 'workshop' ); ?></span>
+                        </span>
                         <?php $ws_app_ver = ws_app_version_info(); if ( ! empty( $ws_app_ver['version'] ) ) : ?>
-                            <span class="ws-badge ws-badge-sm">v<?php echo esc_html( $ws_app_ver['version'] ); ?></span>
+                            <span class="ws-badge ws-badge-sm ws-badge-dark">v<?php echo esc_html( $ws_app_ver['version'] ); ?></span>
                         <?php endif; ?>
                     </a>
                 <?php endif; ?>

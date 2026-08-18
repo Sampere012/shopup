@@ -129,9 +129,8 @@ function ws_chatbot_config( $in_admin = false ) {
         'locSlug' => $loc_slug,
         'chatbot' => $chatbot,
         'planName'=> $plan_name,
-        // Versión actual de la app: el bot la compara con la instalada en el
-        // dispositivo (localStorage) para avisar de actualizaciones cuando la
-        // app está instalada como PWA.
+        // Versión de la web (WS_VERSION): la usa el bot como referencia de la
+        // versión publicada.
         'version' => WS_VERSION,
         // Enlace directo al visor de logs (solo admin de WP): lo usa el widget
         // para el chip "Ver Logs" cuando llega una alerta de error.
@@ -1294,13 +1293,13 @@ function ws_chatbot_knowledge_extras() {
         $p( 'rep-programar', array( 'programar reporte', 'reporte automatico', 'reporte diario', 'recibir reporte programado', 'tarea en segundo plano' ), 'Puedo programar reportes para que te lleguen solos: ahora mismo, en X horas, hoy a una hora, mañana o cada día a una hora fija. Tú solo dime qué reporte y cuándo: "programa un reporte de ventas mañana a las 9".', '', 'Programar', 'fa-clock' ),
         $p( 'rep-datos', array( 'que datos tienes de mi negocio', 'que informacion manejas', 'que sabe el bot de mi negocio', 'datos de mi tienda' ), 'Tengo en tiempo real tus productos, stock (incluido bajo stock), pedidos pendientes, ventas del POS, clientes, equipo y actividad, caja abierta, notificaciones y tu plan. Todo de tu negocio, nada inventado.', '', 'Mis datos', 'fa-database' ),
 
-        // ---------- Offline y PWA ----------
+        // ---------- App nativa y modo offline ----------
         // "instalar la app", "descargar la app", "obtener app", "get app" y
         // "apk" los atiende una ACCIÓN propia del bot (ofrece la descarga del
-        // APK nativo si el administrador lo publicó, o instala la PWA bajo
-        // demanda); aquí solo quedan las preguntas sobre el modo offline.
-        $p( 'pwa-instalar', array( 'usar sin internet', 'modo offline', 'trabajar sin conexion', 'funciona sin internet', 'sin conexion', 'app offline', 'trabajar sin internet', 'obtener app', 'get app', 'bajar la app' ), 'La app funciona sin conexión: pídeme "instalar la app" y te la pongo en tu dispositivo. Puedo descargarte la app nativa (Android, .apk) o instalarla en tu pantalla de inicio (PWA). Instalada, sigues operando aunque pierdas la señal: las ventas y movimientos quedan en cola y se sincronizan solos al reconectar.', '', 'Instalar', 'fa-mobile-screen-button' ),
-        $p( 'pwa-sync', array( 'sincronizar ventas offline', 'ventas pendientes de sincronizar', 'cola offline', 'cuando se sincroniza' ), 'Lo que haces sin conexión (ventas, entradas) se guarda localmente y se envía automáticamente al reconectar. El panel te muestra cuántas acciones quedan pendientes de sincronizar.', '', 'Ver panel', 'fa-rotate' ),
+        // APK nativo si el administrador lo publicó); aquí solo quedan las
+        // preguntas sobre el modo offline.
+        $p( 'pwa-instalar', array( 'usar sin internet', 'modo offline', 'trabajar sin conexion', 'funciona sin internet', 'sin conexion', 'app offline', 'trabajar sin internet', 'obtener app', 'get app', 'bajar la app' ), 'La app de ShopUp Panel es una app nativa de Android que se descarga como archivo .apk. Pídeme "descargar la app" y te doy el enlace para instalarla en tu móvil. Instalada, sigues operando aunque pierdas la señal: las ventas y movimientos quedan en cola y se sincronizan solos al reconectar.', '', 'Descargar', 'fa-download' ),
+        $p( 'pwa-sync', array( 'sincronizar ventas offline', 'ventas pendientes de sincronizar', 'cola offline', 'cuando se sincroniza' ), 'Lo que haces sin conexión (ventas, entradas) se guarda en la app y se envía automáticamente al reconectar.', '', 'Descargar app', 'fa-rotate' ),
 
         // ---------- Seguridad ----------
         $p( 'seg-login-fail', array( 'intentos fallidos de login', 'alguien intenta entrar', 'acceso no autorizado', 'seguridad de mi cuenta' ), 'Llevo un registro de los intentos de acceso fallidos. Si detecto varios seguidos desde la misma dirección, te aviso al instante y lo incluyo en el reporte de seguridad diario.', '', 'Seguridad', 'fa-shield-halved' ),

@@ -108,8 +108,9 @@ function ws_redirect_wp_login() {
     }
 }
 
-// Sesión de larga duración: los usuarios trabajan offline (PWA con cola de
-// sincronización) y no deben perder la sesión a mitad de jornada ni al cerrar
+// Sesión de larga duración: los usuarios trabajan offline (la app nativa
+// guarda la cola de sincronización) y no deben perder la sesión a mitad de
+// jornada ni al cerrar
 // el navegador. Los días se configuran en wp-admin > ShopUp > Sesión y
 // seguridad (ws_session_expiration_days, 30 por defecto; el triple si el
 // usuario marcó «Recuérdame»).

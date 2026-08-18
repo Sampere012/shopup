@@ -407,9 +407,10 @@ function ws_security_admin_menu() {
 /**
  * Sesión y seguridad: cuánto dura la sesión de los usuarios.
  *
- * Los usuarios trabajan offline (PWA con cola de sincronización) y no deben
- * perder la sesión a mitad de jornada ni al cerrar el navegador: la cookie de
- * acceso se mantiene vigente estos días (aplica al panel y a la tienda).
+ * Los usuarios trabajan con la app nativa de Android (la app guarda la cola
+ * de sincronización offline) y no deben perder la sesión a mitad de jornada
+ * ni al cerrar el navegador: la cookie de acceso se mantiene vigente estos
+ * días (aplica al panel y a la tienda).
  * Aquí también se explica el validador de correos del acceso/registro.
  */
 function ws_admin_page_security() {
