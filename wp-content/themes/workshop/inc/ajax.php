@@ -226,8 +226,15 @@ function ws_ajax_mobile_logout() {
     if ( $uid ) {
         delete_user_meta( $uid, 'ws_mobile_token' );
         delete_user_meta( $uid, 'ws_mobile_token_expires' );
+        // Destruir también la sesión WP (cookie) para que el panel deje
+        // de renderizarse al abrir de nuevo la app en el WebView.
+        wp_destroy_current_session();
     }
-    wp_send_json_success();
+    $biz = function_exists( 'ws_current_business' ) ? ws_current_business() : null;
+    $login_url = $biz && ! empty( $biz->slug )
+        ? home_url( '/' . $biz->slug . '/login/' )
+        : home_url( '/login/' );
+    wp_send_json_success( array( 'loginUrl' => $login_url ) );
 }
 
 /**
@@ -3612,32 +3619,45 @@ function ws_ajax_products_get() {
         ? array( $location_id )
         : $allowed_ids;
 
+    // Stock compartido: incluir ubicaciones VINCULADAS (componente conexo del
+    // grafo) para que el POS muestre productos con stock en cualquier ubicación
+    // conectada. El grupo comparte stock: lo que entra/sale en una se aplica a
+    // TODAS las conectadas (padres + hijos + transitivo).
+    $linked_ids = array();
+    if ( $location_id ) {
+        $linked_ids = WS_Stock::linked_location_ids( $location_id );
+    }
+    // Unir ubicaciones seleccionadas + vinculadas (solo las permitidas).
+    $all_loc_ids = array_values( array_unique( array_merge( $loc_ids, array_intersect( $linked_ids, $allowed_ids ) ) ) );
+
     // Filtrar productos que tienen stock en la ubicación seleccionada
+    // (o vinculadas). Sin limit/offset aquí: necesitamos todos los stocks del
+    // grupo para calcular el total correcto. Se aplica paginación después.
     $stock_rows = WS_Stock::stock_rows( array(
-        'location_ids' => $loc_ids,
+        'location_ids' => $all_loc_ids,
         'search'       => $search,
-        'limit'        => $limit,
-        'offset'       => $offset,
     ) );
+
+    // Calcular stock del grupo (stock compartido por línea de ubicaciones
+    // conectadas). group_total es la suma de stock en TODAS las ubicaciones
+    // del componente conexo del producto+ubicación.
+    $group = WS_Stock::stock_group_info( $stock_rows );
 
     // POS: mostrar/ocultar POR UBICACIÓN (canal 'pos'), igual que la tienda
     // pero independiente. Lo oculto del POS no aparece en el catálogo del POS
     // de esa ubicación (sigue en el inventario y en la tienda si está visible).
     global $wpdb;
     $sv_pos_t = ws_table_name( 'store_visibility' );
+    $pos_hidden = array();
     if ( $loc_ids && $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $sv_pos_t ) ) === $sv_pos_t ) {
         $sv_pos_ph = implode( ',', array_fill( 0, count( $loc_ids ), '%d' ) );
         $sv_hidden = $wpdb->get_results( $wpdb->prepare(
             "SELECT entity_id, location_id FROM {$sv_pos_t} WHERE entity_type='product' AND channel='pos' AND visible=0 AND location_id IN ({$sv_pos_ph})",
             ...$loc_ids
         ) );
-        $pos_hidden = array();
         foreach ( $sv_hidden as $h ) {
             $pos_hidden[ (int) $h->entity_id . ':' . (int) $h->location_id ] = true;
         }
-        $stock_rows = array_values( array_filter( $stock_rows, function ( $r ) use ( $pos_hidden ) {
-            return ! isset( $pos_hidden[ (int) $r->product_id . ':' . (int) $r->location_id ] );
-        } ) );
     }
 
     // Moneda de la ubicación seleccionada: el POS cobra en la moneda del PV,
@@ -3645,8 +3665,35 @@ function ws_ajax_products_get() {
     // a esa moneda. Sin ubicación concreta se deja la moneda nativa.
     $loc_currency = ws_location_currency( $location_id );
 
+    // Deduplicar por producto: usar la fila de la ubicación seleccionada
+    // (si existe) o la primera encontrada. El stock efectivo es el total del
+    // grupo (todas las ubicaciones conectadas). Solo se muestran productos con
+    // stock disponible en el grupo.
+    $seen_products = array();
     $out = array();
     foreach ( $stock_rows as $r ) {
+        $pid = (int) $r->product_id;
+        if ( ! $pid ) {
+            continue;
+        }
+        // Si el producto ya fue procesado, saltar (deduplicar).
+        if ( isset( $seen_products[ $pid ] ) ) {
+            continue;
+        }
+        // POS visibility check: oculto en la ubicación seleccionada.
+        $hide_key = $pid . ':' . (int) $r->location_id;
+        if ( isset( $pos_hidden[ $hide_key ] ) ) {
+            continue;
+        }
+        // Stock efectivo: total del grupo (todas las ubicaciones conectadas).
+        $g = $group[ $pid . ':' . (int) $r->location_id ] ?? null;
+        $effective_stock = $g ? (float) $g['total'] : (float) $r->qty;
+        // Solo mostrar productos con stock disponible en el grupo.
+        if ( $effective_stock <= 0 ) {
+            continue;
+        }
+        $seen_products[ $pid ] = true;
+
         $sale_price = (float) $r->sale_price;
         $cost_price = (float) $r->cost_price;
         $cur        = $r->currency;
@@ -3656,7 +3703,7 @@ function ws_ajax_products_get() {
             $cur        = $loc_currency;
         }
         $out[] = array(
-            'id'          => (int) $r->product_id,
+            'id'          => $pid,
             'name'        => $r->name,
             'barcode'     => $r->barcode,
             'category'    => (string) ( $r->category ?? '' ),
@@ -3668,10 +3715,16 @@ function ws_ajax_products_get() {
             'transfer_pct'=> (float) $r->transfer_pct,
             'currency'    => $cur,
             'show_equiv'  => (int) ( $r->show_equiv ?? 1 ),
-            'stock'       => (float) $r->qty,
+            'stock'       => $effective_stock,
             'is_combo'    => 0,
             'combo_id'    => 0,
         );
+    }
+    // Aplicar paginación DESPUÉS de la deduplicación y filtrado por grupo.
+    $out = array_values( $out );
+    $total = count( $out );
+    if ( $offset > 0 || $limit < $total ) {
+        $out = array_slice( $out, $offset, $limit );
     }
 
     // Combos activos (stock derivado de sus componentes) como ítems de catálogo.
@@ -3682,6 +3735,9 @@ function ws_ajax_products_get() {
                 continue;
             }
             if ( ! ws_store_visible( 'combo', (int) $c['combo_id'], $location_id, 'pos' ) ) {
+                continue;
+            }
+            if ( (float) $c['qty'] <= 0 ) {
                 continue;
             }
             $cprice = (float) $c['price'];
@@ -3710,12 +3766,7 @@ function ws_ajax_products_get() {
         }
     }
 
-    $total = WS_Stock::count_stock_rows( array(
-        'location_ids' => $loc_ids,
-        'search'       => $search,
-    ) ) + $combo_count;
-
-    wp_send_json_success( array( 'data' => $out, 'total' => $total ) );
+    wp_send_json_success( array( 'data' => $out, 'total' => $total + $combo_count ) );
 }
 
 add_action( 'wp_ajax_ws_pos_stats', 'ws_ajax_pos_stats' );

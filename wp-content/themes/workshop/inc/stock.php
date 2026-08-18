@@ -86,6 +86,28 @@ class WS_Stock {
         }
         $updated = self::_decrease_locked( $product_id, $location_id, $qty );
         if ( ! $updated ) {
+            // Stock compartido: si la ubicación seleccionada no tiene stock
+            // suficiente, intentar descontar de ubicaciones VINCULADAS (el
+            // componente conexo del grafo comparte stock). La venta se registra
+            // en la ubicación original y el stock se descuenta de la vinculada
+            // que tenga disponible, manteniendo la coherencia del inventario.
+            $linked = self::linked_location_ids( $location_id );
+            if ( $linked ) {
+                foreach ( $linked as $lid ) {
+                    if ( self::_decrease_locked( $product_id, $lid, $qty ) ) {
+                        // Fraccionamiento sobre la ubicación vinculada.
+                        self::_apply_fraction_links( $product_id, $lid, $qty, '-' );
+                        // Registrar el movimiento en la ubicación ORIGEN (la que
+                        // el vendedor seleccionó) para que el historial refleje la
+                        // venta real.
+                        self::_log( $type, $product_id, $location_id, 0, $qty, $ref, $note, $user_id, $combo_id, $revert_of );
+                        // Propagar la baja al RESTO de ubicaciones vinculadas
+                        // (excepto la que acabamos de descontar y la origen).
+                        self::_propagate_linked( $product_id, $lid, $qty, '-', $type, $ref, $note, $user_id, $combo_id );
+                        return true;
+                    }
+                }
+            }
             return new WP_Error( 'insufficient', __( 'Stock insuficiente para el movimiento.', 'workshop' ) );
         }
         if ( ! self::_apply_fraction_links( $product_id, $location_id, $qty, '-' ) ) {
