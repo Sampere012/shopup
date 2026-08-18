@@ -229,16 +229,6 @@ get_header();
                                     <span class="ws-price-equiv" x-show="priceInfo(p).equiv" x-text="priceInfo(p).equiv"></span>
                                     <span class="ws-stock-badge" :class="p.qty > 0 ? 'ws-text-success' : 'ws-text-danger'" x-text="stockLabel(p)"></span>
                                 </div>
-                                <!-- Componentes del combo (máx 4 chips) -->
-                                <div class="ws-combo-items ws-store-combo-items" x-show="(p.combo_items || []).length">
-                                    <span class="ws-combo-items-label"><i class="fa-solid fa-cubes"></i> <?php esc_html_e( 'Contiene', 'workshop' ); ?></span>
-                                    <template x-for="it in (p.combo_items || []).slice(0, 4)" :key="it.product_id">
-                                        <span class="ws-combo-chip"><i class="fa-solid fa-box"></i><span x-text="it.name"></span><b x-text="'×' + it.qty"></b></span>
-                                    </template>
-                                    <button type="button" class="ws-combo-more" x-show="(p.combo_items || []).length > 4" @click.stop="openStoreComboDetail(p)">
-                                        <i class="fa-solid fa-layer-group"></i> +<span x-text="(p.combo_items || []).length - 4"></span> <?php esc_html_e( 'ver más', 'workshop' ); ?>
-                                    </button>
-                                </div>
                                 <div class="ws-product-actions">
                                     <button class="ws-btn ws-btn-ghost ws-btn-sm ws-btn-block" @click.stop="openStoreComboDetail(p)">
                                         <i class="fa-solid fa-eye"></i> <?php esc_html_e( 'Ver combo', 'workshop' ); ?>
