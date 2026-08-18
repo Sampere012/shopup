@@ -37,11 +37,6 @@ jobs:
               failed=1
             fi
           done < <(find wp-content -type f -name '*.js')
-          if ! node --check sw.prod.js > /tmp/js_err 2>&1; then
-            echo "::error::JS ERROR en sw.prod.js"
-            cat /tmp/js_err
-            failed=1
-          fi
           exit $failed
 
       - name: JSON syntax check
@@ -54,7 +49,7 @@ jobs:
               cat /tmp/json_err
               failed=1
             fi
-          done < <(echo "manifest.json"; find wp-content -type f -name '*.json')
+          done < <(find wp-content -type f -name '*.json')
           exit $failed
 
       - name: Report validation errors (GitHub Issue)
@@ -115,7 +110,7 @@ jobs:
           fi
           bash .github/scripts/ftp-deploy-wp-content.sh
 
-      - name: Deploy archivos raiz (sw.js, manifest, .htaccess, errors)
+      - name: Deploy archivos raiz (.htaccess, errors)
         env:
           FTP_HOST: ${{ secrets.FTP_HOST }}
           FTP_USER: ${{ secrets.FTP_USERNAME }}
@@ -137,7 +132,7 @@ jobs:
             exit 1
           fi
           git checkout -- . 2>/dev/null || true
-          git checkout "$PREV" -- wp-content sw.prod.js manifest.json htaccess.prod errors
+          git checkout "$PREV" -- wp-content htaccess.prod errors
           echo "Version restaurada: $(git log -1 --format='%h %s' "$PREV")"
 
       - name: Rollback wp-content (version anterior, curl FTP)

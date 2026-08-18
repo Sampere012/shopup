@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Despliega los archivos raiz (sw.js, manifest, .htaccess, errors) a InfinityFree
+# Despliega los archivos raiz (.htaccess, errors) a InfinityFree
 # por FTP, con reintentos y modo binario explicito (misma robustez que
 # ftp-deploy-wp-content.sh). No aborta en el primer fallo: reintenta y solo
 # falla si un archivo persiste tras 5 intentos.
@@ -57,8 +57,6 @@ deploy() {
   fi
 }
 
-deploy sw.prod.js        htdocs/sw.js
-deploy manifest.json     htdocs/manifest.json
 deploy htaccess.prod     htdocs/.htaccess
 for f in errors/*.html; do
   deploy "$f" "htdocs/errors/$(basename "$f")"

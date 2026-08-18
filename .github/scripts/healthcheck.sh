@@ -14,7 +14,6 @@ UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Ge
 # check en CADA deploy y el rollback automático restauraba la versión anterior
 # (los cambios nunca llegaban a producción). Se acepta 2xx/3xx.
 checks=(
-  "${BASE_URL}/manifest.json 200 399"
   "${BASE_URL}/wp-login.php 200 399"
   "${BASE_URL}/favicon.ico 100 499"
   "${BASE_URL}/ 100 499"

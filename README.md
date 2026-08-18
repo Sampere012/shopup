@@ -87,11 +87,10 @@ construye en función de los módulos permitidos de cada usuario.
 - Busca productos y tiendas con **filtros por categoría, precio y stock**, y devuelve fichas de producto.
 - Atajos y guías por página, según rol (incluye modo **administrador del sistema** en `wp-admin`).
 
-### PWA / offline
-- Service Worker con **precache del panel** (los módulos del usuario quedan disponibles offline).
-- Página `offline.html` de respaldo autocontenida.
-- **Cola offline** con sincronización al recuperar conexión (pedidos y ventas no se pierden).
-- Prompt de instalación propio y notificaciones del sistema.
+### App nativa (Android)
+- APK descargable desde la web (badge en el footer) y desde el asistente del panel.
+- La app guarda su **cola de sincronización offline** (pedidos y ventas no se pierden); el soporte server (`ws_offline_sync`) queda en el backend.
+- La web ya no es PWA: no hay Service Worker, IndexedDB ni `manifest.json`.
 
 ---
 
@@ -102,7 +101,7 @@ construye en función de los módulos permitidos de cada usuario.
 | Backend | PHP 8.0+, WordPress 6.5+, MySQL/MariaDB |
 | Frontend | HTML, CSS, **Alpine.js**, JavaScript vanilla |
 | Tiempo real | Polling + endpoints AJAX (`wp-admin/admin-ajax.php`) |
-| PWA | Service Worker, Cache API, IndexedDB, Manifest |
+| App móvil | APK Android con cola de sincronización offline (`ws_offline_sync`) |
 | Tests | Playwright (E2E) |
 | CI/CD | GitHub Actions → FTP (InfinityFree) |
 
@@ -181,7 +180,7 @@ El repositorio incluye el workflow [`.github/workflows/deploy.yml`](.github/work
 que despliega automáticamente a producción al hacer `push` a `main`:
 
 1. Sube `wp-content/` por FTP (InfinityFree) con `FTP-Deploy-Action`.
-2. Sube los archivos raíz de PWA (`sw.js`, `manifest.json`, `.htaccess` y páginas de error).
+2. Sube los archivos raíz (`.htaccess` y páginas de error). El `sw.js` y el `manifest.json` ya no se despliegan (la web dejó de ser PWA; la app nativa se descarga como APK).
 3. Dispara la migración de URLs de producción.
 
 **Secrets requeridos:** `FTP_HOST`, `FTP_USERNAME`, `FTP_PASSWORD`, `FTP_REMOTE_DIR`.
