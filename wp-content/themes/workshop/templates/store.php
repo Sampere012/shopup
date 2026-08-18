@@ -597,14 +597,12 @@ get_header();
                 <button class="ws-cart-close" @click="closeStoreComboDetail()"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <template x-if="storeComboDetail">
-                <div class="ws-store-modal-body">
-                    <div class="ws-store-modal-media">
+                <div class="ws-store-modal-body ws-combo-modal-body">
+                    <div class="ws-store-modal-info">
                         <div class="ws-store-modal-img">
                             <img x-show="storeComboActiveImg" :src="storeComboActiveImg" :alt="storeComboDetail.name">
                             <i x-show="!storeComboActiveImg" class="fa-solid fa-layer-group"></i>
                         </div>
-                    </div>
-                    <div class="ws-store-modal-info">
                         <div class="ws-product-row">
                             <span class="ws-price ws-price-lg" x-text="priceInfo(storeComboDetail).main"></span>
                             <span class="ws-price-equiv" x-show="priceInfo(storeComboDetail).equiv" x-text="priceInfo(storeComboDetail).equiv"></span>

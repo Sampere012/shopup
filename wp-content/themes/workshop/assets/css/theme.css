@@ -1581,6 +1581,8 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-store-modal { z-index: 800; }
 .ws-store-modal .ws-modal-box { max-width: 560px; }
 .ws-store-modal-body { display: grid; grid-template-columns: 200px 1fr; gap: 22px; align-items: start; }
+/* Combo modal: imagen dentro de ws-store-modal-info (sin columna de media separada). */
+.ws-store-modal-body.ws-combo-modal-body { grid-template-columns: 1fr; max-width: 340px; margin: 0 auto; }
 .ws-store-modal-img {
     height: 200px; border-radius: 14px; overflow: hidden; background: linear-gradient(135deg, #eef2ff, #f5f3ff);
     display: flex; align-items: center; justify-content: center; color: var(--ws-primary-light); font-size: 3.4rem;
