@@ -28,8 +28,8 @@ if ( ! $ws_hide_footer ) :
         ?>
         <div class="ws-footer-help">
             <div class="ws-footer-help-text">
-                <strong><i class="fa-solid fa-headset"></i> <?php esc_html_e( '¿Necesitas ayuda?', 'workshop' ); ?></strong>
-                <span><?php esc_html_e( 'Nuestro equipo está listo para resolver tus dudas.', 'workshop' ); ?></span>
+                <strong><i class="fa-solid fa-mobile-screen-button"></i> <?php esc_html_e( 'Descarga la app', 'workshop' ); ?></strong>
+                <span><?php esc_html_e( 'Gestiona tu negocio desde tu móvil con ShopUp Panel totalmente offline.', 'workshop' ); ?></span>
             </div>
             <div class="ws-footer-help-actions">
                 <?php if ( function_exists( 'ws_app_has_download' ) && ws_app_has_download() ) : ?>
