@@ -63,3 +63,6 @@ Thumbs.db
 # App móvil Cordova (local: se sincroniza desde el tema, no sube a GitHub)
 # ------------------------------------------------------------
 /mobile-app/
+
+# Backup local del repo de la app movil (no sube a GitHub)
+/mobile-app-backup.git/

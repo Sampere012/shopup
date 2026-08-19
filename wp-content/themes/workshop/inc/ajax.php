@@ -2463,11 +2463,16 @@ function ws_ajax_update_worker() {
     }
 
     $name  = sanitize_text_field( $_POST['display_name'] ?? '' );
-    $email = sanitize_email( $_POST['email'] ?? '' );
-    if ( '' === $name || ! is_email( $email ) ) {
-        wp_send_json_error( array( 'msg' => __( 'Nombre y email válidos son obligatorios.', 'workshop' ) ) );
+    if ( '' === $name ) {
+        wp_send_json_error( array( 'msg' => __( 'El nombre es obligatorio.', 'workshop' ) ) );
     }
-    $existing = email_exists( $email );
+    // Email opcional: la app móvil no lo envía al editar; solo se valida y
+    // actualiza cuando viene relleno (la web sí lo incluye).
+    $email = sanitize_email( $_POST['email'] ?? '' );
+    if ( '' !== $email && ! is_email( $email ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Email inválido.', 'workshop' ) ) );
+    }
+    $existing = $email ? email_exists( $email ) : false;
     if ( $existing && (int) $existing !== $user_id ) {
         wp_send_json_error( array( 'msg' => __( 'Ese email ya está en uso.', 'workshop' ) ) );
     }
@@ -2483,8 +2488,10 @@ function ws_ajax_update_worker() {
     $update = array(
         'ID'           => $user_id,
         'display_name' => $name,
-        'user_email'   => $email,
     );
+    if ( '' !== $email ) {
+        $update['user_email'] = $email;
+    }
     $pass = (string) ( $_POST['password'] ?? '' );
     if ( '' !== $pass ) {
         if ( strlen( $pass ) < 8 ) {
