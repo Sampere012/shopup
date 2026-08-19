@@ -13,6 +13,26 @@
 defined( 'ABSPATH' ) || exit;
 
 /**
+ * Fuerza el esquema correcto en las URLs de uploads.
+ *
+ * Cuando el sitio se ve por https (p. ej. InfinityFree sirve http/https y la
+ * URL de uploads quedó guardada en http), el navegador marca mixed content y
+ * bloquea las imágenes. Alinear el esquema al de la petición evita el aviso
+ * sin romper entornos locales en http.
+ */
+add_filter( 'upload_dir', static function ( $uploads ) {
+    if ( ! is_array( $uploads ) || ! is_ssl() ) {
+        return $uploads;
+    }
+    foreach ( array( 'url', 'baseurl' ) as $k ) {
+        if ( isset( $uploads[ $k ] ) && $uploads[ $k ] ) {
+            $uploads[ $k ] = set_url_scheme( $uploads[ $k ], 'https' );
+        }
+    }
+    return $uploads;
+} );
+
+/**
  * Directorio de caché de imágenes comprimidas (uploads/ws-img-cache).
  */
 function ws_img_cache_dir() {
@@ -133,7 +153,10 @@ function ws_img_cache_url( $file ) {
     $basedir = wp_normalize_path( trailingslashit( $up['basedir'] ) );
     $baseurl = trailingslashit( $up['baseurl'] );
     $path    = wp_normalize_path( $file );
-    return 0 === strpos( $path, $basedir )
+    $url = 0 === strpos( $path, $basedir )
         ? $baseurl . substr( $path, strlen( $basedir ) )
         : $path;
+    // El filtro 'upload_dir' ya alinea el esquema; este set_url_scheme es una
+    // red de seguridad extra para que nunca salga una URL http en una página https.
+    return set_url_scheme( $url, is_ssl() ? 'https' : 'http' );
 }
