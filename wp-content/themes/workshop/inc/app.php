@@ -47,11 +47,9 @@ function ws_app_settings() {
 function ws_app_apk_url() {
 	$s   = ws_app_settings();
 	$url = trim( (string) ( $s['apk_url'] ?? '' ) );
-	// Si no hay URL configurada, usar la ruta por defecto. Apunta al proxy PHP
-	// (/app/download.php) porque InfinityFree bloquea con un challenge anti-bot
-	// (403) la descarga directa del .apk desde clientes sin JS (la propia app).
+	// Si no hay URL configurada, usar la ruta por defecto (/app/shopup-panel.apk).
 	if ( '' === $url ) {
-		$url = home_url( '/app/download.php' );
+		$url = home_url( '/app/shopup-panel.apk' );
 	}
 	// Ruta relativa (p.ej. /app/shopup-panel.apk): resolver contra el sitio
 	// para que funcione en cualquier dominio (local, producción, subcarpeta).
