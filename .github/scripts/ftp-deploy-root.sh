@@ -60,28 +60,26 @@ deploy() {
   fi
 }
 
-if [ -n "${ROOT_FILELIST:-}" ]; then
-  if [ -s "$ROOT_FILELIST" ]; then
-    echo "::notice::Deploy INCREMENTAL de archivos raiz"
-    while IFS= read -r f; do
-      case "$f" in
-        htaccess.prod) deploy htaccess.prod htdocs/.htaccess ;;
-        app/*)         deploy "$f"            "htdocs/$f" ;;
-        errors/*)      deploy "$f"            "htdocs/$f" ;;
-      esac
-    done < "$ROOT_FILELIST"
-  else
-    echo "::notice::Sin archivos raiz cambiados"
-  fi
+if [ -n "${ROOT_FILELIST:-}" ] && [ -s "$ROOT_FILELIST" ]; then
+  echo "::notice::Deploy INCREMENTAL de archivos raiz"
+  while IFS= read -r f; do
+    case "$f" in
+      htaccess.prod) deploy htaccess.prod htdocs/.htaccess ;;
+      errors/*)      deploy "$f"            "htdocs/$f" ;;
+    esac
+  done < "$ROOT_FILELIST"
 else
   echo "::notice::Sincronizacion completa de archivos raiz"
   deploy htaccess.prod        htdocs/.htaccess
   for f in errors/*.html; do
     deploy "$f" "htdocs/errors/$(basename "$f")"
   done
-  deploy app/shopup-panel.apk       htdocs/app/shopup-panel.apk
-  deploy app/shopup-panel.apk.idsig htdocs/app/shopup-panel.apk.idsig
 fi
+
+# El APK SIEMPRE se sube: es el entregable de la app nativa y el enlace
+# /app/shopup-panel.apk nunca debe quedar desactualizado por un diff vacio.
+deploy app/shopup-panel.apk       htdocs/app/shopup-panel.apk
+deploy app/shopup-panel.apk.idsig htdocs/app/shopup-panel.apk.idsig
 
 # Limpieza best-effort del PWA obsoleto en el servidor (la web ya no es PWA):
 # al devolver 404 el sw.js, el navegador desregistra el service worker viejo.

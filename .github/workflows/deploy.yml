@@ -91,23 +91,18 @@ jobs:
             echo "MEOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Deploy wp-content a InfinityFree (curl FTP, incremental por push)
+      - name: Deploy wp-content a InfinityFree (curl FTP, sync completo)
         env:
           FTP_HOST: ${{ secrets.FTP_HOST }}
           FTP_USER: ${{ secrets.FTP_USERNAME }}
           FTP_PASS: ${{ secrets.FTP_PASSWORD }}
         run: |
           set -euo pipefail
-          PREV="${{ steps.info.outputs.prev }}"
-          if [ "${{ github.event_name }}" = "push" ] && [ "$PREV" != "0000000000000000000000000000000000000000" ]; then
-            LIST="$(mktemp)"
-            git diff --name-only --diff-filter=ACMRT "$PREV" "HEAD" -- wp-content/ > "$LIST"
-            echo "::notice::Deploy INCREMENTAL: $(wc -l < "$LIST") archivos wp-content cambiados"
-            export DEPLOY_FILELIST="$LIST"
-          else
-            echo "::notice::Deploy manual (workflow_dispatch): sincronizacion completa"
-            export FULL_SYNC=1
-          fi
+          # Sync COMPLETO siempre: el incremental solo sube el diff del push y
+          # un push cuya validacion fallo dejaba produccion desactualizada sin
+          # forma de auto-corregirse en los pushes siguientes (diff vacio).
+          export FULL_SYNC=1
+          echo "::notice::Deploy COMPLETO de wp-content (tema + mu-plugins)"
           bash .github/scripts/ftp-deploy-wp-content.sh
 
       - name: Deploy archivos raiz (.htaccess, errors, APK)
