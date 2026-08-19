@@ -12,6 +12,7 @@ $can_entry    = ws_can( 'stock_entry' );
 $can_exit     = ws_can( 'stock_exit' );
 $can_writeoff = ws_can( 'stock_writeoff' );
 $can_transfer = ws_can( 'stock_transfer' );
+$can_count    = ws_can( 'stock_count_view' );
 $can_venta    = ws_can( 'pos_sell' ) || $can_exit;
 $currency     = ws_currency_symbol();
 $sellers      = array();
@@ -39,8 +40,8 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
     <div class="ws-card">
         <div class="ws-tabs">
             <button type="button" class="ws-tab" :class="stockTab === 'moves' && 'is-active'" @click="setStockTab('moves')"><i class="fa-solid fa-boxes-stacked"></i> <?php esc_html_e( 'Movimientos', 'workshop' ); ?></button>
-            <button type="button" class="ws-tab" :class="stockTab === 'count' && 'is-active'" @click="goCount()"><i class="fa-solid fa-list-check"></i> <?php esc_html_e( 'Cuadre', 'workshop' ); ?></button>
-            <button type="button" class="ws-tab" :class="stockTab === 'hist' && 'is-active'" @click="goHistory()"><i class="fa-solid fa-clock-rotate-left"></i> <?php esc_html_e( 'Historial cuadre', 'workshop' ); ?></button>
+            <?php if ( $can_count ) : ?><button type="button" class="ws-tab" :class="stockTab === 'count' && 'is-active'" @click="goCount()"><i class="fa-solid fa-list-check"></i> <?php esc_html_e( 'Cuadre', 'workshop' ); ?></button>
+            <button type="button" class="ws-tab" :class="stockTab === 'hist' && 'is-active'" @click="goHistory()"><i class="fa-solid fa-clock-rotate-left"></i> <?php esc_html_e( 'Historial cuadre', 'workshop' ); ?></button><?php endif; ?>
         </div>
 
         <!-- Pestaña: Movimientos (stock por ubicación + crear movimientos) -->

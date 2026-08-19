@@ -23,6 +23,7 @@
  * - products_fraction (fraccionamiento de productos padre/hijo)
  * - pos_sell (sistema POS para vendedores)
  * - pos_view (ver ventas POS)
+ * - stock_count_view / locations_links_view / pos_cash_view / workers_view
  *
  * La matriz por defecto se puede ajustar por rol desde el panel del Dueño.
  *
@@ -41,11 +42,13 @@ class WS_Capabilities {
             'locations_view' => true, 'locations_manage' => true,
             'stock_view' => true, 'stock_entry' => true, 'stock_exit' => true,
             'stock_writeoff' => true, 'stock_transfer' => true,
+            'stock_count_view' => true,
             'movements_view' => true,
             'orders_view' => true, 'orders_accept' => true, 'orders_manage' => true,
             'shifts_view' => true, 'shifts_manage' => true,
             'workers_manage' => true,
-            'permissions_manage' => false,
+            'workers_view' => true,
+            'permissions_manage' => true,
             'reports_view' => true,
             'settings_manage' => true,
             'site_manage' => true,
@@ -59,6 +62,7 @@ class WS_Capabilities {
             'loyalty_manage' => false,
             'products_fraction' => true,
             'pos_sell' => true, 'pos_view' => true,
+            'pos_cash_view' => true, 'locations_links_view' => true,
             // Módulos nuevos: categorías en árbol y control de gastos.
             'categories_manage' => true,
             'expenses_manage' => true,
@@ -70,10 +74,12 @@ class WS_Capabilities {
             'locations_view' => true, 'locations_manage' => false,
             'stock_view' => true, 'stock_entry' => true, 'stock_exit' => true,
             'stock_writeoff' => true, 'stock_transfer' => true,
+            'stock_count_view' => true,
             'movements_view' => true,
             'orders_view' => false, 'orders_accept' => false, 'orders_manage' => false,
             'shifts_view' => true, 'shifts_manage' => false,
             'workers_manage' => false,
+            'workers_view' => true,
             'permissions_manage' => false,
             'reports_view' => false,
             'settings_manage' => false,
@@ -85,6 +91,7 @@ class WS_Capabilities {
             'loyalty_manage' => false,
             'products_fraction' => false,
             'pos_sell' => false, 'pos_view' => false,
+            'pos_cash_view' => false, 'locations_links_view' => false,
             'categories_manage' => false,
             'expenses_manage' => false,
         ),
@@ -95,10 +102,12 @@ class WS_Capabilities {
             'locations_view' => true, 'locations_manage' => false,
             'stock_view' => true, 'stock_entry' => false, 'stock_exit' => true,
             'stock_writeoff' => false, 'stock_transfer' => false,
+            'stock_count_view' => false,
             'movements_view' => true,
             'orders_view' => true, 'orders_accept' => true, 'orders_manage' => false,
             'shifts_view' => true, 'shifts_manage' => false,
             'workers_manage' => false,
+            'workers_view' => false,
             'permissions_manage' => false,
             'reports_view' => false,
             'settings_manage' => false,
@@ -110,6 +119,7 @@ class WS_Capabilities {
             'loyalty_manage' => false,
             'products_fraction' => false,
             'pos_sell' => true, 'pos_view' => true,
+            'pos_cash_view' => true, 'locations_links_view' => false,
             'categories_manage' => false,
             'expenses_manage' => false,
         ),
@@ -154,6 +164,10 @@ class WS_Capabilities {
             'products_fraction' => __( 'Fraccionamiento de productos (padre/hijo)', 'workshop' ),
             'pos_sell'         => __( 'Vender en POS', 'workshop' ),
             'pos_view'         => __( 'Ver ventas POS', 'workshop' ),
+            'stock_count_view' => __( 'Ver cuadre e historial de cuadre', 'workshop' ),
+            'locations_links_view' => __( 'Ver conexión entre ubicaciones', 'workshop' ),
+            'pos_cash_view'    => __( 'Ver caja y arqueos POS', 'workshop' ),
+            'workers_view'     => __( 'Ver trabajadores', 'workshop' ),
             'categories_manage' => __( 'Gestionar categorías de productos (árbol)', 'workshop' ),
             'expenses_manage'  => __( 'Gestionar gastos (control de gastos)', 'workshop' ),
         );
@@ -168,10 +182,7 @@ class WS_Capabilities {
                 $defaults[ $role ] = wp_parse_args( $stored[ $role ], $caps );
             }
         }
-        // La gestión de permisos es exclusiva del administrador del sistema.
-        foreach ( array( 'owner', 'storekeeper', 'seller' ) as $role ) {
-            $defaults[ $role ]['permissions_manage'] = false;
-        }
+        $defaults['owner']['permissions_manage'] = true;
         return $defaults;
     }
 
@@ -183,10 +194,6 @@ class WS_Capabilities {
         }
         if ( in_array( 'administrator', (array) $user->roles, true ) ) {
             return true;
-        }
-        // La gestión de permisos es exclusiva del administrador del sistema.
-        if ( 'permissions_manage' === $cap ) {
-            return false;
         }
         $role_slug = '';
         $map = array(
@@ -218,8 +225,7 @@ class WS_Capabilities {
         foreach ( $roles as $role ) {
             $clean[ $role ] = array();
             foreach ( $all as $cap ) {
-                // permissions_manage es exclusiva del administrador del sistema.
-                $clean[ $role ][ $cap ] = ( 'permissions_manage' === $cap ) ? false : ! empty( $matrix[ $role ][ $cap ] );
+                $clean[ $role ][ $cap ] = ! empty( $matrix[ $role ][ $cap ] );
             }
         }
         ws_save_biz_option_for( 'ws_permissions_matrix', $clean, $biz_id );

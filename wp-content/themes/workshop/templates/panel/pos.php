@@ -8,6 +8,8 @@
 defined( 'ABSPATH' ) || exit;
 
 $can_sell = ws_can( 'pos_sell' );
+$can_cash = ws_can( 'pos_cash_view' );
+$can_count = ws_can( 'stock_count_view' );
 
 // Estado de la suscripción: aviso palpable cuando la prueba o el plan están a
 // punto de vencer (las ventas se cortan en cuanto vence).
@@ -57,10 +59,10 @@ if ( ! empty( $sub_data['is_trial'] ) && $sub_data['trial_days_left'] > 0 && $su
             <div class="ws-pos-header">
                 <h2><?php esc_html_e( 'Punto de Venta', 'workshop' ); ?></h2>
                 <div class="ws-pos-header-actions">
-                    <button class="ws-pos-cash-btn" :class="cashOpen ? 'ws-cash-open' : 'ws-cash-closed'" @click="openCashModal()" title="<?php esc_attr_e( 'Abrir / cerrar caja', 'workshop' ); ?>">
+                    <?php if ( $can_cash ) : ?><button class="ws-pos-cash-btn" :class="cashOpen ? 'ws-cash-open' : 'ws-cash-closed'" @click="openCashModal()" title="<?php esc_attr_e( 'Abrir / cerrar caja', 'workshop' ); ?>">
                         <i class="fa-solid fa-cash-register"></i>
                         <span x-text="cashOpen ? '<?php esc_html_e( 'Caja abierta', 'workshop' ); ?>' : '<?php esc_html_e( 'Caja cerrada', 'workshop' ); ?>'"></span>
-                    </button>
+                    </button><?php endif; ?>
                     <div class="ws-pos-location" title="<?php esc_attr_e( 'Cambiar ubicación', 'workshop' ); ?>">
                         <select x-model="currentLocationId" @change="changeLocation()" :disabled="locations.length <= 1" x-cloak>
                             <template x-for="loc in locations" :key="loc.id">
@@ -385,7 +387,7 @@ if ( ! empty( $sub_data['is_trial'] ) && $sub_data['trial_days_left'] > 0 && $su
                             <input type="text" x-model="cashClosingNote" placeholder="<?php esc_attr_e( 'Arqueo, incidencias...', 'workshop' ); ?>">
                         </div>
 
-                        <!-- Cuadre de inventario: conteo físico vs. stock virtual -->
+                        <?php if ( $can_count ) : ?><!-- Cuadre de inventario: conteo físico vs. stock virtual -->
                         <div class="ws-cash-cuadre">
                             <div class="ws-cash-cuadre-head">
                                 <strong><i class="fa-solid fa-list-check"></i> <?php esc_html_e( 'Cuadre de inventario', 'workshop' ); ?></strong>
@@ -420,7 +422,7 @@ if ( ! empty( $sub_data['is_trial'] ) && $sub_data['trial_days_left'] > 0 && $su
                                     <span><i class="fa-solid fa-minus-circle ws-text-danger"></i> <?php esc_html_e( 'Faltantes', 'workshop' ); ?>: <b x-text="cuadreFaltantes()"></b></span>
                                 </div>
                             </template>
-                        </div>
+                        </div><?php endif; ?>
 
                         <button class="ws-btn ws-btn-primary ws-btn-full" @click="closeCash()" :disabled="cashSaving">
                             <i class="fa-solid fa-lock"></i>

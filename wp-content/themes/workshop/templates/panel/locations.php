@@ -9,6 +9,7 @@ defined( 'ABSPATH' ) || exit;
 
 $locations = WS_CRUD::get_locations();
 $can_manage = ws_can( 'locations_manage' );
+$can_links  = ws_can( 'locations_links_view' );
 $currency   = ws_currency_symbol();
 $currencies = ws_currencies();
 $rates      = ws_exchange_rates();
@@ -17,7 +18,7 @@ $rates      = ws_exchange_rates();
 
     <div class="ws-tabs">
         <button type="button" class="ws-tab" :class="tab === 'list' && 'is-active'" @click="tab = 'list'"><i class="fa-solid fa-store"></i> <?php esc_html_e( 'Ubicaciones', 'workshop' ); ?></button>
-        <button type="button" class="ws-tab" :class="tab === 'links' && 'is-active'" @click="tab = 'links'"><i class="fa-solid fa-share-nodes"></i> <?php esc_html_e( 'Conexión', 'workshop' ); ?></button>
+        <?php if ( $can_links ) : ?><button type="button" class="ws-tab" :class="tab === 'links' && 'is-active'" @click="tab = 'links'"><i class="fa-solid fa-share-nodes"></i> <?php esc_html_e( 'Conexión', 'workshop' ); ?></button><?php endif; ?>
     </div>
 
     <!-- Pestaña: ubicaciones -->

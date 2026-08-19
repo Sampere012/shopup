@@ -47,20 +47,29 @@ function ws_app_settings() {
 function ws_app_apk_url() {
 	$s   = ws_app_settings();
 	$url = trim( (string) ( $s['apk_url'] ?? '' ) );
+	// Si no hay URL configurada, usar la ruta por defecto (/app/shopup-panel.apk).
+	if ( '' === $url ) {
+		$url = home_url( '/app/shopup-panel.apk' );
+	}
 	// Ruta relativa (p.ej. /app/shopup-panel.apk): resolver contra el sitio
 	// para que funcione en cualquier dominio (local, producción, subcarpeta).
-	if ( '' !== $url && '/' === $url[0] ) {
+	if ( '/' === $url[0] ) {
 		$url = home_url( $url );
 	}
 	return $url;
 }
 
 /**
- * ¿Hay descarga disponible? Solo si el admin la habilitó Y hay URL.
+ * ¿Hay descarga disponible? Siempre True cuando hay URL (configurada o por defecto).
+ * El admin puede ocultar el botón deshabilitando la descarga en wp-admin.
  */
 function ws_app_has_download() {
 	$s = ws_app_settings();
-	return ! empty( $s['enabled'] ) && '' !== trim( (string) ( $s['apk_url'] ?? '' ) );
+	// Si el admin deshabilitó explícitamente, no mostrar.
+	if ( isset( $s['enabled'] ) && empty( $s['enabled'] ) && '' !== trim( (string) ( $s['apk_url'] ?? '' ) ) ) {
+		return false;
+	}
+	return true;
 }
 
 /**

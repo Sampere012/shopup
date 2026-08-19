@@ -933,7 +933,7 @@ function ws_ajax_delete_location() {
 
 add_action( 'wp_ajax_ws_location_links_get', 'ws_ajax_location_links_get' );
 function ws_ajax_location_links_get() {
-    ws_guard( 'locations_view' );
+    ws_guard( 'locations_links_view' );
     wp_send_json_success( array( 'links' => WS_CRUD::get_location_links() ) );
 }
 
@@ -3065,6 +3065,7 @@ function ws_ajax_reviews_get() {
     $args = array(
         'search' => sanitize_text_field( $_POST['search'] ?? '' ),
         'status' => sanitize_key( $_POST['status'] ?? '' ),
+        'payment_method' => sanitize_key( $_POST['payment_method'] ?? '' ),
         'rating' => (int) ( $_POST['rating'] ?? 0 ),
         'limit'  => isset( $_POST['limit'] ) ? (int) $_POST['limit'] : 20,
         'offset' => isset( $_POST['offset'] ) ? (int) $_POST['offset'] : 0,
@@ -3227,6 +3228,7 @@ function ws_ajax_customers_get() {
     $args = array(
         'search' => sanitize_text_field( $_POST['search'] ?? '' ),
         'status' => sanitize_key( $_POST['status'] ?? '' ),
+        'payment_method' => sanitize_key( $_POST['payment_method'] ?? '' ),
         'orderby' => sanitize_key( $_POST['sort'] ?? '' ),
         'order' => ( ( $_POST['dir'] ?? 'asc' ) === 'desc' ) ? 'DESC' : 'ASC',
         'limit' => isset( $_POST['limit'] ) ? (int) $_POST['limit'] : 10,
@@ -4031,7 +4033,7 @@ function ws_ajax_pos_cash_counts_get() {
  */
 add_action( 'wp_ajax_ws_stock_count_virtual', 'ws_ajax_stock_count_virtual' );
 function ws_ajax_stock_count_virtual() {
-    ws_guard( 'stock_view' );
+    ws_guard( 'stock_count_view' );
     $location_id = (int) ( $_POST['location_id'] ?? 0 );
     if ( ! $location_id || ! in_array( $location_id, ws_user_location_ids(), true ) ) {
         wp_send_json_error( array( 'msg' => __( 'Ubicación inválida.', 'workshop' ) ) );
@@ -4069,7 +4071,7 @@ function ws_ajax_stock_count_virtual() {
  */
 add_action( 'wp_ajax_ws_stock_count_save', 'ws_ajax_stock_count_save' );
 function ws_ajax_stock_count_save() {
-    ws_guard( 'stock_view' );
+    ws_guard( 'stock_count_view' );
 
     $location_id = (int) ( $_POST['location_id'] ?? 0 );
     $adjust      = ! empty( $_POST['adjust'] );
@@ -4183,7 +4185,7 @@ function ws_ajax_stock_count_save() {
  */
 add_action( 'wp_ajax_ws_stock_counts_list', 'ws_ajax_stock_counts_list' );
 function ws_ajax_stock_counts_list() {
-    ws_guard( 'stock_view' );
+    ws_guard( 'stock_count_view' );
 
     $location_id = (int) ( $_POST['location_id'] ?? 0 );
     $limit       = isset( $_POST['limit'] ) ? (int) $_POST['limit'] : 50;
