@@ -50,6 +50,11 @@ class WS_POS {
         if ( ! empty( $args['location_id'] ) ) {
             $where[] = $wpdb->prepare( 'location_id = %d', $args['location_id'] );
         }
+        if ( ! empty( $args['location_ids'] ) && is_array( $args['location_ids'] ) ) {
+            $ids = array_values( array_map( 'intval', $args['location_ids'] ) );
+            $ph  = implode( ',', array_fill( 0, count( $ids ), '%d' ) );
+            $where[] = $wpdb->prepare( "location_id IN ({$ph})", $ids );
+        }
         
         if ( ! empty( $args['seller_id'] ) ) {
             $where[] = $wpdb->prepare( 'seller_id = %d', $args['seller_id'] );
@@ -376,6 +381,11 @@ class WS_POS {
 
         if ( ! empty( $args['location_id'] ) ) {
             $where[] = $wpdb->prepare( 'c.location_id = %d', (int) $args['location_id'] );
+        }
+        if ( ! empty( $args['location_ids'] ) && is_array( $args['location_ids'] ) ) {
+            $ids = array_values( array_map( 'intval', $args['location_ids'] ) );
+            $ph  = implode( ',', array_fill( 0, count( $ids ), '%d' ) );
+            $where[] = $wpdb->prepare( "c.location_id IN ({$ph})", $ids );
         }
         if ( isset( $args['status'] ) && '' !== (string) $args['status'] ) {
             $where[] = $wpdb->prepare( 'c.status = %s', $args['status'] );

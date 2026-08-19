@@ -445,6 +445,8 @@ function ws_ajax_products_list() {
     ws_guard( 'products_view' );
     $search      = sanitize_text_field( $_POST['search'] ?? '' );
     $show_combos = ! empty( $_POST['show_combos'] );
+    // Trabajadores: solo productos con stock registrado en sus ubicaciones.
+    $loc_ids = ws_user_location_ids();
 
     $row_map = function ( $p ) {
         return array(
@@ -482,19 +484,33 @@ function ws_ajax_products_list() {
     };
 
     if ( ! $show_combos ) {
-        ws_send_list( 'products', function ( $args ) use ( $search, $row_map ) {
-            $rows = WS_CRUD::get_products( array_merge( array( 'search' => $search ), $args ) );
+        ws_send_list( 'products', function ( $args ) use ( $search, $row_map, $loc_ids ) {
+            $rows = WS_CRUD::get_products( array_merge( array( 'search' => $search, 'location_ids' => $loc_ids ), $args ) );
             return array_map( $row_map, $rows );
-        }, function () use ( $search ) {
-            return WS_CRUD::count_products( array( 'search' => $search ) );
-        }, array( 'search' => $search ) );
+        }, function () use ( $search, $loc_ids ) {
+            return WS_CRUD::count_products( array( 'search' => $search, 'location_ids' => $loc_ids ) );
+        }, array( 'search' => $search, 'location_ids' => $loc_ids ) );
+    }
+
+    // Combos disponibles en las ubicaciones asignadas (stock > 0), igual que
+    // hace el POS: los combos de otras ubicaciones no le salen al trabajador.
+    $allowed_combos = array();
+    foreach ( ws_user_locations() as $al ) {
+        foreach ( WS_Combos::catalog_rows( (int) $al->id ) as $ac ) {
+            if ( (float) $ac['qty'] > 0 ) {
+                $allowed_combos[ (int) $ac['combo_id'] ] = true;
+            }
+        }
     }
 
     // Con "Mostrar combos": mezclamos los combos activos con los productos y
     // paginamos en PHP (los combos viven en otra tabla y no participan del SQL).
     $pg   = ws_list_paging();
-    $rows = array_map( $row_map, WS_CRUD::get_products( array( 'search' => $search ) ) );
+    $rows = array_map( $row_map, WS_CRUD::get_products( array( 'search' => $search, 'location_ids' => $loc_ids ) ) );
     foreach ( WS_Combos::all( array( 'active' => 1, 'search' => $search ) ) as $c ) {
+        if ( ! isset( $allowed_combos[ (int) $c->id ] ) ) {
+            continue;
+        }
         $rows[] = array(
             'id'               => -1 * (int) $c->id,
             'name'             => $c->name,
@@ -546,8 +562,10 @@ add_action( 'wp_ajax_ws_locations_list', 'ws_ajax_locations_list' );
 function ws_ajax_locations_list() {
     ws_guard( 'locations_view' );
     $search = sanitize_text_field( $_POST['search'] ?? '' );
-    ws_send_list( 'locations', function ( $args ) use ( $search ) {
-        $rows = WS_CRUD::get_locations( '', array_merge( array( 'search' => $search ), $args ) );
+    // Trabajadores: solo ven sus ubicaciones asignadas (admin/owner: todas).
+    $loc_ids = ws_user_location_ids();
+    ws_send_list( 'locations', function ( $args ) use ( $search, $loc_ids ) {
+        $rows = WS_CRUD::get_locations( '', array_merge( array( 'search' => $search, 'location_ids' => $loc_ids ), $args ) );
         $out = array();
         foreach ( $rows as $l ) {
             $methods = is_string( $l->payment_methods ) ? json_decode( $l->payment_methods, true ) : $l->payment_methods;
@@ -571,9 +589,9 @@ function ws_ajax_locations_list() {
             );
         }
         return $out;
-    }, function () use ( $search ) {
-        return WS_CRUD::count_locations( '', array( 'search' => $search ) );
-    }, array( 'search' => $search ) );
+    }, function () use ( $search, $loc_ids ) {
+        return WS_CRUD::count_locations( '', array( 'search' => $search, 'location_ids' => $loc_ids ) );
+    }, array( 'search' => $search, 'location_ids' => $loc_ids ) );
 }
 
 add_action( 'wp_ajax_ws_my_locations', 'ws_ajax_my_locations' );
@@ -982,6 +1000,10 @@ function ws_ajax_stock_move() {
     $qty         = (float) ( $_POST['qty'] ?? 0 );
     $ref         = sanitize_text_field( $_POST['reference'] ?? '' );
     $note        = sanitize_text_field( $_POST['note'] ?? '' );
+    // Solo permite mover stock en ubicaciones asignadas al trabajador.
+    if ( ! $location_id || ! in_array( $location_id, ws_user_location_ids(), true ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Ubicación inválida.', 'workshop' ) ) );
+    }
     $before      = WS_Stock::undo_snapshot();
 
     // Combo: se mueven sus COMPONENTES (cada producto × cantidad), igual que
@@ -1025,6 +1047,14 @@ function ws_ajax_stock_transfer() {
     $to         = (int) ( $_POST['to_location'] ?? 0 );
     $qty        = (float) ( $_POST['qty'] ?? 0 );
     $note       = sanitize_text_field( $_POST['note'] ?? '' );
+    // Solo permite transferir entre ubicaciones asignadas al trabajador.
+    $loc_ids    = ws_user_location_ids();
+    if ( ! $from || ! in_array( $from, $loc_ids, true ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Ubicación de origen inválida.', 'workshop' ) ) );
+    }
+    if ( ! $to || ! in_array( $to, $loc_ids, true ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Ubicación de destino inválida.', 'workshop' ) ) );
+    }
     $before     = WS_Stock::undo_snapshot();
     // Combo: transfiere cada componente (qty × N) de forma atómica.
     $result = ( $combo_id > 0 )
@@ -1361,6 +1391,10 @@ function ws_ajax_stock_batch_move() {
     $items       = isset( $_POST['items'] ) ? (array) json_decode( wp_unslash( $_POST['items'] ), true ) : array();
     $ref         = sanitize_text_field( $_POST['reference'] ?? '' );
     $note        = sanitize_text_field( $_POST['note'] ?? '' );
+    // Solo permite movimientos en ubicaciones asignadas al trabajador.
+    if ( ! $location_id || ! in_array( $location_id, ws_user_location_ids(), true ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Ubicación inválida.', 'workshop' ) ) );
+    }
     $before      = WS_Stock::undo_snapshot();
 
     $result = WS_Stock::batch_move( $type, $location_id, $items, $ref, $note, 0, $direction );
@@ -2009,6 +2043,10 @@ add_action( 'wp_ajax_ws_order_accept', 'ws_ajax_order_accept' );
 function ws_ajax_order_accept() {
     ws_guard( 'orders_accept' );
     $id = (int) ( $_POST['id'] ?? 0 );
+    $order = WS_Orders::get( $id );
+    if ( ! $order || ! in_array( (int) $order->location_id, ws_user_location_ids(), true ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Pedido no disponible.', 'workshop' ) ) );
+    }
     $result = WS_Orders::accept( $id );
     if ( is_wp_error( $result ) ) {
         wp_send_json_error( array( 'msg' => $result->get_error_message() ) );
@@ -2021,6 +2059,10 @@ add_action( 'wp_ajax_ws_order_reject', 'ws_ajax_order_reject' );
 function ws_ajax_order_reject() {
     ws_guard( 'orders_accept' );
     $id = (int) ( $_POST['id'] ?? 0 );
+    $order = WS_Orders::get( $id );
+    if ( ! $order || ! in_array( (int) $order->location_id, ws_user_location_ids(), true ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Pedido no disponible.', 'workshop' ) ) );
+    }
     $result = WS_Orders::reject( $id );
     if ( is_wp_error( $result ) ) {
         wp_send_json_error( array( 'msg' => $result->get_error_message() ) );
@@ -2032,6 +2074,10 @@ add_action( 'wp_ajax_ws_order_complete', 'ws_ajax_order_complete' );
 function ws_ajax_order_complete() {
     ws_guard( 'orders_accept' );
     $id = (int) ( $_POST['id'] ?? 0 );
+    $order = WS_Orders::get( $id );
+    if ( ! $order || ! in_array( (int) $order->location_id, ws_user_location_ids(), true ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Pedido no disponible.', 'workshop' ) ) );
+    }
     $result = WS_Orders::complete( $id );
     if ( is_wp_error( $result ) ) {
         wp_send_json_error( array( 'msg' => $result->get_error_message() ) );
@@ -2043,6 +2089,10 @@ add_action( 'wp_ajax_ws_order_cancel', 'ws_ajax_order_cancel' );
 function ws_ajax_order_cancel() {
     ws_guard( 'orders_accept' );
     $id = (int) ( $_POST['id'] ?? 0 );
+    $order = WS_Orders::get( $id );
+    if ( ! $order || ! in_array( (int) $order->location_id, ws_user_location_ids(), true ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Pedido no disponible.', 'workshop' ) ) );
+    }
     $result = WS_Orders::cancel( $id );
     if ( is_wp_error( $result ) ) {
         wp_send_json_error( array( 'msg' => $result->get_error_message() ) );
@@ -2105,6 +2155,10 @@ function ws_ajax_order_detail() {
     $order = WS_Orders::get( $id );
     if ( ! $order ) {
         wp_send_json_error( array( 'msg' => __( 'Pedido no encontrado.', 'workshop' ) ) );
+    }
+    // Solo pedidos de las ubicaciones asignadas al trabajador.
+    if ( ! in_array( (int) $order->location_id, ws_user_location_ids(), true ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Pedido no disponible.', 'workshop' ) ) );
     }
     $items = array();
     foreach ( WS_Orders::get_items( $id ) as $it ) {
@@ -2622,8 +2676,17 @@ add_action( 'wp_ajax_ws_workers_list', 'ws_ajax_workers_list' );
 function ws_ajax_workers_list() {
     ws_guard( 'workers_manage' );
     $search = sanitize_text_field( $_POST['search'] ?? '' );
-    ws_send_list( 'workers', function ( $args ) use ( $search ) {
-        $all = WS_CRUD::get_workers_matching( $search );
+    // Trabajadores con permisos: solo ven a los de sus mismas ubicaciones.
+    $is_full = in_array( ws_user_role(), array( 'owner', '' ), true );
+    $my_ids  = ws_user_location_ids();
+    ws_send_list( 'workers', function ( $args ) use ( $search, $is_full, $my_ids ) {
+        $all = array_filter( WS_CRUD::get_workers_matching( $search ), function ( $w ) use ( $is_full, $my_ids ) {
+            if ( $is_full ) {
+                return true;
+            }
+            $w_ids = array_map( 'intval', wp_list_pluck( WS_CRUD::get_user_locations( $w->ID ), 'id' ) );
+            return ! empty( array_intersect( $w_ids, $my_ids ) );
+        } );
         // Orden: display_name o user_email (el resto cae a display_name).
         $dir = ( ( $args['order'] ?? 'ASC' ) === 'DESC' ) ? -1 : 1;
         usort( $all, function ( $a, $b ) use ( $args, $dir ) {
@@ -2663,7 +2726,13 @@ function ws_ajax_workers_list() {
             );
         }
         return $out;
-    }, function () use ( $search ) {
+    }, function () use ( $search, $is_full, $my_ids ) {
+        if ( ! $is_full ) {
+            return count( array_filter( WS_CRUD::get_workers_matching( $search ), function ( $w ) use ( $my_ids ) {
+                $w_ids = array_map( 'intval', wp_list_pluck( WS_CRUD::get_user_locations( $w->ID ), 'id' ) );
+                return ! empty( array_intersect( $w_ids, $my_ids ) );
+            } ) );
+        }
         return count( WS_CRUD::get_workers_matching( $search ) );
     }, array( 'search' => $search ) );
 }
@@ -3319,6 +3388,8 @@ function ws_ajax_pos_sales_get() {
 
     $args = array(
         'location_id' => $location_id,
+        // Sin ubicación concreta: solo las permitidas del trabajador.
+        'location_ids' => $allowed_ids,
         'seller_id' => (int) ( $_POST['seller_id'] ?? 0 ),
         'search' => sanitize_text_field( $_POST['search'] ?? '' ),
         'status' => sanitize_key( $_POST['status'] ?? '' ),
@@ -3372,6 +3443,16 @@ function ws_ajax_pos_sale_items_get() {
         wp_send_json_error( array( 'msg' => __( 'ID inválido.', 'workshop' ) ) );
     }
 
+    // Solo ítems de ventas de las ubicaciones permitidas del trabajador.
+    global $wpdb;
+    $sale = $wpdb->get_row( $wpdb->prepare(
+        "SELECT location_id FROM " . ws_table_name( 'pos_sales' ) . " WHERE id = %d",
+        $sale_id
+    ) );
+    if ( ! $sale || ! in_array( (int) $sale->location_id, ws_user_location_ids(), true ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Venta no disponible.', 'workshop' ) ) );
+    }
+
     $out = array();
     foreach ( WS_POS::get_sale_items( $sale_id ) as $it ) {
         $out[] = array(
@@ -3421,6 +3502,12 @@ function ws_ajax_pos_sale_save() {
 
     // Venta sincronizada desde el modo offline del POS.
     $is_offline_sync = ! empty( $_POST['ws_offline_sync'] );
+
+    // Solo puede vender en sus ubicaciones asignadas (aunque la venta sea
+    // offline: si ya no trabaja allí, la cola la rechaza con error claro).
+    if ( ! in_array( $data['location_id'], ws_user_location_ids(), true ) ) {
+        wp_send_json_error( array( 'msg' => __( 'No puedes vender en esta ubicación.', 'workshop' ) ) );
+    }
 
     if ( ! $data['location_id'] || ! $data['seller_id'] ) {
         wp_send_json_error( array( 'msg' => __( 'Datos incompletos.', 'workshop' ) ) );
@@ -3796,6 +3883,7 @@ function ws_ajax_pos_stats() {
     $stats = WS_POS::get_stats( array(
         'seller_id'   => $seller_id,
         'location_id' => $location_id,
+        'location_ids'=> $allowed_ids,
         'date_from'   => $date_from,
         'date_to'     => $date_to,
     ) );
@@ -3810,6 +3898,9 @@ function ws_ajax_pos_cash_status() {
     ws_guard( 'pos_sell', 'pos_view' );
 
     $location_id = (int) ( $_POST['location_id'] ?? 0 );
+    if ( $location_id && ! in_array( $location_id, ws_user_location_ids(), true ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Ubicación inválida.', 'workshop' ) ) );
+    }
     $cash = $location_id ? WS_POS::get_open_cash( $location_id ) : null;
 
     wp_send_json_success( array(
@@ -3950,6 +4041,7 @@ function ws_ajax_pos_cash_history() {
 
     $args = array(
         'location_id' => $location_id,
+        'location_ids' => $allowed_ids,
         'status'      => $status,
         'date_from'   => $date_from,
         'date_to'     => $date_to,
@@ -3995,7 +4087,17 @@ function ws_ajax_pos_cash_counts_get() {
         wp_send_json_error( array( 'msg' => __( 'Cierre inválido.', 'workshop' ) ) );
     }
 
+    // El cuadre de un cierre solo es visible para quien trabaja en esa
+    // ubicación.
     global $wpdb;
+    $cash = $wpdb->get_row( $wpdb->prepare(
+        "SELECT location_id FROM " . ws_table_name( 'pos_cash' ) . " WHERE id = %d",
+        $register_id
+    ) );
+    if ( ! $cash || ! in_array( (int) $cash->location_id, ws_user_location_ids(), true ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Cierre no disponible.', 'workshop' ) ) );
+    }
+
     $table = ws_table_name( 'pos_cash_counts' );
     if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $table ) ) ) !== $table ) {
         wp_send_json_success( array( 'data' => array() ) );
@@ -4228,6 +4330,12 @@ function ws_ajax_stock_counts_list() {
     $limit       = isset( $_POST['limit'] ) ? (int) $_POST['limit'] : 50;
     $offset      = isset( $_POST['offset'] ) ? (int) $_POST['offset'] : 0;
 
+    // Trabajadores: solo cuadres de sus ubicaciones asignadas.
+    $allowed_ids = ws_user_location_ids();
+    if ( $location_id && ! in_array( $location_id, $allowed_ids, true ) ) {
+        wp_send_json_success( array( 'data' => array(), 'total' => 0 ) );
+    }
+
     global $wpdb;
     $table = ws_table_name( 'stock_counts' );
     if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $table ) ) ) !== $table ) {
@@ -4239,6 +4347,10 @@ function ws_ajax_stock_counts_list() {
     if ( $location_id ) {
         $where[]  = 'location_id = %d';
         $params[] = $location_id;
+    } elseif ( $allowed_ids ) {
+        $ph = implode( ',', array_fill( 0, count( $allowed_ids ), '%d' ) );
+        $where[]  = "location_id IN ({$ph})";
+        $params   = array_merge( $params, $allowed_ids );
     }
     $total = (int) $wpdb->get_var( $wpdb->prepare(
         'SELECT COUNT(*) FROM ' . $table . ' WHERE ' . implode( ' AND ', $where ),
@@ -4281,8 +4393,13 @@ function ws_ajax_cache_products() {
     ws_guard( 'products_view' );
 
     $location_id = (int) ( $_POST['location_id'] ?? 0 );
+    // Trabajadores: el catálogo cacheado se limita a sus ubicaciones (aunque
+    // pidan location_id=0, que significa "todas las permitidas").
+    $loc_ids = $location_id ? array( $location_id ) : ws_user_location_ids();
+    $loc_ids = array_values( array_intersect( $loc_ids, ws_user_location_ids() ) );
     $args = array(
         'location_id' => $location_id,
+        'location_ids' => $loc_ids,
         'limit' => 1000,
         'active' => 1,
     );
@@ -4308,7 +4425,8 @@ add_action( 'wp_ajax_nopriv_ws_cache_locations', 'ws_ajax_cache_locations' );
 function ws_ajax_cache_locations() {
     ws_guard( 'locations_view' );
 
-    $locations = WS_CRUD::get_locations( array( 'limit' => 100 ) );
+    // Trabajadores: solo descargan las ubicaciones de sus puntos asignados.
+    $locations = ws_user_locations();
     wp_send_json_success( array( 'data' => $locations ) );
 }
 

@@ -73,6 +73,15 @@ class WS_CRUD {
         if ( isset( $args['active'] ) ) {
             $where[] = $wpdb->prepare( 'p.active = %d', $args['active'] );
         }
+        // Productos con stock registrado en alguna de las ubicaciones dadas:
+        // los trabajadores solo deben ver productos de sus puntos asignados.
+        if ( ! empty( $args['location_ids'] ) && is_array( $args['location_ids'] ) ) {
+            $ids  = array_values( array_map( 'intval', $args['location_ids'] ) );
+            $ph   = implode( ',', array_fill( 0, count( $ids ), '%d' ) );
+            $where[] = "EXISTS (SELECT 1 FROM " . self::table( 'stock' ) . " st
+                        WHERE st.product_id = p.id AND st.location_id IN ({$ph}))";
+            $where[ count( $where ) - 1 ] = $wpdb->prepare( $where[ count( $where ) - 1 ], $ids );
+        }
         return $where;
     }
 
@@ -553,6 +562,12 @@ class WS_CRUD {
         if ( ! empty( $args['search'] ) ) {
             $like = '%' . $wpdb->esc_like( $args['search'] ) . '%';
             $where[] = $wpdb->prepare( '(name LIKE %s OR address LIKE %s OR description LIKE %s OR whatsapp LIKE %s OR slug LIKE %s)', $like, $like, $like, $like, $like );
+        }
+        // Solo las ubicaciones asignadas al usuario (idempotente para admin).
+        if ( ! empty( $args['location_ids'] ) && is_array( $args['location_ids'] ) ) {
+            $ids = array_values( array_map( 'intval', $args['location_ids'] ) );
+            $ph  = implode( ',', array_fill( 0, count( $ids ), '%d' ) );
+            $where[] = $wpdb->prepare( "id IN ({$ph})", $ids );
         }
         return $where;
     }
