@@ -1061,9 +1061,9 @@ function ws_ajax_stock_clean() {
     global $wpdb;
     $stock_t = ws_table_name( 'stock' );
     $before  = WS_Stock::undo_snapshot();
-    // Las ubicaciones CONECTADAS por stock compartido también se limpian:
-    // un borrado es un movimiento más y debe verse reflejado en toda la
-    // conexión (igual que entrada/salida/venta).
+    // Las ubicaciones CONECTADAS por stock compartido DIRIGIDO (los
+    // centros/superiores) también se limpian: un borrado es un movimiento más
+    // y debe verse reflejado en toda la conexión (igual que entrada/salida/venta).
     $clean_locations = array_merge( array( $location_id ), WS_Stock::linked_location_ids( $location_id ) );
     $clean_locations = array_values( array_unique( array_map( 'intval', $clean_locations ) ) );
     $deleted = 0;
@@ -3621,10 +3621,10 @@ function ws_ajax_products_get() {
         ? array( $location_id )
         : $allowed_ids;
 
-    // Stock compartido: incluir ubicaciones VINCULADAS (componente conexo del
-    // grafo) para que el POS muestre productos con stock en cualquier ubicación
-    // conectada. El grupo comparte stock: lo que entra/sale en una se aplica a
-    // TODAS las conectadas (padres + hijos + transitivo).
+    // Stock compartido DIRIGIDO: incluir las ubicaciones SUPERIORES (centro,
+    // transitivo) para que el POS muestre productos con stock en la ubicación
+    // seleccionada o en su centro. Un movimiento en la ubicación se aplica a
+    // su centro (nunca a hermanos ni a hijos).
     $linked_ids = array();
     if ( $location_id ) {
         $linked_ids = WS_Stock::linked_location_ids( $location_id );
@@ -4043,8 +4043,8 @@ function ws_ajax_stock_count_virtual() {
         wp_send_json_error( array( 'msg' => __( 'Ubicación inválida.', 'workshop' ) ) );
     }
     $rows  = WS_Stock::stock_rows( array( 'location_id' => $location_id, 'limit' => 1000 ) );
-    // Stock del GRUPO CONECTADO por producto (stock compartido) para mostrar
-    // el contexto del pool junto al virtual de esta ubicación.
+    // Stock del GRUPO por producto (la propia + sus SUPERIORES/centro en el
+    // grafo dirigido) para mostrar el contexto del pool junto al virtual.
     $group = WS_Stock::stock_group_info( $rows );
 
     // Excluir productos ocultos en POS (store_visibility channel='pos', visible=0).
@@ -4115,7 +4115,8 @@ function ws_ajax_stock_count_save() {
     $table = ws_table_name( 'stock_counts' );
 
     // Reconstruir el stock virtual actual (fuente de verdad del cuadre), con
-    // el stock del GRUPO CONECTADO por producto para guardarlo como contexto.
+    // el stock del GRUPO por producto (la propia + sus SUPERIORES/centro) para
+    // guardarlo como contexto.
     $vrows  = WS_Stock::stock_rows( array( 'location_id' => $location_id, 'limit' => 1000 ) );
     $vgroup = WS_Stock::stock_group_info( $vrows );
     $virtual = array();
@@ -4160,11 +4161,14 @@ function ws_ajax_stock_count_save() {
             $cuadrados++;
         }
 
-        // Ajuste automático: alinear el stock virtual al conteo físico.
-        // IMPORTANTE: el ajuste del cuadre SOLO afecta a la ubicación elegida
-        // (skip_linked = true). Aunque la ubicación esté conectada a otras por
-        // stock compartido, el cuadre es un conteo físico puntual de UNA
-        // ubicación: corregir aquí NO debe arrastrar el stock de las demás.
+        // Ajuste automático: alinear el stock virtual al conteo físico. IMPORTANTE:
+        // el ajuste del cuadre SOLO afecta a la ubicación contada (skip_linked
+        // = true). El cuadre es un conteo físico puntual de UNA ubicación: el
+        // centro tiene su propia realidad, que se determina con SU conteo. Si
+        // el ajuste se propagara al centro, este absorbería la diferencia
+        // (merma/sobrante local o transferencia no registrada) con el signo
+        // equivocado. La conexión dirigida sí se refleja en el cuadre a través
+        // del group_total (la propia + su centro) como contexto.
         if ( $adjust && abs( $diff ) > 0.004 ) {
             $ref = 'Cuadre #' . wp_generate_uuid4();
             $res = $diff > 0

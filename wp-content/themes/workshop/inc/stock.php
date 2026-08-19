@@ -86,11 +86,11 @@ class WS_Stock {
         }
         $updated = self::_decrease_locked( $product_id, $location_id, $qty );
         if ( ! $updated ) {
-            // Stock compartido: si la ubicación seleccionada no tiene stock
-            // suficiente, intentar descontar de ubicaciones VINCULADAS (el
-            // componente conexo del grafo comparte stock). La venta se registra
-            // en la ubicación original y el stock se descuenta de la vinculada
-            // que tenga disponible, manteniendo la coherencia del inventario.
+            // Stock compartido dirigido: si la ubicación seleccionada no tiene
+            // stock suficiente, intentar descontar de sus SUPERIORES (centro).
+            // La venta se registra en la ubicación original y el stock se
+            // descuenta del centro que tenga disponible, manteniendo la
+            // coherencia del inventario.
             $linked = self::linked_location_ids( $location_id );
             if ( $linked ) {
                 foreach ( $linked as $lid ) {
@@ -101,8 +101,8 @@ class WS_Stock {
                         // el vendedor seleccionó) para que el historial refleje la
                         // venta real.
                         self::_log( $type, $product_id, $location_id, 0, $qty, $ref, $note, $user_id, $combo_id, $revert_of );
-                        // Propagar la baja al RESTO de ubicaciones vinculadas
-                        // (excepto la que acabamos de descontar y la origen).
+                        // Propagar la baja a los centros de la ubicación
+                        // descontada (excepto la que acabamos de usar).
                         self::_propagate_linked( $product_id, $lid, $qty, '-', $type, $ref, $note, $user_id, $combo_id );
                         return true;
                     }
@@ -447,20 +447,23 @@ class WS_Stock {
     /* ---------------- Stock compartido entre ubicaciones ---------------- */
 
     /**
-     * IDs de las ubicaciones que COMPARTEN STOCK con $location_id, sin
-     * incluir la propia.
+     * IDs de las ubicaciones que COMPARTEN STOCK con $location_id (sus
+     * SUPERIORES o centros), sin incluir la propia.
      *
-     * Las conexiones son de 1 a N o N a M (una ubicación puede depender de
-     * varias y abastecer a varias). Un movimiento en una ubicación se aplica
-     * a TODAS las ubicaciones CONECTADAS entre sí (componente conexo del
-     * grafo: se recorre tanto hacia los padres/abastecedores como hacia los
-     * hijos/abastecidos, transitivamente).
+     * Las conexiones son DIRIGIDAS (jerarquía): la fila (location_a,
+     * location_b) significa "b es la SUPERIOR de a" (b abastece a a). Un
+     * movimiento en una ubicación se aplica solo a su línea de CENTROS: sus
+     * padres y los padres de sus padres, transitivamente hasta la raíz.
+     * Nunca a los hermanos ni a los hijos (un movimiento en el centro NO se
+     * arrastra hacia abajo).
      *
-     *   - cadena n1->n2->n3: lo que entra en cualquiera llega a las tres.
-     *   - estrella n1->n3 y n2->n3: lo que entra en n1 llega a n2 y n3
-     *     (todos están conectados por el nodo común n3).
-     *   - un hijo con varios padres (n4->n1 y n4->n2): el componente es
-     *     {n1, n2, n3, n4, ...}: todo conectado comparte stock.
+     *   - cadena n1->n2->n3 (n1 abastecido por n2, n2 por n3): lo que
+     *     entra/sale en n1 llega a n2 y n3; lo que entra/sale en n3 solo a n3.
+     *   - estrella n1->n3 y n2->n3 (ambos abastecidos por n3): lo que
+     *     entra/sale en n1 llega SOLO a n1 y n3 (nunca a n2); lo que entra/
+     *     sale en n3 queda solo en n3.
+     *   - un nodo con varios superiores (n4->n1 y n4->n2): el movimiento en
+     *     n4 llega a n1 y n2 (y a sus superiores).
      */
     public static function linked_location_ids( $location_id ) {
         static $cache = array();
@@ -475,21 +478,17 @@ class WS_Stock {
         $out   = array();
         $seen  = array( $location_id => true );
         $queue = array( $location_id );
-        // BFS sobre el grafo NO dirigido: padres (b) e hijos (a) por igual,
-        // de forma transitiva. Cada nodo puede tener VARIOS padres.
+        // Recorrido DIRIGIDO: solo hacia los PADRES/superiores (b), de forma
+        // transitiva. Los hijos (a) y hermanos NO forman parte del recorrido.
         while ( $queue ) {
             $cur = array_shift( $queue );
-            $neighbors = array_merge(
-                (array) ( $tree['parents'][ $cur ] ?? array() ),
-                (array) ( $tree['children'][ $cur ] ?? array() )
-            );
-            foreach ( $neighbors as $n ) {
-                if ( isset( $seen[ $n ] ) ) {
+            foreach ( (array) ( $tree['parents'][ $cur ] ?? array() ) as $p ) {
+                if ( isset( $seen[ $p ] ) ) {
                     continue;
                 }
-                $seen[ $n ] = true;
-                $out[]     = $n;
-                $queue[]   = $n;
+                $seen[ $p ] = true;
+                $out[]     = $p;
+                $queue[]   = $p;
             }
         }
         $cache[ $location_id ] = $out;
@@ -525,9 +524,9 @@ class WS_Stock {
      * Stock del GRUPO por producto para filas de stock.
      *
      * Para cada fila (producto + ubicación) calcula el total sumando el stock
-     * del producto en TODAS las ubicaciones CONECTADAS entre sí (componente
-     * conexo: padres, hijos y todo lo transitivamente conectado, incluida la
-     * propia), más el desglose por ubicación para el tooltip.
+     * del producto en la propia y en sus SUPERIORES (centro, transitivo hasta
+     * la raíz del grafo dirigido), más el desglose por ubicación para el
+     * tooltip.
      * Devuelve array keyed por "{product_id}:{location_id}" con
      * array( 'total' => float, 'parts' => array de {id, name, qty} ).
      */
@@ -600,10 +599,9 @@ class WS_Stock {
 
     /**
      * Conteo de filas de stock BAJO usando el STOCK DEL GRUPO (stock
-     * compartido): una fila (producto + ubicación) cuenta como baja cuando el
-     * total de TODAS las ubicaciones conectadas entre sí (componente conexo)
-     * es menor o igual al mínimo del producto — no el stock de cada
-     * ubicación.
+     * compartido dirigido): una fila (producto + ubicación) cuenta como baja
+     * cuando el total de la propia y sus SUPERIORES (centro, transitivo) es
+     * menor o igual al mínimo del producto — no el stock de cada ubicación.
      *
      * Pre-filtra en SQL por stock bajo por ubicación (el grupo bajo implica
      * que todas sus ubicaciones están bajas, así que es un superconjunto) y
@@ -674,18 +672,18 @@ class WS_Stock {
     }
 
     /**
-     * Propaga un movimiento (entrada '+') o salida '-') a las ubicaciones
-     * CONECTADAS por stock compartido (componente conexo del grafo, que puede
-     * ser 1 a N o N a M): lo que entra/sale en una ubicación se aplica a
-     * TODAS las conectadas (padres, hijos y todo lo transitivamente
-     * conectado).
+     * Propaga un movimiento (entrada '+' o salida '-') a las ubicaciones
+     * SUPERIORES (centro) por stock compartido DIRIGIDO: lo que entra/sale en
+     * una ubicación se aplica a su línea de centros (padres transitivos hasta
+     * la raíz). Nunca a hermanos ni a hijos (un movimiento en el centro NO se
+     * arrastra hacia abajo).
      *
-     * - Entrada: aumenta el stock completo en cada ubicación conectada.
-     * - Salida:  descuenta lo disponible en cada una (nunca negativo) y anota
+     * - Entrada: aumenta el stock completo en cada superior.
+     * - Salida:  descuenta lo disponible en cada uno (nunca negativo) y anota
      *            en el movimiento cuánto faltó si no alcanzó.
      *
      * Asume que la transacción ya está abierta. Nunca falla: el guard real
-     * de stock lo aplica la ubicación de origen; las vinculadas son un espejo.
+     * de stock lo aplica la ubicación de origen; los superiores son un espejo.
      */
     protected static function _propagate_linked( $product_id, $location_id, $qty, $op, $type, $ref = '', $note = '', $user_id = 0, $combo_id = 0 ) {
         $linked = self::linked_location_ids( $location_id );

@@ -52,9 +52,9 @@ function ws_db_tables() {
 
         // Conexiones entre ubicaciones (stock compartido) DIRIGIDAS: la fila
         // (location_a, location_b) significa que b es la SUPERIOR de a (b
-        // abastece a a). El stock que entra/sale en a se comparte con su
-        // línea (padres hasta la raíz + hijos hasta las hojas); los hermanos
-        // no se comparten. La dirección importa: a solo puede tener UN padre.
+        // abastece a a). Un movimiento en a se refleja en sus SUPERIORES
+        // (centro, transitivo hasta la raíz); nunca en hermanos ni en hijos
+        // (un movimiento en el centro no se arrastra hacia abajo).
         'location_links' => "CREATE TABLE {prefix}ws_location_links (
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
             location_a BIGINT(20) UNSIGNED NOT NULL,
@@ -1312,10 +1312,11 @@ function ws_db_migrate() {
     // Conexiones de stock compartido: migración a DIRIGIDAS (jerarquía).
     // Antes el grafo era no dirigido y la propagación inundaba todo el
     // componente conexo (estrella y cadena eran indistinguibles). Ahora cada
-    // fila (a,b) significa "b es la superior de a" y el stock se comparte solo
-    // por la línea (padres + hijos, nunca hermanos). Se orientan los enlaces
-    // existentes como un árbol UNA sola vez (raíz = el nodo con más enlaces,
-    // empates -> el de menor id); después lo administra el panel de conexiones.
+    // fila (a,b) significa "b es la superior de a" y el stock se propaga solo
+    // hacia los SUPERIORES (centro), nunca a hermanos ni a hijos. Se orientan
+    // los enlaces existentes como un árbol UNA sola vez (raíz = el nodo con
+    // más enlaces, empates -> el de menor id); después lo administra el panel
+    // de conexiones.
     if ( ! get_option( 'ws_location_links_directed', false ) ) {
         $ws_dir_suffixes = array( '' );
         if ( class_exists( 'WS_Business' ) && $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', WS_Business::table() ) ) === WS_Business::table() ) {
