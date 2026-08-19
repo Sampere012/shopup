@@ -110,12 +110,23 @@ jobs:
           fi
           bash .github/scripts/ftp-deploy-wp-content.sh
 
-      - name: Deploy archivos raiz (.htaccess, errors)
+      - name: Deploy archivos raiz (.htaccess, errors, APK)
         env:
           FTP_HOST: ${{ secrets.FTP_HOST }}
           FTP_USER: ${{ secrets.FTP_USERNAME }}
           FTP_PASS: ${{ secrets.FTP_PASSWORD }}
-        run: bash .github/scripts/ftp-deploy-root.sh
+        run: |
+          set -euo pipefail
+          PREV="${{ steps.info.outputs.prev }}"
+          if [ "${{ github.event_name }}" = "push" ] && [ "$PREV" != "0000000000000000000000000000000000000000" ]; then
+            LIST="$(mktemp)"
+            git diff --name-only --diff-filter=ACMRT "$PREV" "HEAD" -- app/ htaccess.prod errors/ > "$LIST"
+            echo "::notice::Deploy INCREMENTAL raiz: $(wc -l < "$LIST") archivos"
+            export ROOT_FILELIST="$LIST"
+          else
+            echo "::notice::Deploy manual (workflow_dispatch): sincronizacion completa raiz"
+          fi
+          bash .github/scripts/ftp-deploy-root.sh
 
       - name: Health check tras el deploy (fallo = 5xx = rollback)
         id: health
@@ -132,7 +143,7 @@ jobs:
             exit 1
           fi
           git checkout -- . 2>/dev/null || true
-          git checkout "$PREV" -- wp-content htaccess.prod errors
+          git checkout "$PREV" -- wp-content app htaccess.prod errors
           echo "Version restaurada: $(git log -1 --format='%h %s' "$PREV")"
 
       - name: Rollback wp-content (version anterior, curl FTP)
