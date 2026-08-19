@@ -338,22 +338,6 @@
             activeProduct: null,
             activeImg: '',
             modalQty: 1,
-            // Valoraciones de la TIENDA (las estrellas valoran al negocio,
-            // no a los productos individuales).
-            storeReviews: [],
-            storeRating: 0,
-            showStoreReviewForm: false,
-            reviewSubmitted: false,
-            reviewBusy: false,
-            alreadyReviewed: false,
-            reviewForm: { customer_name: '', rating: 5, comment: '' },
-            // Consulta de estado de pedido.
-            trackOpen: false,
-            trackNumber: '',
-            trackPhone: '',
-            trackBusy: false,
-            trackResult: null,
-            trackError: '',
 
             cartKey() { return 'ws_cart_' + this.locationId; },
 
@@ -374,9 +358,6 @@
                 if (seed && seed.displayCurrency !== undefined && seed.displayCurrency !== null) { this.displayCurrency = seed.displayCurrency; }
                 if (seed && seed.whatsappNumbers) { this.whatsappNumbers = seed.whatsappNumbers; }
                 this.loadCart();
-                // Valoraciones de la tienda: se cargan al entrar (las estrellas
-                // reflejan la opinión sobre el negocio, no sobre un producto).
-                this.loadStoreReviews();
                 try {
                     const s = localStorage.getItem('ws_cart_sound');
                     if (s !== null) this.soundOn = s === '1';
@@ -562,85 +543,6 @@
                 (p.gallery || []).forEach(u => { if (imgs.indexOf(u) === -1) imgs.push(u); });
                 return imgs;
             },
-            // --- Valoraciones de la tienda ---
-            // Hash persistente del visitante: identifica al anónimo en el
-            // servidor para que solo pueda enviar UNA reseña por tienda
-            // (anti puntuación infinita). Se guarda en localStorage.
-            clientHash() {
-                let h = '';
-                try { h = localStorage.getItem('ws_reviewer_hash'); } catch (e) {}
-                if (!h) {
-                    h = 'c_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 12);
-                    try { localStorage.setItem('ws_reviewer_hash', h); } catch (e) {}
-                }
-                return h;
-            },
-            loadStoreReviews() {
-                if (!this.locationId) return;
-                this.reviewBusy = true;
-                $('ws_reviews_get', { location_id: this.locationId, client_hash: this.clientHash() })
-                    .then(res => {
-                        if (res.success) {
-                            // Normaliza SIEMPRE a array: el endpoint público
-                            // devuelve data.data (array), pero se protege ante
-                            // cualquier forma de respuesta para que el template
-                            // (storeReviews.slice/length) nunca truene.
-                            const raw = res.data && res.data.data !== undefined ? res.data.data : (res.data || []);
-                            this.storeReviews = Array.isArray(raw) ? raw : [];
-                            this.storeRating = (res.data && res.data.stats && res.data.stats.average) || 0;
-                            this.alreadyReviewed = !!(res.data && res.data.already_reviewed);
-                        }
-                    })
-                    .catch(err => console.error('Error cargando valoraciones:', err))
-                    .then(() => { this.reviewBusy = false; });
-            },
-            formatReviewDate(v) {
-                if (!v) return '';
-                const d = new Date(String(v).replace(' ', 'T'));
-                if (isNaN(d.getTime())) return '';
-                return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
-            },
-            submitReview() {
-                const form = this.reviewForm;
-                if (!form.customer_name || !form.rating) {
-                    toast('warning', 'Completa tu nombre y valoración');
-                    return;
-                }
-                if (!this.locationId) return;
-                if (this.alreadyReviewed) {
-                    toast('info', 'Ya enviaste una reseña', 'Solo se permite una por persona.');
-                    this.showStoreReviewForm = false;
-                    return;
-                }
-                this.reviewBusy = true;
-                $('ws_reviews_save', {
-                    location_id: this.locationId,
-                    customer_name: form.customer_name,
-                    rating: form.rating,
-                    comment: form.comment,
-                    client_hash: this.clientHash()
-                })
-                    .then(res => {
-                        if (res.success) {
-                            toast('success', 'Reseña enviada', 'Se revisará antes de publicarse.');
-                            this.showStoreReviewForm = false;
-                            this.reviewSubmitted = true;
-                            this.alreadyReviewed = true;
-                            this.reviewForm = { customer_name: '', rating: 5, comment: '' };
-                            // Si la reseña se reabrió (rechazada → pendiente),
-                            // la tienda sigue sin publicar nada nuevo.
-                            this.loadStoreReviews();
-                        } else {
-                            // Duplicado (u otro motivo): se bloquea el form y
-                            // se muestra el motivo del servidor.
-                            this.alreadyReviewed = true;
-                            this.showStoreReviewForm = false;
-                            toast('error', 'No se pudo enviar', res.data && res.data.msg);
-                        }
-                    })
-                    .catch(() => toast('error', 'Error de red'))
-                    .then(() => { this.reviewBusy = false; });
-            },
             setModalQty(v) {
                 let n = parseInt(v, 10);
                 if (isNaN(n) || n < 1) n = 1;
@@ -735,26 +637,6 @@
             stockOf(id) {
                 const p = this.products.find(x => x.id === id);
                 return p ? p.qty : 9999;
-            },
-            // --- Consulta de estado de pedido ---
-            toggleTrack() { this.trackOpen = !this.trackOpen; },
-            trackStatus() {
-                if (this.trackBusy) return;
-                if (!this.trackNumber.trim() || !this.trackPhone.trim()) {
-                    this.trackError = 'Ingresa el número de pedido y tu teléfono.';
-                    this.trackResult = null;
-                    return;
-                }
-                this.trackBusy = true;
-                this.trackError = '';
-                this.trackResult = null;
-                $('ws_public_order_status', { number: this.trackNumber, phone: this.trackPhone })
-                    .then(res => {
-                        if (res.success) { this.trackResult = res.data.order; }
-                        else { this.trackError = (res.data && res.data.msg) || 'Error al consultar.'; }
-                    })
-                    .catch(() => { this.trackError = 'Error de conexión.'; })
-                    .finally(() => { this.trackBusy = false; });
             },
             checkout() {
                 if (this.busy) return;
