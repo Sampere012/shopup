@@ -3690,8 +3690,12 @@ function ws_ajax_products_get() {
         // Stock efectivo: total del grupo (todas las ubicaciones conectadas).
         $g = $group[ $pid . ':' . (int) $r->location_id ] ?? null;
         $effective_stock = $g ? (float) $g['total'] : (float) $r->qty;
-        // Solo mostrar productos con stock disponible en el grupo.
-        if ( $effective_stock <= 0 ) {
+        // Mostrar productos con stock > 0 en el grupo, O productos que existan
+        // físicamente en la ubicación seleccionada (stock 0 pero registrado).
+        // Esto asegura que si un producto se agotó en la ubicación, siga visible
+        // en el POS para poder reordenarlo o ajustarlo.
+        $in_selected_loc = (int) $r->location_id === $location_id;
+        if ( $effective_stock <= 0 && ! $in_selected_loc ) {
             continue;
         }
         $seen_products[ $pid ] = true;
@@ -4042,8 +4046,30 @@ function ws_ajax_stock_count_virtual() {
     // Stock del GRUPO CONECTADO por producto (stock compartido) para mostrar
     // el contexto del pool junto al virtual de esta ubicación.
     $group = WS_Stock::stock_group_info( $rows );
+
+    // Excluir productos ocultos en POS (store_visibility channel='pos', visible=0).
+    // Así el cuadre coincide con lo que se ve en la caja: si el admin ocultó un
+    // producto del POS, no debe aparecer en el conteo físico.
+    global $wpdb;
+    $sv_t       = ws_table_name( 'store_visibility' );
+    $pos_hidden = array();
+    if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $sv_t ) ) === $sv_t ) {
+        $sv_rows = $wpdb->get_results( $wpdb->prepare(
+            "SELECT entity_id, location_id FROM {$sv_t} WHERE entity_type='product' AND channel='pos' AND visible=0 AND location_id=%d",
+            $location_id
+        ) );
+        foreach ( $sv_rows as $h ) {
+            $pos_hidden[ (int) $h->entity_id ] = true;
+        }
+    }
+
     $out = array();
     foreach ( $rows as $r ) {
+        $pid = (int) $r->product_id;
+        // Saltar productos ocultos en POS para esta ubicación.
+        if ( isset( $pos_hidden[ $pid ] ) ) {
+            continue;
+        }
         $g = $group[ $r->product_id . ':' . $r->location_id ] ?? null;
         $out[] = array(
             'product_id'   => (int) $r->product_id,
