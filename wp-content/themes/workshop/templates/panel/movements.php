@@ -45,16 +45,7 @@ $can_manage    = ws_can( 'stock_writeoff' );
                 <input type="date" x-model="dateFrom" @change="onFilter()" aria-label="<?php esc_attr_e( 'Desde', 'workshop' ); ?>" title="<?php esc_attr_e( 'Desde', 'workshop' ); ?>">
                 <input type="date" x-model="dateTo" @change="onFilter()" aria-label="<?php esc_attr_e( 'Hasta', 'workshop' ); ?>" title="<?php esc_attr_e( 'Hasta', 'workshop' ); ?>">
             </div>
-            <!-- Deshacer / rehacer: revierte o reaplica el último cambio de stock -->
-            <div class="ws-undo-actions" x-show="canManageStock" x-cloak>
-                <span class="ws-undo-title"><i class="fa-solid fa-clock-rotate-left"></i> <?php esc_html_e( 'Deshacer / rehacer', 'workshop' ); ?></span>
-                <button type="button" class="ws-btn ws-btn-sm ws-btn-undo" @click="undo()" :disabled="!canUndo" :title="canUndo ? undoList[0].label : ''">
-                    <i class="fa-solid fa-rotate-left"></i> <?php esc_html_e( 'Deshacer', 'workshop' ); ?>
-                </button>
-                <button type="button" class="ws-btn ws-btn-sm ws-btn-redo" @click="redo()" :disabled="!canRedo" :title="canRedo ? undoList[0].label : ''">
-                    <i class="fa-solid fa-rotate-right"></i> <?php esc_html_e( 'Rehacer', 'workshop' ); ?>
-                </button>
-            </div>
+
         </div>
 
         <table class="ws-table">
