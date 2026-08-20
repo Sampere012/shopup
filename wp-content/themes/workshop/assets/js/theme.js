@@ -984,10 +984,35 @@
                     });
             },
             remove(p) {
+                $('ws_product_delete_check', { id: p.id }).then(res => {
+                    if (!res.success) return;
+                    if (!res.data.can) {
+                        const label = { stock: 'stock en ubicaciones', movements: 'movimientos', sales: 'ventas', orders: 'pedidos', combos: 'combos', price_history: 'historial de precios', reviews: 'valoraciones de clientes', cart: 'carritos activos', fraction_children: 'productos fraccionados' };
+                        const refs = (res.data.refs || []).map(r => label[r] || r).join(', ');
+                        if (typeof Swal !== 'undefined') {
+                            Swal.fire({ title: 'No se puede eliminar', html: 'Este producto está asociado a <strong>' + refs + '</strong>. Desactívalo o vacía su stock antes de eliminarlo.', icon: 'warning', confirmButtonText: 'Entendido' });
+                        } else { toast('warning', 'No se puede eliminar', refs); }
+                        return;
+                    }
+                    if (typeof Swal !== 'undefined') {
+                        Swal.fire({ title: '¿Eliminar producto?', text: p.name, icon: 'warning', showCancelButton: true, confirmButtonText: 'Eliminar', cancelButtonText: 'Cancelar' })
+                            .then(r => { if (r.isConfirmed) this.removeReq(p); });
+                    } else { this.removeReq(p); }
+                });
+            },
+            toggleActive(p) {
+                const next = p.active ? 0 : 1;
+                const action = p.active ? 'desactivar' : 'activar';
+                const doIt = () => {
+                    $('ws_product_toggle', { id: p.id, active: next }).then(res => {
+                        if (res.success) { toast('success', p.active ? 'Producto desactivado' : 'Producto activado'); this.reload(); }
+                        else { toast('error', 'Error', res.data && res.data.msg); }
+                    });
+                };
                 if (typeof Swal !== 'undefined') {
-                    Swal.fire({ title: '¿Eliminar producto?', text: p.name, icon: 'warning', showCancelButton: true, confirmButtonText: 'Eliminar', cancelButtonText: 'Cancelar' })
-                        .then(r => { if (r.isConfirmed) this.removeReq(p); });
-                } else { this.removeReq(p); }
+                    Swal.fire({ title: '¿' + (p.active ? 'Desactivar' : 'Activar') + ' producto?', text: p.name + (p.active ? ' — dejará de venderse en POS y de verse en la tienda.' : ''), icon: 'question', showCancelButton: true, confirmButtonText: action === 'desactivar' ? 'Desactivar' : 'Activar', cancelButtonText: 'Cancelar' })
+                        .then(r => { if (r.isConfirmed) doIt(); });
+                } else { doIt(); }
             },
             removeReq(p) {
                 $('ws_delete_product', { id: p.id }).then(res => {

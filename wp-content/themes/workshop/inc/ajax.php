@@ -729,9 +729,38 @@ add_action( 'wp_ajax_ws_delete_product', 'ws_ajax_delete_product' );
 function ws_ajax_delete_product() {
     ws_guard( 'products_delete' );
     $id = (int) ( $_POST['id'] ?? 0 );
-    WS_CRUD::delete_product( $id );
+    $res = WS_CRUD::delete_product( $id );
+    if ( is_wp_error( $res ) ) {
+        wp_send_json_error( array( 'msg' => $res->get_error_message() ) );
+    }
     ws_log_audit( 'product_delete', 'product', $id );
     wp_send_json_success();
+}
+
+add_action( 'wp_ajax_ws_product_delete_check', 'ws_ajax_product_delete_check' );
+function ws_ajax_product_delete_check() {
+    ws_guard( 'products_view' );
+    $id   = (int) ( $_POST['id'] ?? 0 );
+    $refs = WS_CRUD::product_references( $id );
+    $keys = array_map( 'strval', array_keys( $refs ) );
+    wp_send_json_success( array( 'can' => empty( $refs ), 'refs' => $keys ) );
+}
+
+add_action( 'wp_ajax_ws_product_toggle', 'ws_ajax_product_toggle' );
+function ws_ajax_product_toggle() {
+    ws_guard( 'products_edit' );
+    global $wpdb;
+    $id     = (int) ( $_POST['id'] ?? 0 );
+    $active = ! empty( $_POST['active'] ) ? 1 : 0;
+    $row    = $wpdb->get_row( $wpdb->prepare(
+        "SELECT id, name FROM " . ws_table_name( 'products' ) . " WHERE id = %d", $id
+    ) );
+    if ( ! $row ) {
+        wp_send_json_error( array( 'msg' => __( 'Producto no encontrado.', 'workshop' ) ) );
+    }
+    $wpdb->update( ws_table_name( 'products' ), array( 'active' => $active ), array( 'id' => $id ) );
+    ws_log_audit( $active ? 'product_activate' : 'product_deactivate', 'product', $id );
+    wp_send_json_success( array( 'active' => $active ) );
 }
 
 add_action( 'wp_ajax_ws_products_bulk_edit', 'ws_ajax_products_bulk_edit' );
@@ -3795,6 +3824,7 @@ function ws_ajax_products_get() {
     $stock_rows = WS_Stock::stock_rows( array(
         'location_ids' => $all_loc_ids,
         'search'       => $search,
+        'active'       => 1,
     ) );
 
     // Calcular stock del grupo (stock compartido por línea de ubicaciones

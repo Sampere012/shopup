@@ -1101,6 +1101,9 @@ class WS_Stock {
                 $where[] = '(p.store_visible = 0 OR EXISTS (SELECT 1 FROM ' . self::table( 'store_visibility' ) . " sv WHERE sv.entity_type='product' AND sv.entity_id=p.id AND sv.location_id=s.location_id AND sv.visible=0))";
             }
         }
+        if ( isset( $args['active'] ) ) {
+            $where[] = $wpdb->prepare( 'p.active = %d', (int) $args['active'] );
+        }
         return $where;
     }
 

@@ -365,8 +365,135 @@ class WS_CRUD {
         return $col . ' ' . $d;
     }
 
+    /**
+     * Referencias de un producto en el resto del sistema. Devuelve un array
+     * vacío si el producto no está asociado a nada (se puede eliminar).
+     * Cada clave agrupa un tipo de referencia con su detalle para el mensaje.
+     */
+    public static function product_references( $id ) {
+        global $wpdb;
+        $id = (int) $id;
+        $refs = array();
+        if ( $id <= 0 ) {
+            return $refs;
+        }
+        // Stock real en ubicaciones (qty o balance de fracción distinto de 0).
+        $stock = $wpdb->get_results( $wpdb->prepare(
+            "SELECT s.location_id, COALESCE(l.name, CONCAT('Ubicación #', s.location_id)) AS location_name,
+                    ( COALESCE(s.qty,0) + COALESCE(s.fraction_balance,0) ) AS total
+             FROM " . self::table( 'stock' ) . " s
+             LEFT JOIN " . self::table( 'locations' ) . " l ON l.id = s.location_id
+             WHERE s.product_id = %d AND ( COALESCE(s.qty,0) <> 0 OR COALESCE(s.fraction_balance,0) <> 0 )
+             ORDER BY l.name", $id
+        ) );
+        if ( $stock ) {
+            $refs['stock'] = $stock;
+        }
+        // Movimientos (entradas/salidas/transferencias/ajustes).
+        $mov = (int) $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM " . self::table( 'movements' ) . " WHERE product_id = %d", $id ) );
+        if ( $mov ) {
+            $refs['movements'] = $mov;
+        }
+        // Ventas POS.
+        $sales = (int) $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM " . self::table( 'pos_sale_items' ) . " WHERE product_id = %d", $id ) );
+        if ( $sales ) {
+            $refs['sales'] = $sales;
+        }
+        // Pedidos de la tienda.
+        $orders = (int) $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM " . self::table( 'order_items' ) . " WHERE product_id = %d", $id ) );
+        if ( $orders ) {
+            $refs['orders'] = $orders;
+        }
+        // Combos que incluyen este producto.
+        $combos = $wpdb->get_results( $wpdb->prepare(
+            "SELECT DISTINCT c.id, c.name
+             FROM " . self::table( 'combo_items' ) . " ci
+             LEFT JOIN " . self::table( 'combos' ) . " c ON c.id = ci.combo_id
+             WHERE ci.product_id = %d AND c.id IS NOT NULL", $id ) );
+        if ( $combos ) {
+            $refs['combos'] = $combos;
+        }
+        // Historial de precios.
+        $ph = (int) $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM " . self::table( 'price_history' ) . " WHERE product_id = %d", $id ) );
+        if ( $ph ) {
+            $refs['price_history'] = $ph;
+        }
+        // Valoraciones de clientes.
+        $rv = (int) $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM " . self::table( 'reviews' ) . " WHERE product_id = %d", $id ) );
+        if ( $rv ) {
+            $refs['reviews'] = $rv;
+        }
+        // Carritos activos (sesiones de compra pendientes).
+        $cart = (int) $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM " . self::table( 'cart' ) . " WHERE product_id = %d", $id ) );
+        if ( $cart ) {
+            $refs['cart'] = $cart;
+        }
+        // Hijos fraccionados (productos que usan este como madre).
+        $children = (int) $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM " . self::table( 'products' ) . " WHERE fraction_parent = %d", $id ) );
+        if ( $children ) {
+            $refs['fraction_children'] = $children;
+        }
+        return $refs;
+    }
+
     public static function delete_product( $id ) {
         global $wpdb;
+        $id = (int) $id;
+        if ( $id <= 0 ) {
+            return new WP_Error( 'invalid_product', __( 'Producto inválido.', 'workshop' ) );
+        }
+        // Eliminación segura: el producto no puede estar asociado a puntos de
+        // venta (stock), ventas, pedidos, movimientos, combos, etc.
+        $refs = self::product_references( $id );
+        if ( ! empty( $refs ) ) {
+            $parts = array();
+            if ( ! empty( $refs['stock'] ) ) {
+                $locs = array();
+                foreach ( $refs['stock'] as $s ) {
+                    $locs[] = $s->location_name . ' (' . trim( rtrim( rtrim( number_format( (float) $s->total, 4, '.', '' ), '0' ), '.' ) ) . ')';
+                }
+                $parts[] = __( 'stock en: ', 'workshop' ) . implode( ', ', $locs );
+            }
+            if ( ! empty( $refs['sales'] ) ) {
+                $parts[] = sprintf( _n( '%d venta', '%d ventas', (int) $refs['sales'], 'workshop' ), (int) $refs['sales'] );
+            }
+            if ( ! empty( $refs['orders'] ) ) {
+                $parts[] = sprintf( _n( '%d pedido', '%d pedidos', (int) $refs['orders'], 'workshop' ), (int) $refs['orders'] );
+            }
+            if ( ! empty( $refs['movements'] ) ) {
+                $parts[] = sprintf( _n( '%d movimiento', '%d movimientos', (int) $refs['movements'], 'workshop' ), (int) $refs['movements'] );
+            }
+            if ( ! empty( $refs['combos'] ) ) {
+                $names = array();
+                foreach ( $refs['combos'] as $c ) {
+                    $names[] = $c->name;
+                }
+                $parts[] = __( 'combo(s): ', 'workshop' ) . implode( ', ', $names );
+            }
+            if ( ! empty( $refs['fraction_children'] ) ) {
+                $parts[] = sprintf( _n( '%d producto fraccionado hijo', '%d productos fraccionados hijos', (int) $refs['fraction_children'], 'workshop' ), (int) $refs['fraction_children'] );
+            }
+            if ( ! empty( $refs['price_history'] ) ) {
+                $parts[] = __( 'historial de precios', 'workshop' );
+            }
+            if ( ! empty( $refs['reviews'] ) ) {
+                $parts[] = __( 'valoraciones de clientes', 'workshop' );
+            }
+            if ( ! empty( $refs['cart'] ) ) {
+                $parts[] = __( 'carritos activos', 'workshop' );
+            }
+            return new WP_Error(
+                'product_in_use',
+                __( 'No se puede eliminar: el producto está asociado a ', 'workshop' ) . implode( ', ', $parts ) . '. Desactívalo o vacía su stock antes de eliminarlo.'
+            );
+        }
         // Al eliminar un padre, sus hijos dejan de ser fraccionados.
         $wpdb->query( $wpdb->prepare(
             "UPDATE " . self::table( 'products' ) . " SET fraction_parent = 0, fraction_qty = 0 WHERE fraction_parent = %d",
@@ -374,6 +501,7 @@ class WS_CRUD {
         ) );
         $wpdb->delete( self::table( 'products' ), array( 'id' => $id ) );
         $wpdb->delete( self::table( 'stock' ), array( 'product_id' => $id ) );
+        return true;
     }
 
     /**

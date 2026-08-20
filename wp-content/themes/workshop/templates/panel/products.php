@@ -141,6 +141,7 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
                                     <div class="ws-thumb"><img x-show="p.image" :src="p.image" :alt="p.name" loading="lazy"><i x-show="!p.image" class="fa-solid fa-box"></i></div>
                                     <div>
                                         <strong x-text="p.name"></strong>
+                                        <span class="ws-badge ws-badge-danger" x-show="!p.active" x-cloak title="<?php esc_attr_e( 'Producto desactivado: no se vende en POS ni se muestra en la tienda.', 'workshop' ); ?>"><i class="fa-solid fa-eye-slash"></i> <?php esc_html_e( 'Desactivado', 'workshop' ); ?></span>
                                         <span class="ws-combo-badge" x-show="p.is_combo" x-cloak title="<?php esc_attr_e( 'Este producto es un combo', 'workshop' ); ?>"><i class="fa-solid fa-layer-group"></i> <?php esc_html_e( 'Combo', 'workshop' ); ?></span>
                                         <span class="ws-badge ws-badge-fraction" x-show="p.fraction_parent" x-cloak title="<?php esc_attr_e( 'Producto fraccionado', 'workshop' ); ?>">
                                             <i class="fa-solid fa-scale-balanced"></i>
@@ -169,6 +170,7 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
                                 <template x-if="!p.is_combo">
                                     <template x-if="canEdit"><button class="ws-icon-btn" title="Editar" @click="openForm(p)"><i class="fa-solid fa-pen"></i></button></template>
                                     <template x-if="canCreate"><button class="ws-icon-btn" title="Clonar" @click="clone(p)"><i class="fa-solid fa-clone"></i></button></template>
+                                    <template x-if="canEdit"><button class="ws-icon-btn" :title="p.active ? 'Desactivar' : 'Activar'" :class="p.active ? 'ws-muted' : 'ws-success'" @click="toggleActive(p)"><i class="fa-solid" :class="p.active ? 'fa-eye-slash' : 'fa-eye'"></i></button></template>
                                     <template x-if="canDelete"><button class="ws-icon-btn ws-danger" title="Eliminar" @click="remove(p)"><i class="fa-solid fa-trash-can"></i></button></template>
                                 </template>
                             </td>
