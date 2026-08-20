@@ -159,6 +159,18 @@ function ws_mobile_me_payload() {
             $caps[ $cap ] = (bool) ws_can( $cap );
         }
     }
+    // Ubicaciones a las que tiene acceso el usuario (dueño/admin: todas). La
+    // app filtra sus selectores y el contenido en caché con estas.
+    $my_locations = array_map(
+        function ( $l ) {
+            return array(
+                'id'         => (int) $l->id,
+                'name'       => (string) $l->name,
+                'pos_enabled' => (int) ( $l->pos_enabled ?? 0 ),
+            );
+        },
+        ws_user_locations( $user_id )
+    );
     $biz = function_exists( 'ws_current_business' ) ? ws_current_business() : null;
     return array(
         'userId'       => $user_id,
@@ -173,6 +185,7 @@ function ws_mobile_me_payload() {
         'sessionDays'  => (int) get_option( 'ws_session_expiration_days', 30 ),
         'caps'         => $caps,
         'menu'         => $menu,
+        'locations'    => $my_locations,
         'serverTime'   => current_time( 'mysql' ),
         'wsVersion'    => defined( 'WS_VERSION' ) ? WS_VERSION : '',
     );
