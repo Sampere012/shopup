@@ -564,6 +564,9 @@ $upgrade_url = ws_panel_url( 'owner', 'plan' );
                     </div>
                 </div>
                 <div class="ws-modal-foot">
+                    <template x-if="form.id && canDelete">
+                        <button type="button" class="ws-btn ws-btn-danger" style="margin-right:auto" @click="remove(form)"><i class="fa-solid fa-trash-can"></i> <?php esc_html_e( 'Eliminar', 'workshop' ); ?></button>
+                    </template>
                     <button type="button" class="ws-btn ws-btn-secondary" @click="formOpen=false"><?php esc_html_e( 'Cancelar', 'workshop' ); ?></button>
                     <button type="submit" class="ws-btn ws-btn-primary"><i class="fa-solid fa-floppy-disk"></i> <?php esc_html_e( 'Guardar', 'workshop' ); ?></button>
                 </div>

@@ -1030,7 +1030,7 @@
             },
             removeReq(p) {
                 $('ws_delete_product', { id: p.id }).then(res => {
-                    if (res.success) { toast('success', 'Eliminado'); this.reload(); } else { toast('error', 'Error', res.data && res.data.msg); }
+                    if (res.success) { toast('success', 'Eliminado'); this.formOpen = false; this.reload(); } else { toast('error', 'Error', res.data && res.data.msg); }
                 });
             },
             /* --- Edición masiva (mínimo, fechas, costo, venta) --- */
