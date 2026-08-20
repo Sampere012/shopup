@@ -459,7 +459,9 @@ function ws_ajax_products_list() {
     $search      = sanitize_text_field( $_POST['search'] ?? '' );
     $show_combos = ! empty( $_POST['show_combos'] );
     // Trabajadores: solo productos con stock registrado en sus ubicaciones.
-    $loc_ids = ws_user_location_ids();
+    // El dueño/admin (o rol vacío) ve TODOS los productos del negocio.
+    $is_full = in_array( ws_user_role(), array( 'owner', '' ), true );
+    $loc_ids = $is_full ? array() : ws_user_location_ids();
 
     $row_map = function ( $p ) {
         return array(
@@ -4407,9 +4409,12 @@ function ws_ajax_cache_products() {
 
     $location_id = (int) ( $_POST['location_id'] ?? 0 );
     // Trabajadores: el catálogo cacheado se limita a sus ubicaciones (aunque
-    // pidan location_id=0, que significa "todas las permitidas").
-    $loc_ids = $location_id ? array( $location_id ) : ws_user_location_ids();
-    $loc_ids = array_values( array_intersect( $loc_ids, ws_user_location_ids() ) );
+    // pidan location_id=0, que significa "todas las permitidas"). El dueño/
+    // admin (o rol vacío) descarga TODOS los productos del negocio.
+    $allowed = ws_user_location_ids();
+    $is_full = in_array( ws_user_role(), array( 'owner', '' ), true );
+    $loc_ids = $location_id ? array( $location_id ) : $allowed;
+    $loc_ids = $is_full ? array() : array_values( array_intersect( $loc_ids, $allowed ) );
     $args = array(
         'location_id' => $location_id,
         'location_ids' => $loc_ids,
