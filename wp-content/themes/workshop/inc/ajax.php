@@ -2036,6 +2036,321 @@ function ws_ajax_stock_list() {
     ) );
 }
 
+/* ---------------- Catálogo PDF (exportación desde Stock) ---------------- */
+
+/**
+ * Convierte un color hex (#RRGGBB o #RGB) a RGB para FPDF.
+ */
+function ws_pdf_hex_rgb( $hex ) {
+    $hex = ltrim( (string) $hex, '#' );
+    if ( strlen( $hex ) === 3 ) {
+        $hex = $hex[0] . $hex[0] . $hex[1] . $hex[1] . $hex[2] . $hex[2];
+    }
+    if ( ! preg_match( '/^[0-9a-fA-F]{6}$/', $hex ) ) {
+        return null;
+    }
+    return array( hexdec( substr( $hex, 0, 2 ) ), hexdec( substr( $hex, 2, 2 ) ), hexdec( substr( $hex, 4, 2 ) ) );
+}
+
+/**
+ * Texto UTF-8 a ISO-8859-1 para las fuentes core de FPDF (Latin-1).
+ */
+function ws_pdf_text( $s ) {
+    $s = (string) $s;
+    if ( function_exists( 'iconv' ) ) {
+        $out = @iconv( 'UTF-8', 'ISO-8859-1//TRANSLIT', $s );
+        if ( false !== $out ) {
+            return $out;
+        }
+    }
+    return function_exists( 'utf8_decode' ) ? utf8_decode( $s ) : $s;
+}
+
+/**
+ * Descarga una imagen (URL remota o ruta local) a un archivo temporal para
+ * poder embederla en el PDF. Devuelve [ ruta, tipo ] o null si falla.
+ * Los formatos que FPDF no soporta de forma nativa (GIF/WEBP…) se convierten
+ * a PNG con GD cuando está disponible.
+ */
+function ws_pdf_fetch_image( $url ) {
+    $url = trim( (string) $url );
+    if ( '' === $url ) {
+        return null;
+    }
+    // Ruta local del propio servidor (uploads u otra carpeta del sitio).
+    if ( is_file( $url ) ) {
+        $data = (string) @file_get_contents( $url );
+    } else {
+        $url  = str_replace( ' ', '%20', $url );
+        $data = '';
+        if ( function_exists( 'wp_remote_get' ) ) {
+            $res = wp_remote_get( $url, array( 'timeout' => 20, 'sslverify' => false, 'redirection' => 5 ) );
+            if ( ! is_wp_error( $res ) && 200 === (int) wp_remote_retrieve_response_code( $res ) ) {
+                $data = (string) wp_remote_retrieve_body( $res );
+            }
+        }
+        if ( '' === $data && ini_get( 'allow_url_fopen' ) ) {
+            $data = (string) @file_get_contents( $url );
+        }
+    }
+    if ( '' === $data ) {
+        return null;
+    }
+    $type = 'JPG';
+    if ( strncmp( $data, "\x89PNG", 4 ) === 0 ) {
+        $type = 'PNG';
+    } elseif ( strncmp( $data, 'GIF8', 4 ) === 0 ) {
+        $type = 'GIF';
+    } elseif ( strncmp( $data, 'RIFF', 4 ) === 0 && strncmp( substr( $data, 8, 4 ), 'WEBP', 4 ) === 0 ) {
+        $type = 'WEBP';
+    }
+    $ext = strtolower( $type );
+    $tmp = @tempnam( sys_get_temp_dir(), 'wspdf' );
+    if ( $tmp ) {
+        $tmp .= '.' . $ext;
+    } else {
+        $tmp = wp_upload_dir()['path'] . '/wspdf-' . uniqid() . '.' . $ext;
+    }
+    if ( false === @file_put_contents( $tmp, $data ) ) {
+        return null;
+    }
+    // Formatos no soportados por FPDF de forma nativa: convertir a PNG con GD.
+    if ( in_array( $type, array( 'GIF', 'WEBP' ), true ) && function_exists( 'imagecreatefromstring' ) ) {
+        $im = @imagecreatefromstring( $data );
+        if ( $im ) {
+            $png = $tmp . '.png';
+            if ( @imagepng( $im, $png ) ) {
+                @unlink( $tmp );
+                @imagedestroy( $im );
+                return array( $png, 'PNG' );
+            }
+            @imagedestroy( $im );
+        }
+    }
+    return array( $tmp, $type );
+}
+
+/**
+ * Genera el PDF del catálogo con la marca del negocio (nombre + descripción +
+ * logo + colores de apariencia) y cada producto disponible (foto + nombre +
+ * precio) uno debajo del otro. Descarga directa: catalogo_AAAA-MM-DD.pdf.
+ *
+ * Se declara de forma condicional (y tras cargar FPDF) porque extiende FPDF:
+ * PHP exige que la clase padre exista cuando se declara la hija, y la librería
+ * solo se carga cuando alguien exporta el catálogo.
+ */
+if ( ! class_exists( 'WS_Catalog_PDF' ) ) {
+    require_once WS_PATH . 'lib/fpdf/fpdf.php';
+
+    class WS_Catalog_PDF extends FPDF {
+        public $biz_name = '';
+        public $biz_desc = '';
+        public $primary  = array( 79, 70, 229 );
+        public $accent   = array( 245, 158, 11 );
+
+        public function set_brand( $name, $desc, $primary_hex, $accent_hex ) {
+            $this->biz_name = ws_pdf_text( $name );
+            $this->biz_desc = ws_pdf_text( $desc );
+            $rgb = ws_pdf_hex_rgb( $primary_hex );
+            if ( $rgb ) {
+                $this->primary = $rgb;
+            }
+            $rgb = ws_pdf_hex_rgb( $accent_hex );
+            if ( $rgb ) {
+                $this->accent = $rgb;
+            }
+        }
+
+        /**
+         * Franja superior fina con el nombre del negocio en cada página.
+         */
+        public function Header() {
+            $this->SetFillColor( $this->primary[0], $this->primary[1], $this->primary[2] );
+            $this->Rect( 0, 0, 210, 7, 'F' );
+            $this->SetFillColor( $this->accent[0], $this->accent[1], $this->accent[2] );
+            $this->Rect( 0, 7, 210, 1.4, 'F' );
+            if ( '' !== $this->biz_name ) {
+                $this->SetFont( 'Helvetica', 'B', 10 );
+                $this->SetTextColor( 255, 255, 255 );
+                $this->SetXY( 12, 1.5 );
+                $this->Cell( 0, 5, $this->biz_name, 0, 1, 'L' );
+            }
+        }
+
+        /**
+         * Pie de página: línea + nombre del negocio + número de página.
+         */
+        public function Footer() {
+            $this->SetY( -16 );
+            $this->SetDrawColor( 203, 213, 225 );
+            $this->Line( 12, $this->GetY(), 198, $this->GetY() );
+            $this->SetFont( 'Helvetica', '', 8 );
+            $this->SetTextColor( 120, 130, 140 );
+            $this->Cell( 0, 6, '' !== $this->biz_name ? $this->biz_name : 'Catálogo', 0, 0, 'L' );
+            $this->Cell( 0, 6, 'Página ' . $this->PageNo() . ' de {nb}', 0, 0, 'R' );
+        }
+    }
+}
+
+add_action( 'wp_ajax_ws_stock_catalog_pdf', 'ws_ajax_stock_catalog_pdf' );
+function ws_ajax_stock_catalog_pdf() {
+    ws_guard( 'stock_view' );
+
+    $location_id = (int) ( $_POST['location_id'] ?? 0 );
+    $allowed     = ws_user_locations();
+    $allowed_ids = array_map( fn( $l ) => (int) $l->id, $allowed );
+    if ( ! $location_id || ! in_array( $location_id, $allowed_ids, true ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Selecciona una ubicación válida para exportar el catálogo.', 'workshop' ) ) );
+    }
+    $location = WS_CRUD::get_location( $location_id );
+    if ( ! $location ) {
+        wp_send_json_error( array( 'msg' => __( 'Ubicación no encontrada.', 'workshop' ) ) );
+    }
+
+    // Productos disponibles (con stock > 0 y activos) de la ubicación elegida.
+    global $wpdb;
+    $products_t = ws_table_name( 'products' );
+    $stock_t    = ws_table_name( 'stock' );
+    $rows = $wpdb->get_results( $wpdb->prepare(
+        "SELECT p.id, p.name, p.image, p.sale_price, p.currency
+         FROM {$stock_t} s
+         INNER JOIN {$products_t} p ON p.id = s.product_id
+         WHERE s.location_id = %d AND s.qty > 0 AND p.active = 1
+         ORDER BY p.name ASC",
+        $location_id
+    ) );
+
+    $biz       = ws_current_business();
+    $theme     = function_exists( 'ws_site_theme' ) ? ws_site_theme() : array();
+    $biz_name  = ( $biz && ! empty( $biz->name ) ) ? (string) $biz->name : (string) ( $theme['name'] ?? get_option( 'blogname' ) );
+    $biz_desc  = ( $biz && ! empty( $biz->description ) ) ? (string) $biz->description : '';
+    $biz_logo  = (string) ( $theme['logo'] ?? '' );
+    $primary   = (string) ( $theme['primary'] ?? '#4f46e5' );
+    $accent    = (string) ( $theme['accent'] ?? '#f59e0b' );
+    $currency  = ws_currency_symbol( $location_id );
+
+    try {
+        $pdf = new WS_Catalog_PDF();
+        $pdf->set_brand( $biz_name, $biz_desc, $primary, $accent );
+        $pdf->AliasNbPages();
+        $pdf->SetTitle( ws_pdf_text( $biz_name . ' · Catálogo de productos' ) );
+        $pdf->SetAuthor( ws_pdf_text( $biz_name ) );
+        $pdf->SetMargins( 12, 20, 12 );
+        $pdf->SetAutoPageBreak( true, 20 );
+        $pdf->AddPage();
+
+        /* Cabecera grande de la primera página: logo + nombre + descripción. */
+        $logo   = ( '' !== $biz_logo ) ? ws_pdf_fetch_image( $biz_logo ) : null;
+        $name_x = 12;
+        if ( $logo ) {
+            $pdf->Image( $logo[0], 12, 12, 40, 22, $logo[1] );
+            $name_x = 58;
+        }
+        $pdf->SetXY( $name_x, 13 );
+        $pdf->SetFont( 'Helvetica', 'B', 26 );
+        $pdf->SetTextColor( $pdf->primary[0], $pdf->primary[1], $pdf->primary[2] );
+        $pdf->Cell( 0, 12, ws_pdf_text( $biz_name ), 0, 1, 'L' );
+        if ( '' !== $biz_desc ) {
+            $pdf->SetX( $name_x );
+            $pdf->SetFont( 'Helvetica', '', 10 );
+            $pdf->SetTextColor( 80, 90, 100 );
+            $pdf->MultiCell( 186 - ( $name_x - 12 ), 5, ws_pdf_text( $biz_desc ), 0, 'L' );
+        }
+        $pdf->SetY( $pdf->GetY() + 4 );
+
+        /* Subtítulo: título + ubicación y fecha del catálogo. */
+        $pdf->SetFont( 'Helvetica', 'B', 15 );
+        $pdf->SetTextColor( $pdf->accent[0], $pdf->accent[1], $pdf->accent[2] );
+        $pdf->Cell( 0, 8, ws_pdf_text( 'CATÁLOGO DE PRODUCTOS' ), 0, 1, 'L' );
+        $pdf->SetFont( 'Helvetica', '', 10 );
+        $pdf->SetTextColor( 90, 100, 110 );
+        $pdf->Cell( 0, 6, ws_pdf_text( (string) $location->name . '  ·  ' . date_i18n( 'd/m/Y', current_time( 'timestamp' ) ) ), 0, 1, 'R' );
+        $pdf->Ln( 2 );
+        $pdf->SetDrawColor( 203, 213, 225 );
+        $pdf->Line( 12, $pdf->GetY(), 198, $pdf->GetY() );
+        $pdf->Ln( 5 );
+
+        /* Productos: foto + nombre + precio, uno debajo del otro. */
+        $card_w = 186;   // ancho total útil
+        $img_sz = 28;    // caja de la foto
+        if ( empty( $rows ) ) {
+            $pdf->SetFont( 'Helvetica', '', 11 );
+            $pdf->SetTextColor( 120, 130, 140 );
+            $pdf->Cell( 0, 10, ws_pdf_text( 'No hay productos disponibles en esta ubicación.' ), 0, 1, 'C' );
+        }
+        foreach ( $rows as $p ) {
+            if ( $pdf->GetY() + 36 > 277 ) {
+                $pdf->AddPage();
+            }
+            $start = $pdf->GetY();
+
+            // Tarjeta: fondo claro + borde.
+            $pdf->SetFillColor( 248, 250, 252 );
+            $pdf->SetDrawColor( 226, 232, 240 );
+            $pdf->Rect( 12, $start, $card_w, 32, 'DF' );
+
+            // Foto del producto (contenida en su caja sin deformar).
+            $img = ( ! empty( $p->image ) ) ? ws_pdf_fetch_image( $p->image ) : null;
+            if ( $img ) {
+                $size = @getimagesize( $img[0] );
+                if ( $size && ! empty( $size[0] ) && ! empty( $size[1] ) ) {
+                    $ratio = $size[1] / $size[0];
+                    $iw    = $img_sz;
+                    $ih    = $img_sz * $ratio;
+                    if ( $ih > $img_sz ) {
+                        $ih = $img_sz;
+                        $iw = $img_sz / $ratio;
+                    }
+                    $ix = 14 + ( $img_sz - $iw ) / 2;
+                    $iy = $start + 2 + ( $img_sz - $ih ) / 2;
+                    $pdf->Image( $img[0], $ix, $iy, $iw, $ih, $img[1] );
+                } else {
+                    $pdf->Image( $img[0], 14, $start + 2, $img_sz, 0, $img[1] );
+                }
+            } else {
+                $pdf->SetFillColor( 226, 232, 240 );
+                $pdf->Rect( 14, $start + 2, $img_sz, $img_sz, 'F' );
+                $pdf->SetFont( 'Helvetica', '', 8 );
+                $pdf->SetTextColor( 140, 150, 160 );
+                $pdf->SetXY( 14, $start + 12 );
+                $pdf->Cell( $img_sz, 5, ws_pdf_text( 'Sin foto' ), 0, 1, 'C' );
+            }
+
+            // Nombre + precio a la derecha de la foto.
+            $tx = 46;
+            $tw = $card_w - ( $tx - 12 ) - 4;
+            $pdf->SetXY( $tx, $start + 4 );
+            $pdf->SetFont( 'Helvetica', 'B', 12 );
+            $pdf->SetTextColor( 30, 41, 59 );
+            $pdf->MultiCell( $tw, 6, ws_pdf_text( $p->name ), 0, 'L' );
+            $pdf->SetXY( $tx, $start + 21 );
+            $pdf->SetFont( 'Helvetica', 'B', 16 );
+            $pdf->SetTextColor( $pdf->primary[0], $pdf->primary[1], $pdf->primary[2] );
+            $price = number_format_i18n( (float) $p->sale_price, 2 ) . ' ' . ( ! empty( $p->currency ) ? $p->currency : $currency );
+            $pdf->Cell( 0, 8, ws_pdf_text( $price ), 0, 1, 'L' );
+
+            $pdf->SetY( $start + 34 );
+        }
+
+        $filename = 'catalogo_' . gmdate( 'Y-m-d', current_time( 'timestamp' ) ) . '.pdf';
+        $out      = $pdf->Output( 'S' );
+
+        status_header( 200 );
+        nocache_headers();
+        header( 'Content-Type: application/pdf' );
+        header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
+        header( 'X-WS-Filename: ' . $filename );
+        header( 'X-WS-Export: pdf' );
+        header( 'Content-Length: ' . strlen( $out ) );
+        header( 'Content-Transfer-Encoding: binary' );
+        header( 'Expires: 0' );
+        echo $out;
+        wp_die();
+    } catch ( \Exception $e ) {
+        wp_send_json_error( array( 'msg' => __( 'No se pudo generar el catálogo. Inténtalo de nuevo.', 'workshop' ) ) );
+    }
+}
+
 /* ---------------- Movimientos ---------------- */
 
 add_action( 'wp_ajax_ws_movements_list', 'ws_ajax_movements_list' );

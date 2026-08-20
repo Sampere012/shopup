@@ -59,6 +59,7 @@ if ( $can_venta && function_exists( 'ws_announcement_business_users' ) ) {
                 <label class="ws-check ws-check-pill"><input type="checkbox" x-model="lowOnly" @change="onFilter()"><span><?php esc_html_e( 'Solo stock bajo', 'workshop' ); ?></span></label>
             </div>
             <div class="ws-stock-actions">
+                <button type="button" class="ws-btn ws-btn-secondary" @click="downloadCatalog" title="<?php esc_attr_e( 'Exporta el catálogo PDF de los productos disponibles en la ubicación seleccionada (foto, nombre y precio)', 'workshop' ); ?>"><i class="fa-solid fa-file-pdf"></i> <?php esc_html_e( 'Catálogo PDF', 'workshop' ); ?></button>
                 <template x-if="canAnyMove">
                     <button class="ws-btn ws-btn-primary" @click="openWizard"><i class="fa-solid fa-plus"></i> <?php esc_html_e( 'Nuevo movimiento', 'workshop' ); ?></button>
                 </template>

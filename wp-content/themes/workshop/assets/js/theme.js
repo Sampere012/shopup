@@ -1812,6 +1812,29 @@
                 fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ action: 'ws_stock_list', ws_nonce: WS.nonce, location_id: this.locationId, search: this.search, low_only: this.lowOnly ? 1 : 0, sort: this.sortKey, dir: this.sortDir, page: this.page, pageSize: this.pageSize }) })
                     .then(r => r.json()).then(r => { if (r.success) { this.rows = r.data.rows; this.combos = r.data.combos || []; this.total = r.data.total; this.page = r.data.page; } });
             },
+            // Exporta el catálogo PDF de los productos disponibles (foto, nombre
+            // y precio) de la ubicación seleccionada en el filtro.
+            downloadCatalog() {
+                if (!this.locationId) { toast('error', 'Selecciona una ubicación para exportar el catálogo'); return; }
+                fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ action: 'ws_stock_catalog_pdf', ws_nonce: WS.nonce, location_id: this.locationId }) })
+                    .then(res => {
+                        const ct = res.headers.get('Content-Type') || '';
+                        if (ct.indexOf('application/json') !== -1) {
+                            return res.json().then(j => { throw new Error((j.data && j.data.msg) || 'No se pudo exportar el catálogo.'); });
+                        }
+                        return Promise.all([res.blob(), Promise.resolve(res.headers.get('X-WS-Filename') || ('catalogo_' + new Date().toISOString().slice(0, 10) + '.pdf'))]);
+                    })
+                    .then(tuple => {
+                        const blob = tuple[0], filename = tuple[1];
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url; a.download = filename;
+                        document.body.appendChild(a); a.click(); a.remove();
+                        setTimeout(() => URL.revokeObjectURL(url), 5000);
+                        toast('success', 'Catálogo descargado', filename);
+                    })
+                    .catch(err => toast('error', 'Error', (err && err.message) || 'No se pudo exportar el catálogo.'));
+            },
             get canAnyMove() { return this.canEntry || this.canExit || this.canWriteoff || this.canTransfer || this.canVenta; },
             // Muestra/oculta un producto o combo de un CANAL de UNA ubicación
             // ('store' = tienda pública, 'pos' = punto de venta): cada PV tiene
