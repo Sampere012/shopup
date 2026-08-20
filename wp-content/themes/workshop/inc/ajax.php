@@ -108,6 +108,31 @@ add_action( 'admin_init', function () {
 } );
 
 /**
+ * Capacidades que la app móvil realmente usa: la app solo gestiona los
+ * módulos/acciones de esta lista. La web tiene módulos avanzados que la app
+ * no implementa (proveedores, categorías en árbol, fraccionamiento, etc.);
+ * esa parte se sigue gestionando y aplicando solo en la web.
+ */
+function ws_app_caps() {
+    return array(
+        'products_view', 'products_create', 'products_edit',
+        'locations_view', 'locations_manage',
+        'stock_view', 'stock_entry', 'stock_exit', 'stock_writeoff', 'stock_transfer',
+        'stock_count_view',
+        'movements_view',
+        'pos_sell', 'pos_view',
+        'orders_view', 'orders_accept',
+        'shifts_view', 'shifts_manage',
+        'workers_view', 'workers_manage',
+        'customers_view', 'customers_create', 'customers_edit',
+        'reviews_view', 'reviews_moderate',
+        'loyalty_manage', 'expenses_manage',
+        'settings_manage', 'permissions_manage', 'reports_view',
+        'site_manage', 'layout_manage',
+    );
+}
+
+/**
  * Payload de sesión para la app móvil: identidad, rol, permisos y el menú
  * del panel filtrado por capacidades (mismos ítems que templates/panel.php).
  */
@@ -119,6 +144,7 @@ function ws_mobile_me_payload() {
         'products'  => array( 'icon' => 'fa-boxes-stacked', 'label' => __( 'Productos', 'workshop' ), 'caps' => array( 'products_view' ) ),
         'locations' => array( 'icon' => 'fa-location-dot', 'label' => __( 'Ubicaciones', 'workshop' ), 'caps' => array( 'locations_view' ) ),
         'stock'     => array( 'icon' => 'fa-warehouse', 'label' => __( 'Stock', 'workshop' ), 'caps' => array( 'stock_view' ) ),
+        'counts'    => array( 'icon' => 'fa-list-check', 'label' => __( 'Cuadre', 'workshop' ), 'caps' => array( 'stock_count_view' ) ),
         'movements' => array( 'icon' => 'fa-clock-rotate-left', 'label' => __( 'Historial', 'workshop' ), 'caps' => array( 'movements_view' ) ),
         'orders'    => array( 'icon' => 'fa-receipt', 'label' => __( 'Pedidos', 'workshop' ), 'caps' => array( 'orders_view' ) ),
         'shifts'    => array( 'icon' => 'fa-calendar-days', 'label' => __( 'Turnos', 'workshop' ), 'caps' => array( 'shifts_view' ) ),
@@ -155,7 +181,8 @@ function ws_mobile_me_payload() {
     }
     $caps = array();
     if ( class_exists( 'WS_Capabilities' ) ) {
-        foreach ( WS_Capabilities::all_caps() as $cap => $_label ) {
+        $all = WS_Capabilities::all_caps();
+        foreach ( ws_app_caps() as $cap ) {
             $caps[ $cap ] = (bool) ws_can( $cap );
         }
     }
@@ -2757,7 +2784,28 @@ function ws_ajax_workers_list() {
 add_action( 'wp_ajax_ws_save_permissions', 'ws_ajax_save_permissions' );
 function ws_ajax_save_permissions() {
     ws_guard( 'permissions_manage' );
-    $matrix = isset( $_POST['matrix'] ) ? (array) json_decode( wp_unslash( $_POST['matrix'] ), true ) : array();
+    $raw = isset( $_POST['matrix'] ) ? $_POST['matrix'] : array();
+    $all  = array_keys( WS_Capabilities::all_caps() );
+    $roles = array( 'owner', 'storekeeper', 'seller' );
+    if ( is_string( $raw ) ) {
+        // Formato app (JSON): la app manda solo los módulos que tiene. Se
+        // combina con la matriz existente para NO pisar los permisos web-only.
+        $posted = (array) json_decode( wp_unslash( $raw ), true );
+        $existing = WS_Capabilities::matrix();
+        $merged = array();
+        foreach ( $roles as $role ) {
+            $merged[ $role ] = array();
+            foreach ( $all as $cap ) {
+                $merged[ $role ][ $cap ] = isset( $posted[ $role ][ $cap ] )
+                    ? ! empty( $posted[ $role ][ $cap ] )
+                    : ! empty( $existing[ $role ][ $cap ] );
+            }
+        }
+        $matrix = $merged;
+    } else {
+        // Formato web (form): matriz completa, autoritativa.
+        $matrix = (array) $raw;
+    }
     WS_Capabilities::save_matrix( $matrix );
     ws_log_audit( 'permissions_update', 'settings', 0 );
     wp_send_json_success();
@@ -4590,9 +4638,20 @@ function ws_ajax_permissions_get() {
     }
     $caps = array();
     if ( class_exists( 'WS_Capabilities' ) ) {
-        $caps = WS_Capabilities::all_caps();
+        $all = WS_Capabilities::all_caps();
+        // Solo los módulos/acciones que la app móvil realmente implementa.
+        foreach ( ws_app_caps() as $cap ) {
+            $caps[ $cap ] = $all[ $cap ];
+        }
     }
-    $matrix = class_exists( 'WS_Capabilities' ) ? WS_Capabilities::matrix() : array();
+    $matrix_full = class_exists( 'WS_Capabilities' ) ? WS_Capabilities::matrix() : array();
+    $matrix = array();
+    foreach ( array_keys( $matrix_full ) as $role ) {
+        $matrix[ $role ] = array();
+        foreach ( ws_app_caps() as $cap ) {
+            $matrix[ $role ][ $cap ] = ! empty( $matrix_full[ $role ][ $cap ] );
+        }
+    }
     $roles = array(
         'owner'        => ws_role_label( 'ws_owner' ),
         'storekeeper'  => ws_role_label( 'ws_storekeeper' ),
