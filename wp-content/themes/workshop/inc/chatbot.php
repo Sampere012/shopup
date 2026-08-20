@@ -27,6 +27,35 @@
 
 defined( 'ABSPATH' ) || exit;
 
+// Guarda de arranque: este archivo usa helpers (ws_user_role, ws_can, …). Si
+// por cualquier causa helpers.php no estuviera cargado (orden de includes,
+// archivo antiguo en caché, deploy parcial), se carga aquí para que el chatbot
+// nunca reviente con "undefined function" en el hook init.
+if ( ! function_exists( 'ws_user_role' ) ) {
+    require_once __DIR__ . '/helpers.php';
+    // Respaldo final: si helpers.php tampoco trae ws_user_role (versión vieja
+    // en el servidor), se define un equivalente mínimo para no tumbar la web.
+    if ( ! function_exists( 'ws_user_role' ) ) {
+        function ws_user_role( $user_id = 0 ) {
+            $user = $user_id ? get_user_by( 'id', $user_id ) : wp_get_current_user();
+            if ( ! $user || ! $user->exists() ) {
+                return '';
+            }
+            $map = array(
+                'ws_owner'       => 'owner',
+                'ws_storekeeper' => 'storekeeper',
+                'ws_seller'      => 'seller',
+            );
+            foreach ( $map as $role => $slug ) {
+                if ( in_array( $role, (array) $user->roles, true ) ) {
+                    return $slug;
+                }
+            }
+            return '';
+        }
+    }
+}
+
 add_action( 'wp_enqueue_scripts', 'ws_chatbot_assets' );
 function ws_chatbot_assets() {
     if ( is_admin() ) {

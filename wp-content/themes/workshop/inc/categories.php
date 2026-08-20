@@ -23,14 +23,14 @@ class WS_Categories {
         return ws_table_name( 'categories' );
     }
 
-    /** Todas las categorías del negocio (sin árbol, orden estable). */
+    /** Todas las categorías del negocio (sin árbol, orden automático por nombre). */
     public static function all() {
         global $wpdb;
         $t = self::table();
         if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $t ) ) !== $t ) {
             return array();
         }
-        return $wpdb->get_results( "SELECT * FROM {$t} ORDER BY sort_order ASC, name ASC" );
+        return $wpdb->get_results( "SELECT * FROM {$t} ORDER BY name ASC" );
     }
 
     /** Mapa id => fila (acceso rápido al árbol). */

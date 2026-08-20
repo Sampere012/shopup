@@ -18,19 +18,25 @@ if ( ! class_exists( 'WS_Categories' ) ) {
 }
 
 $ws_cat_can = ws_can( 'categories_manage' );
-$ws_cat_all = array_map( static function ( $c ) {
-    return array(
-        'id'         => (int) $c->id,
-        'parent_id'  => (int) $c->parent_id,
-        'name'       => (string) $c->name,
-        'slug'       => (string) $c->slug,
-        'active'     => (int) $c->active,
-        'sort_order' => (int) $c->sort_order,
-        'path'       => WS_Categories::path_text( (int) $c->id ),
-        'children'   => count( WS_Categories::children( (int) $c->id ) ),
-        'products'   => WS_Categories::products_count( (int) $c->id ),
-    );
-}, WS_Categories::all() );
+// Lista en ORDEN DE ÁRBOL (padres antes que hijos, alfabético dentro de cada
+// nivel) para que el acordeón no muestre hijos antes que su categoría madre.
+$ws_cat_all = array();
+$ws_cat_build = function ( $ws_cat_parent ) use ( &$ws_cat_build, &$ws_cat_all ) {
+    foreach ( WS_Categories::children( $ws_cat_parent ) as $ws_cat_c ) {
+        $ws_cat_all[] = array(
+            'id'         => (int) $ws_cat_c->id,
+            'parent_id'  => (int) $ws_cat_c->parent_id,
+            'name'       => (string) $ws_cat_c->name,
+            'slug'       => (string) $ws_cat_c->slug,
+            'active'     => (int) $ws_cat_c->active,
+            'path'       => WS_Categories::path_text( (int) $ws_cat_c->id ),
+            'children'   => count( WS_Categories::children( (int) $ws_cat_c->id ) ),
+            'products'   => WS_Categories::products_count( (int) $ws_cat_c->id ),
+        );
+        $ws_cat_build( (int) $ws_cat_c->id );
+    }
+};
+$ws_cat_build( 0 );
 // Para el <select> de «categoría padre» se muestra la RUTA (Padre / Hijo).
 $ws_cat_flat = array_map( static function ( $c ) {
     return array( 'id' => (int) $c['id'], 'name' => $c['path'] );
@@ -72,10 +78,6 @@ $ws_cat_flat = array_map( static function ( $c ) {
                     </template>
                 </div>
             </div>
-            <label class="ws-field">
-                <span><?php esc_html_e( 'Orden', 'workshop' ); ?></span>
-                <input type="number" min="0" x-model.number="form.sort_order">
-            </label>
             <div class="ws-field">
                 <label class="ws-check ws-check-switch">
                     <input type="checkbox" x-model="form.active">

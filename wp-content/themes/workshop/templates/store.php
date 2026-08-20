@@ -191,7 +191,7 @@ get_header();
             </div>
 
             <?php if ( ! empty( $ws_store_categories['flat'] ) ) : ?>
-            <div class="ws-store-category-filter">
+            <div class="ws-store-category-filter" x-show="categoryOptions.length > 0" x-cloak>
                 <div class="ws-store-category-row">
                     <button type="button" class="ws-store-category-chip" :class="categoryFilter === 0 ? 'is-active' : ''" @click="categoryFilter = 0; applySearch();">
                         <?php esc_html_e( 'Todas', 'workshop' ); ?>

@@ -346,7 +346,21 @@
                 if (seed && seed.products) { this.products = seed.products; }
                 if (seed && seed.categories) {
                     this.categoryTree = seed.categories.tree || [];
-                    this.categoryOptions = (seed.categories.flat || []).map(c => ({ id: c.id, name: c.name }));
+                    // Solo se muestran categorías que tienen productos en ESTA
+                    // tienda (ella o cualquiera de sus subcategorías): nunca se
+                    // renderizan categorías vacías.
+                    const used = new Set((this.products || []).map(p => Number(p.category_id) || 0));
+                    const usedBranch = new Set();
+                    const markBranch = (node) => {
+                        let has = used.has(Number(node.id));
+                        (node.children || []).forEach(kid => { if (markBranch(kid)) has = true; });
+                        if (has) usedBranch.add(Number(node.id));
+                        return has;
+                    };
+                    (this.categoryTree || []).forEach(root => markBranch(root));
+                    this.categoryOptions = (seed.categories.flat || [])
+                        .map(c => ({ id: c.id, name: c.name }))
+                        .filter(c => usedBranch.has(Number(c.id)));
                 }
                 // Monedas/tasas/WhatsApp llegan por WS_STORE_DATA (JSON en un
                 // <script>, no por el atributo x-data, para no romper el HTML).
@@ -2895,7 +2909,7 @@
                 editingId: 0,
                 saving: false,
                 open: {},
-                form: { name: '', parent_id: 0, sort_order: 0, active: true },
+                form: { name: '', parent_id: 0, active: true },
 
                 init() {
                     // Al cargar, las categorías raíz quedan abiertas: se ve la
@@ -2933,11 +2947,11 @@
 
                 resetForm() {
                     this.editingId = 0;
-                    this.form = { name: '', parent_id: 0, sort_order: 0, active: true };
+                    this.form = { name: '', parent_id: 0, active: true };
                 },
                 edit(c) {
                     this.editingId = c.id;
-                    this.form = { name: c.name, parent_id: c.parent_id, sort_order: c.sort_order, active: !!c.active };
+                    this.form = { name: c.name, parent_id: c.parent_id, active: !!c.active };
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                 },
                 // El "+" de cada nodo abre el formulario con esa categoría como
@@ -2953,7 +2967,7 @@
                 },
                 addChild(c) {
                     this.editingId = 0;
-                    this.form = { name: '', parent_id: c.id, sort_order: 0, active: true };
+                    this.form = { name: '', parent_id: c.id, active: true };
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                 },
                 api(action, extra, cb) {
@@ -2974,7 +2988,7 @@
                             const path = parents.concat([node.name]).join(' / ');
                             out.push({
                                 id: node.id, parent_id: node.parent_id, name: node.name,
-                                slug: node.slug || '', active: node.active, sort_order: node.sort_order,
+                                slug: node.slug || '', active: node.active,
                                 path: path, children: (node.children || []).length
                             });
                             flat.push({ id: node.id, name: path });
@@ -2994,7 +3008,6 @@
                         id: this.editingId || 0,
                         name: this.form.name,
                         parent_id: this.form.parent_id || 0,
-                        sort_order: this.form.sort_order || 0,
                         active: this.form.active ? '1' : '0'
                     }, (json) => {
                         this.saving = false;
