@@ -2955,3 +2955,78 @@ ul.ws-topbar-nav { list-style: none; margin: 0 auto; padding: 0; }
 /* Divisor de secciones dentro de un formulario (p. ej. Tienda pública). */
 .ws-form-divider { display: flex; align-items: center; gap: 8px; font-weight: 700; color: var(--ws-primary); font-size: .82rem; text-transform: uppercase; letter-spacing: .04em; padding-top: 4px; }
 .ws-form-divider::after { content: ''; flex: 1 1 auto; height: 1px; background: linear-gradient(90deg, rgba(79,70,229,.25), transparent); }
+
+/* ---------- Pedidos congelados (POS) ---------- */
+.ws-pos-frozen-btn {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 8px 14px; border: 1px solid rgba(56, 189, 248, .35); border-radius: 10px;
+    background: linear-gradient(135deg, rgba(56, 189, 248, .1), rgba(125, 211, 252, .14));
+    color: #0284c7; font-size: .85em; font-weight: 600; font-family: var(--ws-font);
+    cursor: pointer; transition: all .15s; position: relative;
+}
+.ws-pos-frozen-btn:hover { background: linear-gradient(135deg, rgba(56, 189, 248, .18), rgba(125, 211, 252, .22)); border-color: rgba(56, 189, 248, .5); transform: translateY(-1px); }
+.ws-pos-frozen-btn i { font-size: 1em; }
+.ws-pos-frozen-btn .ws-cart-count {
+    position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px;
+    background: linear-gradient(135deg, #0284c7, #38bdf8); color: #fff;
+    border-radius: 50%; font-size: .65rem; padding: 2px 5px; font-weight: 800;
+    box-shadow: 0 2px 6px rgba(2, 132, 199, .4); line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+}
+
+/* Botón congelar en el header del carrito */
+.ws-pos-freeze-btn { color: #0284c7; }
+.ws-pos-freeze-btn:hover { background: rgba(56, 189, 248, .1); border-color: rgba(56, 189, 248, .35); color: #0369a1; }
+.ws-pos-freeze-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+/* Modal congelar / editar */
+.ws-freeze-modal .ws-modal-content { max-width: 580px; }
+.ws-freeze-items { margin-bottom: 16px; }
+.ws-freeze-items h4 { margin: 0 0 10px; font-size: .82em; text-transform: uppercase; letter-spacing: .4px; color: var(--ws-muted); }
+.ws-freeze-edit-item { padding: 10px 0; }
+.ws-freeze-edit-item .ws-item-name { font-size: .88em; }
+.ws-freeze-edit-item .ws-btn-icon { width: 28px; height: 28px; font-size: .78em; }
+.ws-freeze-summary {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 0; border-top: 1px solid var(--ws-border);
+    font-size: .92em; font-weight: 600; color: var(--ws-primary-dark);
+}
+
+/* Modal lista de pedidos congelados */
+.ws-frozen-modal .ws-modal-content { max-width: 620px; }
+.ws-frozen-list { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
+.ws-frozen-item {
+    background: #f8fafc; border: 1px solid var(--ws-border); border-radius: 12px;
+    padding: 14px 16px; transition: border-color .15s;
+}
+.ws-frozen-item:hover { border-color: rgba(56, 189, 248, .35); }
+.ws-frozen-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.ws-frozen-cust { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ws-frozen-cust strong { font-size: .95em; }
+.ws-frozen-cust span { font-size: .8em; color: var(--ws-muted); }
+.ws-frozen-meta { text-align: right; white-space: nowrap; display: flex; flex-direction: column; gap: 2px; }
+.ws-frozen-meta span { font-size: .78em; color: var(--ws-muted); }
+.ws-frozen-meta strong { font-size: .95em; color: var(--ws-primary-dark); }
+.ws-frozen-note {
+    margin-top: 8px; padding: 6px 10px; background: #fff; border-radius: 8px;
+    font-size: .82em; color: var(--ws-muted); border: 1px dashed var(--ws-border);
+}
+.ws-frozen-date { margin-top: 6px; font-size: .76em; color: var(--ws-muted); }
+.ws-frozen-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.ws-frozen-unfreeze {
+    background: linear-gradient(135deg, #f97316, #fb923c) !important; color: #fff !important;
+    border-color: transparent !important; box-shadow: 0 3px 10px rgba(249, 115, 22, .25);
+}
+.ws-frozen-unfreeze:hover { box-shadow: 0 5px 16px rgba(249, 115, 22, .35); transform: translateY(-1px); }
+.ws-frozen-edit { }
+.ws-frozen-delete {
+    background: linear-gradient(135deg, var(--ws-danger), #fb7185) !important; color: #fff !important;
+    border-color: transparent !important; box-shadow: 0 3px 10px rgba(225, 29, 72, .22);
+}
+.ws-frozen-delete:hover { box-shadow: 0 5px 16px rgba(225, 29, 72, .32); transform: translateY(-1px); }
+
+/* Cantidad estática (solo lectura) en edición de congelado */
+.ws-qty-static {
+    width: 38px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: .88em; color: var(--ws-text);
+}
