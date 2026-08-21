@@ -59,6 +59,11 @@ if ( ! empty( $sub_data['is_trial'] ) && $sub_data['trial_days_left'] > 0 && $su
             <div class="ws-pos-header">
                 <h2><?php esc_html_e( 'Punto de Venta', 'workshop' ); ?></h2>
                 <div class="ws-pos-header-actions">
+                    <button class="ws-pos-frozen-btn" @click="showFrozenModal = true" title="<?php esc_attr_e( 'Pedidos congelados', 'workshop' ); ?>">
+                        <i class="fa-solid fa-snowflake"></i>
+                        <span><?php esc_html_e( 'Congelados', 'workshop' ); ?></span>
+                        <span class="ws-cart-count" x-show="frozenOrders.length > 0" x-text="frozenOrders.length"></span>
+                    </button>
                     <?php if ( $can_cash ) : ?><button class="ws-pos-cash-btn" :class="cashOpen ? 'ws-cash-open' : 'ws-cash-closed'" @click="openCashModal()" title="<?php esc_attr_e( 'Abrir / cerrar caja', 'workshop' ); ?>">
                         <i class="fa-solid fa-cash-register"></i>
                         <span x-text="cashOpen ? '<?php esc_html_e( 'Caja abierta', 'workshop' ); ?>' : '<?php esc_html_e( 'Caja cerrada', 'workshop' ); ?>'"></span>
@@ -160,6 +165,9 @@ if ( ! empty( $sub_data['is_trial'] ) && $sub_data['trial_days_left'] > 0 && $su
             <div class="ws-cart-header">
                 <h3><i class="fa-solid fa-shopping-cart"></i><?php esc_html_e( 'Carrito', 'workshop' ); ?></h3>
                 <div class="ws-cart-header-actions">
+                    <button class="ws-btn-icon ws-pos-freeze-btn" @click="freezeCart()" :disabled="cart.length === 0" title="<?php esc_attr_e( 'Congelar pedido', 'workshop' ); ?>">
+                        <i class="fa-solid fa-snowflake"></i>
+                    </button>
                     <button class="ws-btn-icon" @click="openCustomerModal()" title="<?php esc_attr_e( 'Seleccionar cliente', 'workshop' ); ?>">
                         <i class="fa-solid fa-user"></i>
                     </button>
@@ -434,6 +442,118 @@ if ( ! empty( $sub_data['is_trial'] ) && $sub_data['trial_days_left'] > 0 && $su
         </div>
     </div>
 
+    <!-- Modal: congelar / editar pedido congelado -->
+    <div class="ws-modal ws-freeze-modal" x-show="showFreezeModal" x-cloak x-transition @keydown.escape.window="showFreezeModal = false">
+        <div class="ws-modal-content" @click.away="showFreezeModal = false">
+            <div class="ws-modal-header">
+                <h3><i class="fa-solid fa-snowflake"></i> <span x-text="freezeMode === 'edit' ? '<?php esc_html_e( 'Editar pedido congelado', 'workshop' ); ?>' : '<?php esc_html_e( 'Congelar pedido', 'workshop' ); ?>'"></span></h3>
+                <button class="ws-modal-close" @click="showFreezeModal = false">&times;</button>
+            </div>
+            <div class="ws-modal-body">
+                <template x-if="freezeMode === 'edit' && freezeTarget">
+                    <div class="ws-freeze-items">
+                        <h4><?php esc_html_e( 'Productos', 'workshop' ); ?></h4>
+                        <template x-for="(item, i) in freezeTarget.items" :key="i">
+                            <div class="ws-cart-item ws-freeze-edit-item">
+                                <div class="ws-item-info">
+                                    <div class="ws-item-name" x-text="item.product_name"></div>
+                                    <div class="ws-item-price" x-text="formatPrice(item.price)"></div>
+                                </div>
+                                <div class="ws-item-qty">
+                                    <button @click="frozenItemMinus(freezeTarget, i)">-</button>
+                                    <span class="ws-qty-input ws-qty-static" x-text="item.qty"></span>
+                                    <button @click="frozenItemPlus(freezeTarget, i)">+</button>
+                                </div>
+                                <div class="ws-item-total" x-text="formatPrice(item.qty * item.price)"></div>
+                                <button class="ws-btn-icon ws-btn-danger" @click="frozenItemRemove(freezeTarget, i)" title="<?php esc_attr_e( 'Quitar', 'workshop' ); ?>">
+                                    <i class="fa-solid fa-times"></i>
+                                </button>
+                            </div>
+                        </template>
+                        <div class="ws-freeze-summary" x-show="freezeTarget.items.length">
+                            <span><?php esc_html_e( 'Subtotal', 'workshop' ); ?></span>
+                            <strong x-text="formatPrice(frozenTotal(freezeTarget))"></strong>
+                        </div>
+                    </div>
+                </template>
+                <div class="ws-pay-grid">
+                    <div class="ws-pay-field">
+                        <label><?php esc_html_e( 'Nombre', 'workshop' ); ?> <span class="ws-req">*</span></label>
+                        <input type="text" x-model="freezeData.name" placeholder="<?php esc_attr_e( 'Nombre del cliente', 'workshop' ); ?>">
+                    </div>
+                    <div class="ws-pay-field">
+                        <label><?php esc_html_e( 'Carnet / Cédula', 'workshop' ); ?> <span class="ws-req">*</span></label>
+                        <input type="text" x-model="freezeData.doc" placeholder="V-12345678">
+                    </div>
+                    <div class="ws-pay-field">
+                        <label><?php esc_html_e( 'Teléfono', 'workshop' ); ?> <span class="ws-req">*</span></label>
+                        <input type="tel" x-model="freezeData.phone" placeholder="+58 412 123 4567">
+                    </div>
+                    <div class="ws-pay-field">
+                        <label><?php esc_html_e( 'Nota (opcional)', 'workshop' ); ?></label>
+                        <input type="text" x-model="freezeData.note" placeholder="<?php esc_attr_e( 'Observaciones…', 'workshop' ); ?>">
+                    </div>
+                </div>
+            </div>
+            <div class="ws-modal-foot">
+                <button type="button" class="ws-btn ws-btn-secondary" @click="showFreezeModal = false"><?php esc_html_e( 'Cancelar', 'workshop' ); ?></button>
+                <button type="button" class="ws-btn ws-btn-primary" @click="saveFreeze()">
+                    <i class="fa-solid fa-snowflake"></i>
+                    <span x-text="freezeMode === 'edit' ? '<?php esc_html_e( 'Guardar cambios', 'workshop' ); ?>' : '<?php esc_html_e( 'Congelar', 'workshop' ); ?>'"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: lista de pedidos congelados -->
+    <div class="ws-modal ws-frozen-modal" x-show="showFrozenModal" x-cloak x-transition @keydown.escape.window="showFrozenModal = false">
+        <div class="ws-modal-content" @click.away="showFrozenModal = false">
+            <div class="ws-modal-header">
+                <h3><i class="fa-solid fa-snowflake"></i> <?php esc_html_e( 'Pedidos congelados', 'workshop' ); ?> <small class="ws-muted" x-text="'(' + frozenOrders.length + ')'"></small></h3>
+                <button class="ws-modal-close" @click="showFrozenModal = false">&times;</button>
+            </div>
+            <div class="ws-modal-body">
+                <div class="ws-search-box">
+                    <i class="fa-solid fa-search"></i>
+                    <input type="text" x-model="frozenSearch" placeholder="<?php esc_attr_e( 'Buscar por nombre, carnet o teléfono...', 'workshop' ); ?>">
+                </div>
+                <template x-if="filteredFrozen.length === 0">
+                    <div class="ws-empty"><?php esc_html_e( 'No hay pedidos congelados.', 'workshop' ); ?></div>
+                </template>
+                <div class="ws-frozen-list">
+                    <template x-for="f in filteredFrozen" :key="f.id">
+                        <div class="ws-frozen-item">
+                            <div class="ws-frozen-head">
+                                <div class="ws-frozen-cust">
+                                    <strong x-text="f.name"></strong>
+                                    <span x-text="'<?php esc_html_e( 'C.I.', 'workshop' ); ?> ' + f.doc"></span>
+                                    <span x-text="f.phone"></span>
+                                </div>
+                                <div class="ws-frozen-meta">
+                                    <span x-text="frozenItemsCount(f) + ' <?php esc_html_e( 'ítems', 'workshop' ); ?>'"></span>
+                                    <strong x-text="formatPrice(frozenTotal(f))"></strong>
+                                </div>
+                            </div>
+                            <div class="ws-frozen-note" x-show="f.note" x-cloak x-text="'<?php esc_html_e( 'Nota', 'workshop' ); ?>: ' + f.note"></div>
+                            <div class="ws-frozen-date" x-text="frozenDate(f)"></div>
+                            <div class="ws-frozen-actions">
+                                <button class="ws-btn ws-btn-primary ws-btn-sm ws-frozen-unfreeze" @click="unfreezeOrder(f)">
+                                    <i class="fa-solid fa-temperature-high"></i> <?php esc_html_e( 'Descongelar', 'workshop' ); ?>
+                                </button>
+                                <button class="ws-btn ws-btn-secondary ws-btn-sm ws-frozen-edit" @click="editFrozen(f)">
+                                    <i class="fa-solid fa-pen"></i> <?php esc_html_e( 'Editar', 'workshop' ); ?>
+                                </button>
+                                <button class="ws-btn ws-btn-danger ws-btn-sm ws-frozen-delete" @click="deleteFrozen(f)">
+                                    <i class="fa-solid fa-trash"></i> <?php esc_html_e( 'Eliminar', 'workshop' ); ?>
+                                </button>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal: contenido completo de un combo (desde el ojo del card del POS) -->
     <div class="ws-modal" x-show="comboDetail" x-cloak @keydown.escape.window="comboDetail = null">
         <div class="ws-modal-backdrop" @click="comboDetail = null"></div>
@@ -529,10 +649,21 @@ document.addEventListener('alpine:init', () => {
         // Cuadre de inventario del cierre (físico vs. virtual)
         cuadre: [],
         cuadreLoading: false,
+        // Pedidos congelados (cache local): se guardan con nombre, carnet y
+        // teléfono obligatorios; se pueden editar, descongelar o eliminar y
+        // al descongelar vuelven al carrito para seguir agregando o cobrar.
+        frozenOrders: [],
+        showFrozenModal: false,
+        showFreezeModal: false,
+        freezeMode: 'create',          // 'create' | 'edit'
+        freezeTarget: null,            // pedido congelado que se está editando
+        freezeData: { name: '', doc: '', phone: '', note: '' },
+        frozenSearch: '',
 
         init() {
             this.loadLocations();
             this.loadCustomers();
+            this.loadFrozen();
         },
 
         // Abre el carrito con la misma lógica que el carrito de compra de la
@@ -953,6 +1084,194 @@ document.addEventListener('alpine:init', () => {
 
         calculateTotal() {
             // El total se recalcula con el getter; solo se conserva por compatibilidad.
+        },
+
+        /* ---------- Pedidos congelados ---------- */
+
+        loadFrozen() {
+            try {
+                const raw = localStorage.getItem('ws_pos_frozen_v1');
+                this.frozenOrders = raw ? (JSON.parse(raw) || []) : [];
+            } catch (e) { this.frozenOrders = []; }
+        },
+        saveFrozenStore() {
+            try { localStorage.setItem('ws_pos_frozen_v1', JSON.stringify(this.frozenOrders)); } catch (e) {}
+        },
+        get frozenCount() { return this.frozenOrders.length; },
+        frozenItemsCount(f) { return (f.items || []).reduce((a, i) => a + (Number(i.qty) || 0), 0); },
+        frozenSubtotal(f) { return (f.items || []).reduce((a, i) => a + (Number(i.qty) || 0) * (Number(i.price) || 0), 0); },
+        frozenTotal(f) { return this.frozenSubtotal(f) - (Number(f.discount) || 0); },
+        get filteredFrozen() {
+            if (!this.frozenSearch) return this.frozenOrders;
+            const q = this.frozenSearch.toLowerCase();
+            return this.frozenOrders.filter(f =>
+                (f.name || '').toLowerCase().includes(q) ||
+                (f.doc || '').toLowerCase().includes(q) ||
+                (f.phone || '').toLowerCase().includes(q)
+            );
+        },
+        frozenDate(f) {
+            try { return new Date(f.created_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch (e) { return f.created_at || ''; }
+        },
+
+        // Abre el modal de congelar con los datos del cliente prefijados si ya
+        // se escribieron en el pago (o se eligió un cliente).
+        freezeCart() {
+            if (!this.cart.length) {
+                Swal.fire({ icon: 'warning', title: '<?php esc_html_e( 'Carrito vacío', 'workshop' ); ?>', text: '<?php esc_html_e( 'Agrega productos antes de congelar el pedido.', 'workshop' ); ?>' });
+                return;
+            }
+            this.freezeMode = 'create';
+            this.freezeTarget = null;
+            this.freezeData = {
+                name: this.payCustomerName || (this.customer ? this.customer.name : '') || '',
+                doc: this.payCustomerDoc || '',
+                phone: this.payCustomerPhone || (this.customer ? this.customer.phone : '') || '',
+                note: ''
+            };
+            this.showFreezeModal = true;
+        },
+
+        // Abre el modal de edición de un pedido congelado (datos + ítems).
+        editFrozen(f) {
+            this.freezeMode = 'edit';
+            this.freezeTarget = f;
+            this.freezeData = { name: f.name || '', doc: f.doc || '', phone: f.phone || '', note: f.note || '' };
+            this.showFrozenModal = false;
+            this.showFreezeModal = true;
+        },
+
+        // Guarda el pedido congelado (nuevo) o los cambios (edición). El nombre,
+        // el carnet/cédula y el teléfono son obligatorios en ambos casos.
+        saveFreeze() {
+            const name = (this.freezeData.name || '').trim();
+            const doc = (this.freezeData.doc || '').trim();
+            const phone = (this.freezeData.phone || '').trim();
+            if (!name || !doc || !phone) {
+                Swal.fire({ icon: 'warning', title: '<?php esc_html_e( 'Datos incompletos', 'workshop' ); ?>', text: '<?php esc_html_e( 'El nombre, el carnet/cédula y el teléfono son obligatorios.', 'workshop' ); ?>' });
+                return;
+            }
+            // Modo edición: actualiza los datos y recalcula los totales.
+            if (this.freezeMode === 'edit' && this.freezeTarget) {
+                const f = this.freezeTarget;
+                f.name = name;
+                f.doc = doc;
+                f.phone = phone;
+                f.note = (this.freezeData.note || '').trim();
+                f.subtotal = this.frozenSubtotal(f);
+                f.total = this.frozenTotal(f);
+                this.saveFrozenStore();
+                this.showFreezeModal = false;
+                Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: '<?php esc_html_e( 'Pedido actualizado', 'workshop' ); ?>', showConfirmButton: false, timer: 2000 });
+                return;
+            }
+            if (!this.cart.length) {
+                Swal.fire({ icon: 'warning', title: '<?php esc_html_e( 'Carrito vacío', 'workshop' ); ?>', text: '<?php esc_html_e( 'Agrega productos antes de congelar el pedido.', 'workshop' ); ?>' });
+                return;
+            }
+            const frozen = {
+                id: 'f_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+                name, doc, phone,
+                note: (this.freezeData.note || '').trim(),
+                location_id: this.currentLocationId,
+                location_name: this.currentLocationName,
+                items: this.cart.map(i => ({
+                    product_id: i.product_id,
+                    combo_id: i.combo_id || 0,
+                    product_name: i.product_name,
+                    price: i.price,
+                    cost_price: i.cost_price || 0,
+                    qty: i.qty,
+                    stock: i.stock
+                })),
+                subtotal: this.subtotal,
+                discount: this.discount,
+                total: this.total,
+                created_at: new Date().toISOString()
+            };
+            this.frozenOrders.unshift(frozen);
+            this.saveFrozenStore();
+            this.showFreezeModal = false;
+            this.clearCart();
+            this.freezeData = { name: '', doc: '', phone: '', note: '' };
+            Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: '<?php esc_html_e( 'Pedido congelado', 'workshop' ); ?>', text: name + ' · ' + this.frozenItemsCount(frozen) + ' <?php esc_html_e( 'ítems', 'workshop' ); ?>', showConfirmButton: false, timer: 2500 });
+        },
+
+        // Descongela: vuelve a poner los ítems en el carrito (con el stock
+        // disponible), prellena los datos del cliente en el pago y elimina la
+        // entrada congelada para seguir agregando o cobrar.
+        unfreezeOrder(f) {
+            let added = 0;
+            (f.items || []).forEach((it) => {
+                const p = this.products.find((x) => String(x.id) === String(it.product_id) || (Number(it.combo_id) > 0 && Number(x.combo_id) === Number(it.combo_id)));
+                if (!p || !(Number(p.stock) > 0)) return;
+                const qty = Math.min(Math.max(1, Math.floor(Number(it.qty) || 1)), Number(p.stock));
+                const existing = this.cart.find((c) => String(c.product_id) === String(p.id));
+                if (existing) {
+                    existing.qty = Math.min((Number(existing.qty) || 0) + qty, Number(p.stock));
+                } else {
+                    this.cart.push({ product_id: p.id, combo_id: p.combo_id || 0, product_name: p.name, price: p.sale_price, cost_price: p.cost_price || 0, qty: qty, stock: p.stock });
+                }
+                added++;
+            });
+            if (!added) {
+                Swal.fire({ icon: 'warning', title: '<?php esc_html_e( 'No se pudo descongelar', 'workshop' ); ?>', text: '<?php esc_html_e( 'Los productos de ese pedido no están disponibles en esta ubicación.', 'workshop' ); ?>' });
+                return;
+            }
+            this.discount = Number(f.discount) || 0;
+            this.payCustomerName = f.name || '';
+            this.payCustomerDoc = f.doc || '';
+            this.payCustomerPhone = f.phone || '';
+            this.removeFrozen(f.id);
+            this.showFrozenModal = false;
+            Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: '<?php esc_html_e( 'Pedido descongelado: revisa el carrito y cobra', 'workshop' ); ?>', showConfirmButton: false, timer: 2500 });
+        },
+
+        removeFrozen(id) {
+            this.frozenOrders = this.frozenOrders.filter(f => f.id !== id);
+            this.saveFrozenStore();
+        },
+
+        deleteFrozen(f) {
+            Swal.fire({
+                icon: 'warning',
+                title: '<?php esc_html_e( '¿Eliminar pedido congelado?', 'workshop' ); ?>',
+                text: '<?php esc_html_e( 'Se borrará el pedido de', 'workshop' ); ?> ' + (f.name || '') + '. <?php esc_html_e( 'No podrás recuperarlo.', 'workshop' ); ?>',
+                showCancelButton: true,
+                confirmButtonText: '<?php esc_html_e( 'Eliminar', 'workshop' ); ?>',
+                cancelButtonText: '<?php esc_html_e( 'Cancelar', 'workshop' ); ?>',
+                confirmButtonColor: '#dc2626'
+            }).then((res) => {
+                if (res.isConfirmed) {
+                    this.removeFrozen(f.id);
+                    Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: '<?php esc_html_e( 'Pedido eliminado', 'workshop' ); ?>', showConfirmButton: false, timer: 1500 });
+                }
+            });
+        },
+
+        // Edición de ítems dentro del modal de editar congelado.
+        frozenItemPlus(f, i) {
+            const it = f.items[i];
+            if (!it) return;
+            const p = this.products.find((x) => String(x.id) === String(it.product_id) || (Number(it.combo_id) > 0 && Number(x.combo_id) === Number(it.combo_id)));
+            const max = p ? Math.floor(Number(p.stock) || 0) : 0;
+            it.qty = Math.min((Number(it.qty) || 1) + 1, max || 9999);
+            f.subtotal = this.frozenSubtotal(f);
+            f.total = this.frozenTotal(f);
+        },
+        frozenItemMinus(f, i) {
+            const it = f.items[i];
+            if (!it) return;
+            if ((Number(it.qty) || 1) <= 1) { this.frozenItemRemove(f, i); return; }
+            it.qty = (Number(it.qty) || 1) - 1;
+            f.subtotal = this.frozenSubtotal(f);
+            f.total = this.frozenTotal(f);
+        },
+        frozenItemRemove(f, i) {
+            f.items.splice(i, 1);
+            f.subtotal = this.frozenSubtotal(f);
+            f.total = this.frozenTotal(f);
+            if (!f.items.length) { this.removeFrozen(f.id); this.showFreezeModal = false; }
         },
 
         openCustomerModal() {
