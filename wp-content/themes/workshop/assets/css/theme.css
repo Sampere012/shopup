@@ -1120,7 +1120,8 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-combo-actions { display: flex; gap: 6px; margin-top: 2px; }
 /* Línea 'Contiene:' en las cards de la tienda para combos. */
 .ws-store-combo-items { margin-top: 4px; }
-.ws-store-modal-info .ws-store-combo-items { margin: 6px 0 10px; }
+.ws-store-modal-info .ws-store-combo-items { margin: 6px 0 10px; flex-direction: column; align-items: flex-start; }
+.ws-store-modal-info .ws-store-combo-items .ws-combo-chip { flex: 0 1 auto; }
 .ws-reports-currency {
     display: inline-flex; align-items: center; gap: 7px;
     background: #eef2ff; color: var(--ws-primary-dark); border: 1px solid rgba(79, 70, 229, .22);
@@ -2619,6 +2620,38 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-pos-cash-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(15, 23, 42, .12); }
 .ws-pos-cash-btn.ws-cash-open { background: #d1fae5; color: #065f46; }
 .ws-pos-cash-btn.ws-cash-closed { background: #fee2e2; color: #991b1b; }
+
+/* ---------- Pedidos congelados del POS ---------- */
+.ws-pos-frozen-btn {
+    position: relative; display: inline-flex; align-items: center; gap: 8px; padding: 9px 14px;
+    border-radius: 10px; border: none; font-size: .85em; font-weight: 700; font-family: inherit;
+    cursor: pointer; background: #e0e7ff; color: #3730a3;
+    transition: transform .15s, box-shadow .15s;
+}
+.ws-pos-frozen-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(15, 23, 42, .12); }
+.ws-pos-frozen-btn .ws-cart-count {
+    position: static; display: inline-flex; min-width: 18px; height: 18px; padding: 0 5px;
+    align-items: center; justify-content: center; font-size: .7rem; background: var(--ws-primary); color: #fff;
+}
+.ws-pos-freeze-btn[disabled] { opacity: .45; cursor: not-allowed; }
+.ws-freeze-items { border: 1px solid var(--ws-border); border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; }
+.ws-freeze-items h4 { margin: 0 0 10px; font-size: .95em; }
+.ws-freeze-edit-item { border: none; border-radius: 8px; padding: 6px 0; }
+.ws-qty-static { display: inline-flex; align-items: center; justify-content: center; min-width: 32px; }
+.ws-freeze-summary { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--ws-border); font-weight: 700; }
+.ws-frozen-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; max-height: 50vh; overflow-y: auto; }
+.ws-frozen-item { border: 1px solid var(--ws-border); border-radius: 12px; padding: 12px 14px; background: #f8fafc; }
+.ws-frozen-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.ws-frozen-cust { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ws-frozen-cust strong { font-size: .98em; color: var(--ws-text); }
+.ws-frozen-cust span { color: var(--ws-muted); font-size: .85em; }
+.ws-frozen-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex-shrink: 0; }
+.ws-frozen-meta span { color: var(--ws-muted); font-size: .85em; }
+.ws-frozen-meta strong { color: var(--ws-primary-dark); font-size: 1em; }
+.ws-frozen-note { margin-top: 8px; padding: 6px 10px; background: #fef9c3; border: 1px solid #fde68a; border-radius: 8px; font-size: .85em; color: #854d0e; }
+.ws-frozen-date { margin-top: 8px; font-size: .8em; color: var(--ws-muted); }
+.ws-frozen-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.ws-frozen-actions .ws-btn { flex: 1 1 auto; white-space: nowrap; }
 .ws-cash-info { display: grid; gap: 6px; padding: 12px 14px; background: #f8fafc; border: 1px solid var(--ws-border); border-radius: 10px; margin-bottom: 14px; font-size: .9em; }
 .ws-cash-info span { color: var(--ws-muted); }
 .ws-modal-cash { max-width: 480px; }
