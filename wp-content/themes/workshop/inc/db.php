@@ -1400,4 +1400,25 @@ function ws_db_migrate() {
         }
         update_option( 'ws_location_links_directed', 1, false );
     }
+
+    // ---------- Clientes: campo doc (carnet / cédula) ----------
+    $ws_cust_suffixes = array( '' );
+    if ( class_exists( 'WS_Business' ) && $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', WS_Business::table() ) ) === WS_Business::table() ) {
+        foreach ( WS_Business::all() as $ws_cust_biz ) {
+            $cust_slug = (string) ( $ws_cust_biz->slug ?? '' );
+            if ( '' !== $cust_slug ) {
+                $ws_cust_suffixes[] = ws_biz_table_suffix( $cust_slug );
+            }
+        }
+    }
+    foreach ( $ws_cust_suffixes as $ws_cust_suffix ) {
+        $ct = ws_table_for( $ws_cust_suffix, 'customers' );
+        if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $ct ) ) !== $ct ) {
+            continue;
+        }
+        $ccols = $wpdb->get_col( "SHOW COLUMN FROM {$ct}", 0 );
+        if ( ! in_array( 'doc', $ccols, true ) ) {
+            $wpdb->query( "ALTER TABLE {$ct} ADD COLUMN doc VARCHAR(60) NOT NULL DEFAULT '' AFTER phone" );
+        }
+    }
 }

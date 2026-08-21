@@ -2981,6 +2981,8 @@ ul.ws-topbar-nav { list-style: none; margin: 0 auto; padding: 0; }
 
 /* Modal congelar / editar */
 .ws-freeze-modal .ws-modal-content { max-width: 580px; }
+.ws-freeze-modal .ws-modal-body { padding: 28px 30px; }
+.ws-freeze-modal .ws-modal-foot { padding: 16px 30px 24px; }
 .ws-freeze-items { margin-bottom: 16px; }
 .ws-freeze-items h4 { margin: 0 0 10px; font-size: .82em; text-transform: uppercase; letter-spacing: .4px; color: var(--ws-muted); }
 .ws-freeze-edit-item { padding: 10px 0; }

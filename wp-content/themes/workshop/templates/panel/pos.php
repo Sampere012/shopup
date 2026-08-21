@@ -338,7 +338,7 @@ if ( ! empty( $sub_data['is_trial'] ) && $sub_data['trial_days_left'] > 0 && $su
                     <template x-for="customer in filteredCustomers" :key="customer.id">
                         <div class="ws-customer-option" @click="selectCustomer(customer)">
                             <div class="ws-customer-name" x-text="customer.name"></div>
-                            <div class="ws-customer-email" x-text="customer.phone || customer.email || ''"></div>
+                            <div class="ws-customer-email" x-text="(customer.doc ? customer.doc + ' · ' : '') + (customer.phone || '')"></div>
                         </div>
                     </template>
                     <template x-if="filteredCustomers.length === 0">
@@ -486,9 +486,9 @@ if ( ! empty( $sub_data['is_trial'] ) && $sub_data['trial_days_left'] > 0 && $su
                         <label><?php esc_html_e( 'Teléfono', 'workshop' ); ?> <span class="ws-req">*</span></label>
                         <input type="tel" x-model="freezeData.phone" placeholder="+58 412 123 4567">
                     </div>
-                    <div class="ws-pay-field">
-                        <label><?php esc_html_e( 'Nota (opcional)', 'workshop' ); ?></label>
-                        <input type="text" x-model="freezeData.note" placeholder="<?php esc_attr_e( 'Observaciones…', 'workshop' ); ?>">
+                    <div class="ws-pay-field" style="grid-column: 1 / -1;">
+                        <label><?php esc_html_e( 'Dirección', 'workshop' ); ?></label>
+                        <input type="text" x-model="freezeData.address" placeholder="<?php esc_attr_e( 'Dirección del cliente', 'workshop' ); ?>">
                     </div>
                 </div>
             </div>
@@ -531,7 +531,7 @@ if ( ! empty( $sub_data['is_trial'] ) && $sub_data['trial_days_left'] > 0 && $su
                                     <strong x-text="formatPrice(frozenTotal(f))"></strong>
                                 </div>
                             </div>
-                            <div class="ws-frozen-note" x-show="f.note" x-cloak x-text="'<?php esc_html_e( 'Nota', 'workshop' ); ?>: ' + f.note"></div>
+                            <div class="ws-frozen-note" x-show="f.address" x-cloak x-text="'<?php esc_html_e( 'Dirección', 'workshop' ); ?>: ' + f.address"></div>
                             <div class="ws-frozen-date" x-text="frozenDate(f)"></div>
                             <div class="ws-frozen-actions">
                                 <button class="ws-btn ws-btn-primary ws-btn-sm ws-frozen-unfreeze" @click="unfreezeOrder(f)">
@@ -899,8 +899,9 @@ document.addEventListener('alpine:init', () => {
             const query = this.customerSearch.toLowerCase();
             return this.customers.filter(c =>
                 c.name.toLowerCase().includes(query) ||
-                (c.email || '').toLowerCase().includes(query) ||
-                (c.phone || '').includes(query)
+                (c.doc || '').toLowerCase().includes(query) ||
+                (c.phone || '').includes(query) ||
+                (c.address || '').toLowerCase().includes(query)
             );
         },
 
@@ -1124,7 +1125,7 @@ document.addEventListener('alpine:init', () => {
                 name: this.payCustomerName || (this.customer ? this.customer.name : '') || '',
                 doc: this.payCustomerDoc || '',
                 phone: this.payCustomerPhone || (this.customer ? this.customer.phone : '') || '',
-                note: ''
+                address: (this.customer ? this.customer.address : '') || ''
             };
             this.showFreezeModal = true;
         },
@@ -1133,7 +1134,7 @@ document.addEventListener('alpine:init', () => {
         editFrozen(f) {
             this.freezeMode = 'edit';
             this.freezeTarget = f;
-            this.freezeData = { name: f.name || '', doc: f.doc || '', phone: f.phone || '', note: f.note || '' };
+            this.freezeData = { name: f.name || '', doc: f.doc || '', phone: f.phone || '', address: f.address || '' };
             this.showFrozenModal = false;
             this.showFreezeModal = true;
         },
@@ -1154,7 +1155,7 @@ document.addEventListener('alpine:init', () => {
                 f.name = name;
                 f.doc = doc;
                 f.phone = phone;
-                f.note = (this.freezeData.note || '').trim();
+                f.address = (this.freezeData.address || '').trim();
                 f.subtotal = this.frozenSubtotal(f);
                 f.total = this.frozenTotal(f);
                 this.saveFrozenStore();
@@ -1169,7 +1170,7 @@ document.addEventListener('alpine:init', () => {
             const frozen = {
                 id: 'f_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
                 name, doc, phone,
-                note: (this.freezeData.note || '').trim(),
+                address: (this.freezeData.address || '').trim(),
                 location_id: this.currentLocationId,
                 location_name: this.currentLocationName,
                 items: this.cart.map(i => ({
@@ -1190,7 +1191,7 @@ document.addEventListener('alpine:init', () => {
             this.saveFrozenStore();
             this.showFreezeModal = false;
             this.clearCart();
-            this.freezeData = { name: '', doc: '', phone: '', note: '' };
+            this.freezeData = { name: '', doc: '', phone: '', address: '' };
             Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: '<?php esc_html_e( 'Pedido congelado', 'workshop' ); ?>', text: name + ' · ' + this.frozenItemsCount(frozen) + ' <?php esc_html_e( 'ítems', 'workshop' ); ?>', showConfirmButton: false, timer: 2500 });
         },
 
@@ -1281,6 +1282,7 @@ document.addEventListener('alpine:init', () => {
             this.showCustomerModal = false;
             // Rellenar datos de transferencia si aún no se escribieron.
             if (!this.payCustomerName.trim()) this.payCustomerName = customer.name || '';
+            if (!this.payCustomerDoc.trim()) this.payCustomerDoc = customer.doc || '';
             if (!this.payCustomerPhone.trim()) this.payCustomerPhone = customer.phone || '';
         },
 

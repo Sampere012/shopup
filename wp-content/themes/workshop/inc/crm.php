@@ -41,7 +41,7 @@ class WS_CRM {
         $where = array( '1=1' );
         if ( ! empty( $args['search'] ) ) {
             $like = '%' . $wpdb->esc_like( $args['search'] ) . '%';
-            $where[] = $wpdb->prepare( "(name LIKE %s OR email LIKE %s OR phone LIKE %s)", $like, $like, $like );
+            $where[] = $wpdb->prepare( "(name LIKE %s OR doc LIKE %s OR phone LIKE %s OR address LIKE %s)", $like, $like, $like, $like );
         }
         if ( ! empty( $args['status'] ) ) {
             if ( 'active' === $args['status'] ) {
@@ -61,8 +61,8 @@ class WS_CRM {
 
     protected static function customers_orderby( $key = '', $dir = 'ASC' ) {
         $map = array(
-            'name' => 'name', 'email' => 'email', 'phone' => 'phone',
-            'city' => 'city', 'loyalty_points' => 'loyalty_points',
+            'name' => 'name', 'doc' => 'doc', 'phone' => 'phone',
+            'address' => 'address', 'loyalty_points' => 'loyalty_points',
             'total_spent' => 'total_spent', 'orders_count' => 'orders_count',
             'created_at' => 'created_at',
         );
@@ -99,21 +99,17 @@ class WS_CRM {
         $table = self::table( 'customers' );
         
         $fields = array(
-            'name' => sanitize_text_field( $data['name'] ?? '' ),
-            'email' => sanitize_email( $data['email'] ?? '' ),
-            'phone' => sanitize_text_field( $data['phone'] ?? '' ),
+            'name'    => sanitize_text_field( $data['name'] ?? '' ),
+            'phone'   => sanitize_text_field( $data['phone'] ?? '' ),
+            'doc'     => sanitize_text_field( $data['doc'] ?? '' ),
             'address' => sanitize_textarea_field( $data['address'] ?? '' ),
-            'city' => sanitize_text_field( $data['city'] ?? '' ),
-            'province' => sanitize_text_field( $data['province'] ?? '' ),
-            'postal_code' => sanitize_text_field( $data['postal_code'] ?? '' ),
-            'notes' => sanitize_textarea_field( $data['notes'] ?? '' ),
         );
 
         if ( $id ) {
             if ( isset( $data['active'] ) ) {
                 $fields['active'] = (int) ( $data['active'] ? 1 : 0 );
             }
-            $formats = array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' );
+            $formats = array( '%s', '%s', '%s', '%s' );
             if ( isset( $fields['active'] ) ) {
                 $formats[] = '%d';
             }
@@ -124,7 +120,7 @@ class WS_CRM {
             $fields['loyalty_points'] = 0;
             $fields['total_spent'] = 0;
             $fields['orders_count'] = 0;
-            $wpdb->insert( $table, $fields, array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%f', '%d' ) );
+            $wpdb->insert( $table, $fields, array( '%s', '%s', '%s', '%s', '%d', '%d', '%f', '%d' ) );
             return $wpdb->insert_id;
         }
     }

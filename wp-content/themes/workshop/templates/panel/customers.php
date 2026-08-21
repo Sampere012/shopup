@@ -48,9 +48,9 @@ $can_delete = ws_can( 'customers_delete' );
             <thead>
                 <tr>
                     <th><?php esc_html_e( 'Nombre', 'workshop' ); ?></th>
-                    <th><?php esc_html_e( 'Email', 'workshop' ); ?></th>
+                    <th><?php esc_html_e( 'Carnet / Cédula', 'workshop' ); ?></th>
                     <th><?php esc_html_e( 'Teléfono', 'workshop' ); ?></th>
-                    <th><?php esc_html_e( 'Ciudad', 'workshop' ); ?></th>
+                    <th><?php esc_html_e( 'Dirección', 'workshop' ); ?></th>
                     <th><?php esc_html_e( 'Puntos', 'workshop' ); ?></th>
                     <th><?php esc_html_e( 'Total Compras', 'workshop' ); ?></th>
                     <th><?php esc_html_e( 'Acciones', 'workshop' ); ?></th>
@@ -59,7 +59,7 @@ $can_delete = ws_can( 'customers_delete' );
             <tbody>
                 <template x-if="loading">
                     <tr>
-                        <td colspan="7" class="ws-text-center">
+                        <td colspan="6" class="ws-text-center">
                             <i class="fa-solid fa-spinner fa-spin"></i>
                             <?php esc_html_e( 'Cargando...', 'workshop' ); ?>
                         </td>
@@ -67,7 +67,7 @@ $can_delete = ws_can( 'customers_delete' );
                 </template>
                 <template x-if="!loading && customers.length === 0">
                     <tr>
-                        <td colspan="7" class="ws-text-center">
+                        <td colspan="6" class="ws-text-center">
                             <?php esc_html_e( 'No hay clientes registrados', 'workshop' ); ?>
                         </td>
                     </tr>
@@ -77,9 +77,9 @@ $can_delete = ws_can( 'customers_delete' );
                         <td>
                             <div class="ws-customer-name" x-text="customer.name"></div>
                         </td>
-                        <td x-text="customer.email || '-'"></td>
+                        <td x-text="customer.doc || '-'"></td>
                         <td x-text="customer.phone || '-'"></td>
-                        <td x-text="customer.city || '-'"></td>
+                        <td x-text="customer.address || '-'"></td>
                         <td>
                             <span class="ws-badge ws-badge-success" x-text="customer.points || 0"></span>
                         </td>
@@ -132,33 +132,17 @@ $can_delete = ws_can( 'customers_delete' );
                             <input type="text" x-model="form.name" required>
                         </div>
                         <div class="ws-form-group">
-                            <label><?php esc_html_e( 'Email', 'workshop' ); ?></label>
-                            <input type="email" x-model="form.email">
+                            <label><?php esc_html_e( 'Carnet / Cédula', 'workshop' ); ?></label>
+                            <input type="text" x-model="form.doc" placeholder="V-12345678">
                         </div>
                         <div class="ws-form-group">
                             <label><?php esc_html_e( 'Teléfono', 'workshop' ); ?></label>
                             <input type="tel" x-model="form.phone">
                         </div>
-                        <div class="ws-form-group">
-                            <label><?php esc_html_e( 'Ciudad', 'workshop' ); ?></label>
-                            <input type="text" x-model="form.city">
-                        </div>
-                        <div class="ws-form-group">
-                            <label><?php esc_html_e( 'Provincia', 'workshop' ); ?></label>
-                            <input type="text" x-model="form.province">
-                        </div>
-                        <div class="ws-form-group">
-                            <label><?php esc_html_e( 'Código Postal', 'workshop' ); ?></label>
-                            <input type="text" x-model="form.postal_code">
-                        </div>
                     </div>
                     <div class="ws-form-group">
                         <label><?php esc_html_e( 'Dirección', 'workshop' ); ?></label>
                         <textarea x-model="form.address" rows="3"></textarea>
-                    </div>
-                    <div class="ws-form-group">
-                        <label><?php esc_html_e( 'Notas', 'workshop' ); ?></label>
-                        <textarea x-model="form.notes" rows="3"></textarea>
                     </div>
                     <div class="ws-modal-footer">
                         <button type="button" class="ws-btn ws-btn-secondary" @click="showModal = false">
@@ -192,17 +176,12 @@ document.addEventListener('alpine:init', () => {
         editingCustomer: null,
         search: '',
         filterStatus: '',
-        searchTimeout: null,
-        form: {
+        searchTimeout: null,        form: {
             id: 0,
             name: '',
-            email: '',
             phone: '',
-            address: '',
-            city: '',
-            province: '',
-            postal_code: '',
-            notes: ''
+            doc: '',
+            address: ''
         },
 
         init() {
@@ -294,17 +273,12 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
-        resetForm() {
-            this.form = {
+        resetForm() {            this.form = {
                 id: 0,
                 name: '',
-                email: '',
                 phone: '',
-                address: '',
-                city: '',
-                province: '',
-                postal_code: '',
-                notes: ''
+                doc: '',
+                address: ''
             };
             this.editingCustomer = null;
         },

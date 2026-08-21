@@ -2817,9 +2817,28 @@ function ws_ajax_save_worker() {
     }
     $user->add_role( $role );
     update_user_meta( $user_id, 'ws_business_id', ws_current_business_id() );
-    WS_CRUD::set_worker_locations( $user_id, (array) ( $_POST['locations'] ?? array() ) );
+    WS_CRUD::set_worker_locations( $user_id, ws_locations_from_request() );
     ws_log_audit( 'worker_update', 'user', $user_id, array( 'role' => $role ) );
     wp_send_json_success();
+}
+
+/**
+ * Ubicaciones enviadas por la app móvil o la web. La app las manda como
+ * string JSON ('["1","3"]', porque usa form-urlencoded con JSON.stringify);
+ * la web las manda como locations[] repetidos. Antes solo se aceptaba el
+ * array y el cast (array) sobre el string JSON producía [0]: las ubicaciones
+ * del trabajador se borraban y no se guardaba nada.
+ */
+function ws_locations_from_request( $key = 'locations' ) {
+    $raw = $_POST[ $key ] ?? array();
+    if ( is_string( $raw ) ) {
+        $decoded = json_decode( wp_unslash( $raw ), true );
+        $raw     = is_array( $decoded ) ? $decoded : array();
+    }
+    if ( ! is_array( $raw ) ) {
+        return array();
+    }
+    return array_values( array_filter( array_map( 'intval', $raw ) ) );
 }
 
 add_action( 'wp_ajax_ws_save_worker_user', 'ws_ajax_save_worker_user' );
@@ -2859,7 +2878,7 @@ function ws_ajax_save_worker_user() {
         wp_send_json_error( array( 'msg' => $user_id->get_error_message() ) );
     }
     update_user_meta( $user_id, 'ws_business_id', ws_current_business_id() );
-    WS_CRUD::set_worker_locations( $user_id, (array) ( $_POST['locations'] ?? array() ) );
+    WS_CRUD::set_worker_locations( $user_id, ws_locations_from_request() );
     ws_log_audit( 'worker_create', 'user', $user_id, array( 'role' => $role ) );
     wp_send_json_success( array( 'id' => $user_id ) );
 }
@@ -2951,7 +2970,7 @@ function ws_ajax_update_worker() {
     }
     $user->add_role( $role );
     update_user_meta( $user_id, 'ws_business_id', ws_current_business_id() );
-    WS_CRUD::set_worker_locations( $user_id, (array) ( $_POST['locations'] ?? array() ) );
+    WS_CRUD::set_worker_locations( $user_id, ws_locations_from_request() );
     ws_log_audit( 'worker_update', 'user', $user_id, array( 'role' => $role ) );
     wp_send_json_success();
 }
@@ -3726,13 +3745,9 @@ function ws_ajax_customers_get() {
         $out[] = array(
             'id'           => (int) $c->id,
             'name'         => $c->name,
-            'email'        => $c->email,
             'phone'        => $c->phone,
+            'doc'          => $c->doc ?? '',
             'address'      => $c->address,
-            'city'         => $c->city,
-            'province'     => $c->province,
-            'postal_code'  => $c->postal_code,
-            'notes'        => $c->notes,
             'points'       => (int) $c->loyalty_points,
             'total_spent'  => (float) $c->total_spent,
             'orders_count' => (int) $c->orders_count,
@@ -3749,14 +3764,10 @@ function ws_ajax_customers_save() {
 
     $id = (int) ( $_POST['id'] ?? 0 );
     $data = array(
-        'name' => sanitize_text_field( $_POST['name'] ?? '' ),
-        'email' => sanitize_email( $_POST['email'] ?? '' ),
-        'phone' => sanitize_text_field( $_POST['phone'] ?? '' ),
+        'name'    => sanitize_text_field( $_POST['name'] ?? '' ),
+        'phone'   => sanitize_text_field( $_POST['phone'] ?? '' ),
+        'doc'     => sanitize_text_field( $_POST['doc'] ?? '' ),
         'address' => sanitize_textarea_field( $_POST['address'] ?? '' ),
-        'city' => sanitize_text_field( $_POST['city'] ?? '' ),
-        'province' => sanitize_text_field( $_POST['province'] ?? '' ),
-        'postal_code' => sanitize_text_field( $_POST['postal_code'] ?? '' ),
-        'notes' => sanitize_textarea_field( $_POST['notes'] ?? '' ),
     );
 
     if ( ! $data['name'] ) {
