@@ -248,9 +248,6 @@ if ( ! empty( $sub_data['is_trial'] ) && $sub_data['trial_days_left'] > 0 && $su
                     <button type="button" class="ws-pay-tab" :class="{ 'is-active': paymentMode === 'both' }" @click="setPaymentMode('both')">
                         <i class="fa-solid fa-money-bill-transfer"></i><?php esc_html_e( 'Ambos', 'workshop' ); ?>
                     </button>
-                    <button type="button" class="ws-pay-tab" :class="{ 'is-active': paymentMode === 'card' }" @click="setPaymentMode('card')">
-                        <i class="fa-solid fa-credit-card"></i><?php esc_html_e( 'Tarjeta', 'workshop' ); ?>
-                    </button>
                 </div>
 
                 <!-- Efectivo: monto recibido + vuelto -->
@@ -671,10 +668,10 @@ document.addEventListener('alpine:init', () => {
         // desktop el carrito ya es la columna visible, así que solo lleva la
         // vista hasta él con scroll suave (sin activar el backdrop).
         toggleCart() {
-            // El drawer del carrito solo existe en la media query ≤520px del CSS;
+            // El drawer del carrito solo existe en la media query ≤1024px del CSS;
             // usar matchMedia garantiza que el umbral coincida siempre (en
-            // 521-768px el carrito sigue siendo columna, no hay drawer).
-            if (window.matchMedia('(max-width: 520px)').matches) {
+            // desktop (>1024px) el carrito es columna visible, no hay drawer).
+            if (window.matchMedia('(max-width: 1024px)').matches) {
                 this.cartOpen = true;
                 return;
             }
