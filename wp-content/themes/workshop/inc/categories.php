@@ -233,22 +233,33 @@ function ws_categories_payload() {
 add_action( 'wp_ajax_ws_categories_list', 'ws_ajax_categories_list' );
 function ws_ajax_categories_list() {
     ws_guard( 'categories_manage' );
-    $out = array();
-    foreach ( WS_Categories::all() as $c ) {
-        $out[] = array(
-            'id'         => (int) $c->id,
-            'parent_id'  => (int) $c->parent_id,
-            'name'       => (string) $c->name,
-            'slug'       => (string) $c->slug,
-            'active'     => (int) $c->active,
-            'sort_order' => (int) $c->sort_order,
-            'path'       => WS_Categories::path_text( (int) $c->id ),
-            'children'   => count( WS_Categories::children( (int) $c->id ) ),
-            'products'   => (int) WS_Categories::products_count( (int) $c->id ),
-        );
-    }
+    // El cliente necesita la lista en ORDEN DE ÁRBOL (padres antes que hijos,
+    // alfabético dentro de cada nivel) para poder renderizar el acordeón sin
+    // salirse de orden: un hijo no debe aparecer antes que su categoría madre.
+    // Misma lógica que la plantilla del panel (templates/panel/categories.php).
+    $out         = array();
+    $all         = array(); // array_index ($k) → fila, para profundidad/referencias
+    $ws_build    = null;
+    $ws_build    = static function ( $parent ) use ( &$ws_build, &$all ) {
+        foreach ( WS_Categories::children( $parent ) as $c ) {
+            $cid = (int) $c->id;
+            $all[ $cid ] = array(
+                'id'         => $cid,
+                'parent_id'  => (int) $c->parent_id,
+                'name'       => (string) $c->name,
+                'slug'       => (string) $c->slug,
+                'active'     => (int) $c->active,
+                'sort_order' => (int) $c->sort_order,
+                'path'       => WS_Categories::path_text( $cid ),
+                'children'   => count( WS_Categories::children( $cid ) ),
+                'products'   => (int) WS_Categories::products_count( $cid ),
+            );
+            $ws_build( $cid );
+        }
+    };
+    $ws_build( 0 );
     wp_send_json_success( array(
-        'categories' => $out,
+        'categories' => array_values( $all ),
         'payload'    => ws_categories_payload(),
     ) );
 }

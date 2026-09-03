@@ -759,6 +759,9 @@ class _CategoriesTab extends StatefulWidget {
 class _CategoriesTabState extends State<_CategoriesTab> {
   List<Map<String, dynamic>> _cats = [];
   bool _loading = true;
+  // Categorías desplegadas en el acordeón (mismo comportamiento que el panel
+  // web: tocar una categoría con subcategorías las muestra/oculta).
+  final Set<Object> _expanded = {};
 
   @override
   void initState() {
@@ -821,6 +824,35 @@ class _CategoriesTabState extends State<_CategoriesTab> {
     }
     return d;
   }
+
+  // ¿Cuántos hijos DIRECTOS tiene `c`? (cuenta los que apuntan a su id).
+  int _childrenCount(Map<String, dynamic> c, List<Map<String, dynamic>> all) {
+    final id = '${c['id']}';
+    return all.where((x) => '${x['parent_id'] ?? 0}' == id).length;
+  }
+
+  // ¿Es visible? Una categoría se muestra si es raíz (parent_id=0) o si su
+  // categoría padre está desplegada. Mismo comportamiento que isVisible() en
+  // la pantalla web del panel.
+  bool _visible(Map<String, dynamic> c) {
+    final pid = '${c['parent_id'] ?? 0}';
+    return pid == '0' || pid.isEmpty || _expanded.contains(pid);
+  }
+
+  void _toggle(Map<String, dynamic> c) {
+    setState(() {
+      final id = c['id'];
+      if (id != null) {
+        if (_expanded.contains(id)) {
+          _expanded.remove(id);
+        } else {
+          _expanded.add(id);
+        }
+      }
+    });
+  }
+
+  void _collapseAll() => setState(_expanded.clear);
 
   // Nueva categoría desde el FAB de la pantalla madre.
   void editNew(BuildContext context) => _edit(context, null, _load);
@@ -959,62 +991,98 @@ class _CategoriesTabState extends State<_CategoriesTab> {
   @override
   Widget build(BuildContext context) {
     final fromServer = SyncService.I.isOnline;
+    final visible = _cats.where(_visible).toList();
+    final hasCollapsible = _cats.any((c) => _childrenCount(c, _cats) > 0);
     return RefreshIndicator(
       onRefresh: () async { await _refreshFromServer(); await _load(); },
       child: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView.builder(
               padding: const EdgeInsets.fromLTRB(14, 8, 14, 90),
-              itemCount: _cats.length + 1,
+              itemCount: visible.length + 1,
               itemBuilder: (ctx, i) {
                 if (i == 0) {
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 6),
-                    child: Text(
-                      fromServer
-                          ? 'Organiza el catálogo en subcategorías.'
-                          : 'Sin conexión · mostrando copia local.',
-                      style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            fromServer
+                                ? 'Pulsa una categoría para desplegar sus subcategorías.'
+                                : 'Sin conexión · mostrando copia local.',
+                            style:
+                                TextStyle(fontSize: 12, color: Colors.grey[500]),
+                          ),
+                        ),
+                        if (hasCollapsible && visible.length > 1)
+                          GestureDetector(
+                            onTap: _collapseAll,
+                            child: Text('Colapsar',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: AppTheme.primary,
+                                    fontWeight: FontWeight.w600)),
+                          ),
+                      ],
                     ),
                   );
                 }
-                final c = _cats[i - 1];
-                final active = '${c['active']}' != '0' && '${c['active']}' != 'false';
+                final c = visible[i - 1];
+                final active =
+                    '${c['active']}' != '0' && '${c['active']}' != 'false';
                 final indent = _depth(c, _cats);
                 final products = int.tryParse('${c['products'] ?? 0}') ?? 0;
-                final children = int.tryParse('${c['children'] ?? 0}') ?? 0;
+                final children = _childrenCount(c, _cats);
+                final isOpen = _expanded.contains(c['id']);
                 return Card(
                   margin: const EdgeInsets.only(bottom: 6),
-                  child: Padding(
-                    padding: EdgeInsets.only(
-                        left: 8.0 + (indent * 16).clamp(0, 64),
-                        right: 4,
-                        top: 2,
-                        bottom: 2),
-                    child: ListTile(
-                      dense: true,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 6),
-                      leading: Icon(Icons.category_outlined,
-                          color: AppTheme.primary, size: 20),
-                      title: Text('${c['name'] ?? ''}',
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w600, fontSize: 14)),
-                      subtitle: Text([
-                        if (children > 0) '$children sub${children == 1 ? 'cat.' : 'cats.'}',
-                        '$products prod.',
-                        if (!active) 'inactiva',
-                      ].join(' · '),
-                          style: TextStyle(fontSize: 11, color: Colors.grey[600])),
-                      trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                        IconButton(
-                          icon: const Icon(Icons.edit_outlined, size: 19),
-                          onPressed: () => _edit(context, c, () => _load()),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline, size: 19, color: AppTheme.danger),
-                          onPressed: () => _delete(context, c, () => _load()),
-                        ),
-                      ]),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: children > 0 ? () => _toggle(c) : null,
+                    child: Padding(
+                      padding: EdgeInsets.only(
+                          left: 8.0 + (indent * 16).clamp(0, 64),
+                          right: 4,
+                          top: 2,
+                          bottom: 2),
+                      child: ListTile(
+                        dense: true,
+                        contentPadding:
+                            const EdgeInsets.symmetric(horizontal: 6),
+                        leading: Icon(
+                            children > 0
+                                ? (isOpen
+                                    ? Icons.expand_more
+                                    : Icons.chevron_right)
+                                : Icons.category_outlined,
+                            color: children > 0 ? Colors.grey[600] : AppTheme.primary,
+                            size: 20),
+                        title: Text('${c['name'] ?? ''}',
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w600, fontSize: 14)),
+                        subtitle: Text([
+                          if (children > 0)
+                            '$children sub${children == 1 ? 'cat.' : 'cats.'}',
+                          '$products prod.',
+                          if (!active) 'inactiva',
+                        ].join(' · '),
+                            style:
+                                TextStyle(fontSize: 11, color: Colors.grey[600])),
+                        trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.edit_outlined, size: 19),
+                                onPressed: () => _edit(context, c, () => _load()),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline,
+                                    size: 19, color: AppTheme.danger),
+                                onPressed: () => _delete(context, c, () => _load()),
+                              ),
+                            ]),
+                      ),
                     ),
                   ),
                 );
