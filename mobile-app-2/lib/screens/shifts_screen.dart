@@ -390,6 +390,9 @@ class _ShiftsScreenState extends State<ShiftsScreen> {
                         }
                         if (mounted) {
                           U.toast(context, '$created turno${created == 1 ? '' : 's'} creado${created == 1 ? '' : 's'}', kind: 'ok');
+                          if (created > 0 && SyncService.I.isOnline) {
+                            await SyncService.I.pullStore('ws_shifts_list', {'start': '${now.year}-${now.month.toString().padLeft(2, '0')}-01 00:00:00', 'end': '${now.year}-12-31 23:59:59'}, 'shifts', cacheKey: 'ws_shifts_list', dataKey: 'shifts');
+                          }
                           _loadAll();
                         }
                       },
@@ -666,7 +669,7 @@ class _ShiftsScreenState extends State<ShiftsScreen> {
                           context,
                           SyncService.I.push('ws_save_shift', payload),
                           '${dates.length} turno${dates.length == 1 ? '' : 's'} creado${dates.length == 1 ? '' : 's'}',
-                          onOk: () => SyncService.I.pullCache('ws_shifts_list', {'start': '${DateTime.now().year}-${DateTime.now().month.toString().padLeft(2, '0')}-01 00:00:00', 'end': '${DateTime.now().year}-12-31 23:59:59'}, 'ws_shifts_list'),
+onOk: () => SyncService.I.pullStore('ws_shifts_list', {'start': '${DateTime.now().year}-${DateTime.now().month.toString().padLeft(2, '0')}-01 00:00:00', 'end': '${DateTime.now().year}-12-31 23:59:59'}, 'shifts', cacheKey: 'ws_shifts_list', dataKey: 'shifts'),
                           onQueued: (qp) async {
                             final rows = await DbService.I.all('shifts');
                             final baseId = -DateTime.now().millisecondsSinceEpoch;
@@ -1102,7 +1105,7 @@ class _ShiftsScreenState extends State<ShiftsScreen> {
       SyncService.I.push(
           'ws_delete_shift', {'id': s['id']}),
       'Turno eliminado',
-      onOk: () => SyncService.I.pullCache('ws_shifts_list', {'start': '${DateTime.now().year}-${DateTime.now().month.toString().padLeft(2, '0')}-01 00:00:00', 'end': '${DateTime.now().year}-12-31 23:59:59'}, 'ws_shifts_list'),
+      onOk: () => SyncService.I.pullStore('ws_shifts_list', {'start': '${DateTime.now().year}-${DateTime.now().month.toString().padLeft(2, '0')}-01 00:00:00', 'end': '${DateTime.now().year}-12-31 23:59:59'}, 'shifts', cacheKey: 'ws_shifts_list', dataKey: 'shifts'),
       onQueued: (qp) async {
         final rows = await DbService.I.all('shifts');
         rows.removeWhere((r) => '${r['id']}' == '${s['id']}');
@@ -1266,7 +1269,7 @@ class _ShiftsScreenState extends State<ShiftsScreen> {
                           context,
                           SyncService.I.push('ws_save_shift', payload),
                           'Guardado',
-                          onOk: () => SyncService.I.pullCache('ws_shifts_list', {'start': '${DateTime.now().year}-${DateTime.now().month.toString().padLeft(2, '0')}-01 00:00:00', 'end': '${DateTime.now().year}-12-31 23:59:59'}, 'ws_shifts_list'),
+                          onOk: () => SyncService.I.pullStore('ws_shifts_list', {'start': '${DateTime.now().year}-${DateTime.now().month.toString().padLeft(2, '0')}-01 00:00:00', 'end': '${DateTime.now().year}-12-31 23:59:59'}, 'shifts', cacheKey: 'ws_shifts_list', dataKey: 'shifts'),
                           onQueued: (qp) async {
                             final rows = await DbService.I.all('shifts');
                             final id = payload['id'] ?? 0;

@@ -109,12 +109,49 @@ class _ProductsScreenState extends State<ProductsScreen> {
     final minStock =
         TextEditingController(text: '${item?['min_stock'] ?? ''}');
     final image = TextEditingController(text: '${item?['image'] ?? ''}');
-    final category = TextEditingController(text: '${item?['category'] ?? ''}');
     final description = TextEditingController(text: '${item?['description'] ?? ''}');
+    final catStart =
+        '${item?['category'] ?? item?['category_path'] ?? ''}'.trim();
+    final category = ValueNotifier<String>(catStart);
     final isCombo = item != null &&
         ('${item['is_combo']}' == '1' || '${item['is_combo']}' == 'true');
     final active = ValueNotifier<bool>(
         item == null || ('${item['active']}' != '0' && '${item['active']}' != 'false'));
+
+    // Cargar categorías cacheadas (mismas que usa el tab Categorías) para el
+    // selector del producto, respetando el orden de árbol / indentación.
+    var catRows = <Map<String, dynamic>>[];
+    try {
+      final cached = await DbService.I.all('categories');
+      if (cached.isNotEmpty) {
+        catRows = cached;
+      } else {
+        final ck = await DbService.I.cacheGet('ws_categories_list');
+        if (ck is List) {
+          catRows = ck.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+        }
+      }
+    } catch (_) {}
+    int catDepth(Map<String, dynamic> c) {
+      final map = {for (final x in catRows) '${x['id']}' : x};
+      var d = 0, p = '${c['parent_id'] ?? 0}';
+      while (p.isNotEmpty && p != '0' && d < 20 && map.containsKey(p)) {
+        d++;
+        p = '${map[p]?['parent_id'] ?? 0}';
+      }
+      return d;
+    }
+    // Alinear al orden de árbol: raíces antes que hijos (mismo que el backend).
+    final catNames = <String, int>{};
+    for (final c in catRows) {
+      final d = catDepth(c);
+      catNames['${c['name'] ?? ''}'] = d;
+    }
+    if (catStart.isNotEmpty && !catNames.containsKey(catStart)) {
+      catNames[catStart] = 0; // conservar categoría existente no listada
+    }
+    final sortedCats = catNames.entries.toList()
+      ..sort((a, b) => a.value != b.value ? a.value.compareTo(b.value) : a.key.toLowerCase().compareTo(b.key.toLowerCase()));
 
     // Gallery
     List<String> gallery = [];
@@ -163,7 +200,29 @@ class _ProductsScreenState extends State<ProductsScreen> {
                   type: TextInputType.number)),
         ]),
         fField('Stock mínimo', minStock, type: TextInputType.number),
-        if (!isCombo) fField('Categoría', category),
+        if (!isCombo) ...[
+          ValueListenableBuilder<String>(
+            valueListenable: category,
+            builder: (_, sel, __) => fDropdown(
+              'Categoría',
+              sel.isEmpty ? null : sel,
+              [
+                DropdownMenuItem<Object>(
+                  value: '',
+                  child: const Text('Sin categoría'),
+                ),
+                ...sortedCats.map((e) => DropdownMenuItem<Object>(
+                      value: e.key,
+                      child: Text(
+                        '${e.value > 0 ? '${List.filled(e.value, '──').join(' ')} ' : ''}${e.key}',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    )),
+              ],
+              (v) => category.value = '${v ?? ''}',
+            ),
+          ),
+        ],
         if (!isCombo) fField('Descripción', description, type: TextInputType.multiline),
         if (!isCombo) fField('Imagen URL', image, hint: 'https://…'),
         // Gallery
@@ -267,7 +326,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
           'cost_price': num.tryParse(costPrice.text) ?? 0,
           'min_stock': num.tryParse(minStock.text) ?? 0,
           'image': image.text.trim(),
-          'category': category.text.trim(),
+          'category': category.value.trim(),
           'description': description.text.trim(),
           'active': active.value ? 1 : 0,
         };
@@ -760,8 +819,9 @@ class _CategoriesTabState extends State<_CategoriesTab> {
   List<Map<String, dynamic>> _cats = [];
   bool _loading = true;
   // Categorías desplegadas en el acordeón (mismo comportamiento que el panel
-  // web: tocar una categoría con subcategorías las muestra/oculta).
-  final Set<Object> _expanded = {};
+  // web: tocar una categoría con subcategorías las muestra/oculta). Se guardan
+  // como String (ids canónicos) para evitar mismatch int/string.
+  final Set<String> _expanded = {};
 
   @override
   void initState() {
@@ -783,6 +843,7 @@ class _CategoriesTabState extends State<_CategoriesTab> {
           _loading = false;
         });
       }
+      _openRoots();
     } catch (_) {
       // Una lectura fallida de la tabla local nunca debe dejar el loader
       // infinito: se muestra la lista vacía y se reintenta desde el server.
@@ -807,6 +868,7 @@ class _CategoriesTabState extends State<_CategoriesTab> {
             cacheKey: 'ws_categories_list', dataKey: 'categories');
     if (rows != null && mounted) {
       setState(() => _cats = rows);
+      _openRoots();
     }
   }
 
@@ -831,28 +893,45 @@ class _CategoriesTabState extends State<_CategoriesTab> {
     return all.where((x) => '${x['parent_id'] ?? 0}' == id).length;
   }
 
-  // ¿Es visible? Una categoría se muestra si es raíz (parent_id=0) o si su
-  // categoría padre está desplegada. Mismo comportamiento que isVisible() en
-  // la pantalla web del panel.
+  // ¿Es visible? Un nodo se muestra solo si TODOS sus ancestros están abiertos
+  // (recursivo por parent_id, soporta cualquier profundidad). Igual que la
+  // función isVisible() del panel web.
   bool _visible(Map<String, dynamic> c) {
     final pid = '${c['parent_id'] ?? 0}';
-    return pid == '0' || pid.isEmpty || _expanded.contains(pid);
+    if (pid == '0' || pid.isEmpty) return true;
+    final parent = _cats.firstWhere(
+        (x) => '${x['id']}' == pid,
+        orElse: () => const {});
+    if (parent.isEmpty) return true; // padre no encontrado: mostrarlo igual
+    return _expanded.contains(pid) && _visible(parent);
   }
 
   void _toggle(Map<String, dynamic> c) {
     setState(() {
-      final id = c['id'];
-      if (id != null) {
-        if (_expanded.contains(id)) {
-          _expanded.remove(id);
-        } else {
-          _expanded.add(id);
-        }
+      final id = '${c['id']}';
+      if (id.isEmpty) return;
+      if (_expanded.contains(id)) {
+        _expanded.remove(id);
+      } else {
+        _expanded.add(id);
       }
     });
   }
 
   void _collapseAll() => setState(_expanded.clear);
+
+  // Igual que el init() del panel web: las categorías raíz quedan abiertas
+  // para ver la jerarquía de un vistazo; cada rama se pliega con el acordeón.
+  void _openRoots() {
+    setState(() {
+      for (final c in _cats) {
+        final pid = '${c['parent_id'] ?? 0}';
+        if (pid == '0' || pid.isEmpty || !_cats.any((x) => '${x['id']}' == pid)) {
+          _expanded.add('${c['id']}');
+        }
+      }
+    });
+  }
 
   // Nueva categoría desde el FAB de la pantalla madre.
   void editNew(BuildContext context) => _edit(context, null, _load);
@@ -1034,7 +1113,7 @@ class _CategoriesTabState extends State<_CategoriesTab> {
                 final indent = _depth(c, _cats);
                 final products = int.tryParse('${c['products'] ?? 0}') ?? 0;
                 final children = _childrenCount(c, _cats);
-                final isOpen = _expanded.contains(c['id']);
+                final isOpen = _expanded.contains('${c['id']}');
                 return Card(
                   margin: const EdgeInsets.only(bottom: 6),
                   child: InkWell(
