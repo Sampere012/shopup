@@ -793,6 +793,9 @@ function ws_ajax_reports_summary() {
 		}, (array) $rows );
 	};
 
+	// Utilidades mensuales y por punto de venta (ingresos − gastos).
+	$utilities = ws_reports_utilities( $filters );
+
 	$out = array(
 		'filters'    => array(
 			'location_id'  => (int) $filters['location_id'],
@@ -808,6 +811,11 @@ function ws_ajax_reports_summary() {
 		'sales'          => $jsonify( $data['sales'] ),
 		'by_type'        => $jsonify( $data['by_type'] ),
 		'top_all'        => $jsonify( $data['top_all'] ),
+		'bottom'         => $jsonify( $data['bottom'] ),
+		'transactions'   => $jsonify( $data['transactions'] ),
+		'pos_summary'    => $data['pos_summary'] ? (array) $data['pos_summary'] : null,
+		'pos_sales'      => $jsonify( $data['pos_sales'] ),
+		'pos_products'   => $jsonify( $data['pos_products'] ),
 		'total_sales'    => (float) $data['total_sales'],
 		'total_orders'   => (int) $data['total_orders'],
 		'total_units'    => (int) $data['total_units'],
@@ -817,10 +825,8 @@ function ws_ajax_reports_summary() {
 			$ct = (array) $ct;
 			return array( 'currency' => (string) ( $ct['currency'] ?? '' ), 'total' => (float) ( $ct['total'] ?? 0 ), 'n' => (int) ( $ct['n'] ?? 0 ) );
 		}, $data['currency_totals'] ),
+		'utils'          => $utilities,
 	);
-	if ( isset( $data['utils'] ) ) {
-		$out['utils'] = (array) $data['utils'];
-	}
 	wp_send_json_success( array( 'data' => $out ) );
 }
 

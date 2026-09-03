@@ -442,6 +442,16 @@ h1, h2, h3, h4 { font-family: var(--ws-font-display); letter-spacing: -.02em; }
 .ws-check-group { display: flex; flex-wrap: wrap; gap: 10px 18px; }
 .ws-check-switch input { width: 18px; height: 18px; }
 
+/* Selector de días de la semana para asignar turnos de un mes completo. */
+.ws-weekdays { display: flex; gap: 6px; flex-wrap: wrap; }
+.ws-weekday {
+    flex: 1 1 0; min-width: 44px; padding: 9px 6px; border: 1px solid var(--ws-border);
+    border-radius: 10px; background: #fff; color: var(--ws-text); font-size: 12px;
+    font-weight: 600; font-family: inherit; cursor: pointer; transition: background .15s, color .15s, border-color .15s;
+}
+.ws-weekday:hover { border-color: var(--ws-primary); }
+.ws-weekday.ws-on { background: var(--ws-primary); border-color: var(--ws-primary); color: #fff; }
+
 /* ---------- Tabs (pestañas) ---------- */
 .ws-tabs { display: inline-flex; gap: 4px; padding: 4px; background: #eef0f5; border-radius: 12px; margin-bottom: 20px; flex-wrap: nowrap; overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
 .ws-tabs::-webkit-scrollbar { height: 6px; }

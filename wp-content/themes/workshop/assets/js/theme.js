@@ -2306,6 +2306,9 @@
             calendar: null,
             shiftOpen: false,
             shift: {},
+            monthOpen: false,
+            monthShift: {},
+            monthDays: [0, 1, 2, 3, 4],
             initCalendar() {
                 const el = document.getElementById('ws-calendar');
                 if (!el || typeof FullCalendar === 'undefined') return;
@@ -2363,6 +2366,56 @@
             },
             deleteShift() {
                 $('ws_delete_shift', { id: this.shift.id }).then(res => { if (res.success) { toast('success', 'Turno eliminado'); this.shiftOpen = false; this.calendarReload(); } });
+            },
+            // ---- Asignación de mes completo ----
+            openMonth() {
+                const now = new Date();
+                const ym = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+                this.monthShift = { user_id: this.workers[0] ? this.workers[0].id : 0, location_id: 0, month: ym, time_start: '08:00', time_end: '16:00', note: '' };
+                this.monthDays = [0, 1, 2, 3, 4];
+                this.onMonthWorkerChange();
+                this.monthOpen = true;
+            },
+            monthLocations() { return this.availableLocations(); },
+            onMonthWorkerChange() {
+                const avail = this.availableLocations();
+                if (!avail.some(l => Number(l.id) === Number(this.monthShift.location_id))) {
+                    this.monthShift.location_id = avail.length ? avail[0].id : 0;
+                }
+            },
+            toggleMonthDay(i) {
+                const idx = this.monthDays.indexOf(i);
+                if (idx === -1) { this.monthDays.push(i); this.monthDays.sort(); } else { this.monthDays.splice(idx, 1); }
+            },
+            // Fechas Y-m-d del mes que caen en los días de la semana seleccionados.
+            monthDates() {
+                const ym = this.monthShift.month || '';
+                if (!/^\d{4}-\d{2}$/.test(ym)) return [];
+                const [y, m] = ym.split('-').map(Number);
+                const days = new Date(y, m, 0).getDate();
+                const out = [];
+                for (let d = 1; d <= days; d++) {
+                    const dt = new Date(y, m - 1, d);
+                    if (this.monthDays.includes(dt.getDay() === 0 ? 6 : dt.getDay() - 1)) {
+                        out.push(y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0'));
+                    }
+                }
+                return out;
+            },
+            saveMonth() {
+                const dates = this.monthDates();
+                if (!dates.length) { toast('error', 'Selecciona al menos un día'); return; }
+                if (!this.monthShift.user_id || !this.monthShift.location_id) { toast('error', 'Completa trabajador y ubicación'); return; }
+                const body = new URLSearchParams({ action: 'ws_save_shift', ws_nonce: WS.nonce, dates: JSON.stringify(dates) });
+                Object.keys(this.monthShift).forEach(k => { if (k !== 'month') body.append(k, this.monthShift[k]); });
+                fetch(WS.ajaxUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body })
+                    .then(r => r.json())
+                    .then(res => {
+                        if (res.success) {
+                            const msg = res.data && res.data.msg ? res.data.msg : (res.data.created + ' turnos creados');
+                            toast('success', msg); this.monthOpen = false; this.calendarReload();
+                        } else { toast('error', 'Error', res.data && res.data.msg); }
+                    });
             }
         }));
 

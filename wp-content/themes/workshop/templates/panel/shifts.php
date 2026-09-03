@@ -29,6 +29,11 @@ $workers   = array_map( fn( $w ) => array(
         <div class="ws-stock-head">
             <h3 class="ws-card-title" style="margin:0"><i class="fa-solid fa-calendar-days"></i> <?php esc_html_e( 'Turnos', 'workshop' ); ?></h3>
             <div class="ws-stock-filters">
+                <template x-if="canManage">
+                    <button type="button" class="ws-btn ws-btn-primary ws-btn-sm" @click="openMonth()">
+                        <i class="fa-solid fa-calendar-plus"></i> <?php esc_html_e( 'Asignar mes', 'workshop' ); ?>
+                    </button>
+                </template>
                 <select x-model="locationFilter" @change="calendarReload()">
                     <option value=""><?php esc_html_e( 'Todas las ubicaciones', 'workshop' ); ?></option>
                     <template x-for="l in locations" :key="l.id"><option :value="l.id" x-text="l.name"></option></template>
@@ -82,6 +87,62 @@ $workers   = array_map( fn( $w ) => array(
                     <button type="button" class="ws-btn ws-btn-danger" x-show="shift.id" @click="deleteShift()"><i class="fa-solid fa-trash-can"></i> <?php esc_html_e( 'Eliminar', 'workshop' ); ?></button>
                     <button type="button" class="ws-btn ws-btn-secondary" @click="shiftOpen=false"><?php esc_html_e( 'Cancelar', 'workshop' ); ?></button>
                     <button type="submit" class="ws-btn ws-btn-primary"><i class="fa-solid fa-floppy-disk"></i> <?php esc_html_e( 'Guardar', 'workshop' ); ?></button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="ws-modal" x-show="monthOpen" x-cloak @keydown.escape.window="monthOpen=false">
+        <div class="ws-modal-backdrop" @click="monthOpen=false"></div>
+        <div class="ws-modal-box">
+            <div class="ws-modal-head">
+                <h3><?php esc_html_e( 'Asignar mes completo', 'workshop' ); ?></h3>
+                <button class="ws-cart-close" @click="monthOpen=false"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form @submit.prevent="saveMonth" class="ws-form">
+                <div class="ws-form-grid">
+                    <label class="ws-field">
+                        <span><?php esc_html_e( 'Trabajador *', 'workshop' ); ?></span>
+                        <select x-model="monthShift.user_id" required @change="onMonthWorkerChange()">
+                            <template x-for="w in workers" :key="w.id"><option :value="w.id" x-text="w.name"></option></template>
+                        </select>
+                    </label>
+                    <label class="ws-field">
+                        <span><?php esc_html_e( 'Ubicación *', 'workshop' ); ?></span>
+                        <select x-model="monthShift.location_id" required>
+                            <template x-if="monthLocations().length === 0"><option value="">—</option></template>
+                            <template x-for="l in monthLocations()" :key="l.id"><option :value="l.id" x-text="l.name"></option></template>
+                        </select>
+                    </label>
+                    <label class="ws-field">
+                        <span><?php esc_html_e( 'Mes *', 'workshop' ); ?></span>
+                        <input type="month" x-model="monthShift.month" required>
+                    </label>
+                    <label class="ws-field ws-span-2">
+                        <span><?php esc_html_e( 'Días de trabajo', 'workshop' ); ?></span>
+                        <div class="ws-weekdays">
+                            <template x-for="(name, i) in ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom']" :key="i">
+                                <button type="button" class="ws-weekday" :class="{ 'ws-on': monthDays.includes(i) }" @click="toggleMonthDay(i)" x-text="name"></button>
+                            </template>
+                        </div>
+                        <small class="ws-muted" x-text="monthDates().length + ' días seleccionados en ' + (monthShift.month || '—')"></small>
+                    </label>
+                    <label class="ws-field ws-grid-2">
+                        <span><?php esc_html_e( 'Inicio', 'workshop' ); ?></span>
+                        <input type="time" x-model="monthShift.time_start" required>
+                    </label>
+                    <label class="ws-field ws-grid-2">
+                        <span><?php esc_html_e( 'Fin', 'workshop' ); ?></span>
+                        <input type="time" x-model="monthShift.time_end" required>
+                    </label>
+                    <label class="ws-field ws-span-2">
+                        <span><?php esc_html_e( 'Nota', 'workshop' ); ?></span>
+                        <input type="text" x-model="monthShift.note">
+                    </label>
+                </div>
+                <div class="ws-modal-foot">
+                    <button type="button" class="ws-btn ws-btn-secondary" @click="monthOpen=false"><?php esc_html_e( 'Cancelar', 'workshop' ); ?></button>
+                    <button type="submit" class="ws-btn ws-btn-primary"><i class="fa-solid fa-calendar-plus"></i> <?php esc_html_e( 'Crear turnos', 'workshop' ); ?></button>
                 </div>
             </form>
         </div>

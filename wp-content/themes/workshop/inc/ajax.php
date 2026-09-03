@@ -129,6 +129,7 @@ function ws_app_caps() {
         'loyalty_manage', 'expenses_manage',
         'settings_manage', 'permissions_manage', 'reports_view',
         'site_manage', 'layout_manage',
+        'categories_manage',
     );
 }
 
@@ -319,11 +320,14 @@ function ws_ajax_settings_get() {
     }
     $rates         = function_exists( 'ws_exchange_rates' ) ? ws_exchange_rates() : array();
     $payment       = (array) get_option( 'ws_payment_methods', array( 'Efectivo', 'Tarjeta', 'Transferencia' ) );
+    // La app espera rates SIEMPRE como objeto JSON ({} cuando no hay tasas),
+    // nunca como array vacío ([]). Un array PHP vacío se codifica como [].
+    $rates_json    = empty( $rates ) ? new stdClass() : (object) $rates;
     wp_send_json_success( array(
         'data' => array(
             'currency'        => get_option( 'ws_currency', '€' ),
             'currencies'      => get_option( 'ws_currencies', '' ),
-            'rates'           => $rates,
+            'rates'           => $rates_json,
             'rates_updated'   => get_option( 'ws_rates_updated', '' ),
             'payment_methods' => $payment,
             'whatsapp'        => get_option( 'ws_whatsapp', '' ),
@@ -2748,6 +2752,30 @@ add_action( 'wp_ajax_ws_save_shift', 'ws_ajax_save_shift' );
 function ws_ajax_save_shift() {
     ws_guard( 'shifts_manage' );
     $id = (int) ( $_POST['id'] ?? 0 );
+
+    // Asignación de mes completo: llega "dates" (JSON array de Y-m-d) y se
+    // crea un turno por cada fecha sin duplicar los ya existentes.
+    $dates_raw = isset( $_POST['dates'] ) ? json_decode( wp_unslash( $_POST['dates'] ), true ) : null;
+    if ( is_array( $dates_raw ) && ! empty( $dates_raw ) && ! $id ) {
+        $bulk = WS_Shifts::save_bulk( $dates_raw, $_POST );
+        $made = count( $bulk['created'] );
+        if ( ! $made && ! $bulk['skipped'] ) {
+            wp_send_json_error( array( 'msg' => __( 'Sin fechas válidas.', 'workshop' ) ) );
+        }
+        foreach ( $bulk['created'] as $sid ) {
+            ws_log_audit( 'shift_create', 'shift', $sid );
+        }
+        if ( $bulk['skipped'] ) {
+            wp_send_json_success( array(
+                'ids'     => $bulk['created'],
+                'created' => $made,
+                'skipped' => $bulk['skipped'],
+                'msg'     => sprintf( __( '%d creados, %d ya existían.', 'workshop' ), $made, $bulk['skipped'] ),
+            ) );
+        }
+        wp_send_json_success( array( 'ids' => $bulk['created'], 'created' => $made, 'skipped' => 0 ) );
+    }
+
     $result = WS_Shifts::save( $_POST, $id );
     if ( is_wp_error( $result ) ) {
         wp_send_json_error( array( 'msg' => $result->get_error_message() ) );
@@ -3179,21 +3207,35 @@ function ws_ajax_save_settings() {
     ws_guard( 'settings_manage' );
     ws_save_biz_option( 'ws_currency', sanitize_text_field( $_POST['currency'] ?? '€' ) );
     ws_save_biz_option( 'ws_currencies', sanitize_text_field( $_POST['currencies'] ?? '' ) );
-    // Tasas: array [ moneda => valor ], p. ej. [ 'USD' => 670 ].
+    // Tasas: array [ moneda => valor ], p. ej. [ 'USD' => 670 ]. La app manda
+    // el mapa como string JSON (form-urlencoded), así que hay que decodificarlo.
+    $rates_raw = $_POST['rates'] ?? array();
+    if ( is_string( $rates_raw ) ) {
+        $decoded = json_decode( wp_unslash( $rates_raw ), true );
+        $rates_raw = is_array( $decoded ) ? $decoded : array();
+    }
     $rates = array();
-    if ( isset( $_POST['rates'] ) && is_array( $_POST['rates'] ) ) {
-        foreach ( $_POST['rates'] as $cur => $val ) {
-            $cur = sanitize_text_field( $cur );
-            $val = (float) $val;
-            if ( '' !== $cur && $val > 0 ) {
-                $rates[ $cur ] = round( $val, 6 );
-            }
+    foreach ( (array) $rates_raw as $cur => $val ) {
+        $cur = sanitize_text_field( (string) $cur );
+        $val = (float) $val;
+        if ( '' !== $cur && $val > 0 ) {
+            $rates[ $cur ] = round( $val, 6 );
         }
     }
     ws_save_biz_option( 'ws_rates', $rates );
-    $methods = isset( $_POST['payment_methods'] ) && is_array( $_POST['payment_methods'] )
-        ? array_map( 'sanitize_text_field', $_POST['payment_methods'] )
-        : array();
+    // Métodos de pago: array de strings (o JSON string desde la app).
+    $methods_raw = $_POST['payment_methods'] ?? array();
+    if ( is_string( $methods_raw ) ) {
+        $decoded = json_decode( wp_unslash( $methods_raw ), true );
+        $methods_raw = is_array( $decoded ) ? $decoded : array();
+    }
+    $methods = array();
+    foreach ( (array) $methods_raw as $m ) {
+        $m = sanitize_text_field( (string) $m );
+        if ( '' !== $m ) {
+            $methods[] = $m;
+        }
+    }
     ws_save_biz_option( 'ws_payment_methods', $methods );
     ws_save_biz_option( 'ws_whatsapp', sanitize_text_field( $_POST['whatsapp'] ?? '' ) );
     ws_log_audit( 'settings_update', 'settings', 0 );
@@ -4717,6 +4759,9 @@ function ws_ajax_stock_count_save() {
         'adjusted'    => $adjust ? 1 : 0,
         'note'        => $note,
     ), array( '%d', '%d', '%s', '%s', '%d', '%s' ) );
+    // El id del cuadre debe capturarse ANTES de ws_log_audit: esa función
+    // hace su propio INSERT (tabla audit) y sobrescribe $wpdb->insert_id.
+    $count_id = (int) $wpdb->insert_id;
 
     ws_log_audit( 'stock_count', 'stock', $location_id, array(
         'total'    => count( $stored ),
@@ -4726,7 +4771,7 @@ function ws_ajax_stock_count_save() {
 
     wp_send_json_success( array(
         'data' => array(
-            'id'        => (int) $wpdb->insert_id,
+            'id'        => $count_id,
             'summary'   => $summary,
             'cuadrados' => $cuadrados,
             'sobrante'  => $sobrante,

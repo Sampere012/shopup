@@ -45,6 +45,34 @@ function ws_block_disabled_login( $user, $username, $password ) {
     return $user;
 }
 
+// Bloquear el acceso de trabajadores (storekeeper/seller) sin ningún día de
+// trabajo asignado en el calendario de turnos. El dueño/admin no se bloquea.
+add_filter( 'authenticate', 'ws_block_no_shift_login', 31, 3 );
+function ws_block_no_shift_login( $user, $username, $password ) {
+    if ( ! $user instanceof WP_User || user_can( $user->ID, 'manage_options' ) ) {
+        return $user;
+    }
+    if ( ws_worker_disabled( $user->ID ) ) {
+        return $user;
+    }
+    $role = ws_user_role( $user->ID );
+    if ( ! in_array( $role, array( 'storekeeper', 'seller' ), true ) ) {
+        return $user;
+    }
+    global $wpdb;
+    $has = (int) $wpdb->get_var( $wpdb->prepare(
+        "SELECT COUNT(*) FROM " . ws_table_name( 'shifts' ) . " WHERE user_id=%d",
+        $user->ID
+    ) );
+    if ( ! $has ) {
+        return new WP_Error(
+            'ws_no_shift',
+            __( 'No tienes días de trabajo asignados. Pide al dueño que asigne tus turnos.', 'workshop' )
+        );
+    }
+    return $user;
+}
+
 // Tras cualquier login (también vía wp-login.php) redirigir según rol.
 add_filter( 'login_redirect', 'ws_login_redirect', 10, 3 );
 function ws_login_redirect( $redirect_to, $requested_redirect_to, $user ) {
