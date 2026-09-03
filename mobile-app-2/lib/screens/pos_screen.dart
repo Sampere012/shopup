@@ -912,33 +912,42 @@ class _PosScreenState extends State<PosScreen> {
       'items': payload['items'],
     };
 
-    final sent = await U.handlePush(
-      context,
-      SyncService.I.push('ws_pos_sale_save', payload),
-      'Venta registrada',
-      onOk: () async {
-        final salesCache = await DbService.I.cacheGet('ws_pos_sales_get_all');
-        final list = salesCache is List
-            ? List<Map<String, dynamic>>.from(salesCache)
-            : <Map<String, dynamic>>[];
-        localSale['status'] = 'completed';
-        list.insert(0, localSale);
-        await DbService.I.cacheSet('ws_pos_sales_get', list);
-        await DbService.I.cacheSet('ws_pos_sales_get_all', list);
-        await DbService.I.putAll('pos_sales', list);
-      },
-      onQueued: (qp) async {
-        final salesCache = await DbService.I.cacheGet('ws_pos_sales_get_all');
-        final list = salesCache is List
-            ? List<Map<String, dynamic>>.from(salesCache)
-            : <Map<String, dynamic>>[];
-        list.insert(0, localSale);
-        await DbService.I.cacheSet('ws_pos_sales_get', list);
-        await DbService.I.cacheSet('ws_pos_sales_get_all', list);
-        await DbService.I.putAll('pos_sales', list);
-      },
-    );
-    if (!sent) return;
+dynamic res;
+    bool pushOk = false;
+    try {
+      res = await SyncService.I.push('ws_pos_sale_save', payload);
+      pushOk = true;
+    } catch (_) {
+      if (context.mounted) {
+        U.toast(context, 'No se pudo guardar la venta', kind: 'err');
+      }
+    }
+    if (!pushOk) return;
+
+    final queued = res is Map && res['queued'] == true;
+    // En online, `res` es el `data` de la respuesta: {sale_id, ...}.
+    final realId = (res is Map) ? (res['sale_id'] ?? res['data']?['sale_id']) : null;
+    if (realId != null) localSale['id'] = realId;
+    if (queued) {
+      if (context.mounted) {
+        U.toast(context, 'Guardado sin conexión — se enviará al reconectar',
+            kind: 'warn');
+      }
+    } else {
+      if (context.mounted) U.toast(context, 'Venta registrada');
+      localSale['status'] = 'completed';
+    }
+    // Reflectir la venta en el historial local (cache + tabla), con el id real
+    // del servidor cuando esté disponible, para que el detalle cargue sus ítems.
+    final salesCache = await DbService.I.cacheGet('ws_pos_sales_get_all');
+    final list = salesCache is List
+        ? List<Map<String, dynamic>>.from(salesCache)
+        : <Map<String, dynamic>>[];
+    list.removeWhere((s) => '${s['id']}' == '${localSale['id']}');
+    list.insert(0, localSale);
+    await DbService.I.cacheSet('ws_pos_sales_get', list);
+    await DbService.I.cacheSet('ws_pos_sales_get_all', list);
+    await DbService.I.putAll('pos_sales', list);
 
     // Adjust local stock
     for (final c in pos.cart) {

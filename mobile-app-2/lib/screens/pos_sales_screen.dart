@@ -513,6 +513,18 @@ class _SaleInlineDetailState extends State<_SaleInlineDetail> {
   }
 
   Future<void> _loadItems() async {
+    final saleId = int.tryParse('${widget.sale['id']}') ?? 0;
+    // Los ítems vienen embebidos en la venta cuando se creó localmente
+    // (offline/pending o recién guardada): usarlos de respaldo para que el
+    // detalle no diga «Sin ítems» aunque el servidor aún no tenga el id.
+    final localItems = (widget.sale['items'] is List)
+        ? List<Map<String, dynamic>>.from(
+            (widget.sale['items'] as List).whereType<Map>())
+        : <Map<String, dynamic>>[];
+    if (localItems.isNotEmpty) {
+      _items = localItems;
+      setState(() => _loading = false);
+    }
     // Try cache first
     final cached =
         await DbService.I.cacheGet('ws_pos_sale_items_get:${widget.sale['id']}');
@@ -520,14 +532,18 @@ class _SaleInlineDetailState extends State<_SaleInlineDetail> {
       _items = cached.whereType<Map>().toList().cast<Map<String, dynamic>>();
       setState(() => _loading = false);
     }
-    // Refresh from server
+    // Refresh from server (solo si el id es numérico/persistente)
+    if (saleId <= 0) {
+      setState(() => _loading = false);
+      return;
+    }
     try {
       final d = await ApiService.I.req('ws_pos_sale_items_get', {
-        'sale_id': widget.sale['id'],
+        'sale_id': saleId,
       });
       final rows = List<Map<String, dynamic>>.from(
           (d['items'] as List?) ?? (d['data'] as List?) ?? []);
-      _items = rows;
+      if (rows.isNotEmpty) _items = rows;
       await DbService.I.cacheSet('ws_pos_sale_items_get:${widget.sale['id']}', rows);
       if (mounted) setState(() => _loading = false);
     } catch (_) {

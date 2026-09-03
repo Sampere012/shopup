@@ -772,14 +772,29 @@ class _CategoriesTabState extends State<_CategoriesTab> {
   }
 
   Future<void> _load() async {
-    final rows = await DbService.I.all('categories');
-    if (mounted) {
-      setState(() {
-        _cats = rows;
-        _loading = false;
-      });
+    try {
+      final rows = await DbService.I.all('categories');
+      if (mounted) {
+        setState(() {
+          _cats = rows;
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      // Una lectura fallida de la tabla local nunca debe dejar el loader
+      // infinito: se muestra la lista vacía y se reintenta desde el server.
+      if (mounted) {
+        setState(() {
+          _cats = [];
+          _loading = false;
+        });
+      }
     }
-    _refreshFromServer();
+    try {
+      await _refreshFromServer();
+    } catch (_) {
+      // Error de red/sync: silencioso, la vista ya tiene la lista local.
+    }
   }
 
   Future<void> _refreshFromServer() async {

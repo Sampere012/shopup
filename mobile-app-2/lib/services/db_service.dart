@@ -13,8 +13,15 @@ class DbService {
   static const _stores = [
     'locations', 'products', 'stock', 'combos', 'movements', 'orders',
     'customers', 'workers', 'shifts', 'pos_sales', 'expenses',
-    'announcements', 'stock_counts', 'pending', 'meta', 'cache',
+    'announcements', 'stock_counts', 'categories', 'pending', 'meta', 'cache',
   ];
+
+  static Future<void> _ensureTables(Database db, [int? version]) async {
+    for (final s in _stores) {
+      await db.execute(
+          'CREATE TABLE IF NOT EXISTS "$s" (id TEXT PRIMARY KEY, data TEXT NOT NULL)');
+    }
+  }
 
   Database? _db;
 
@@ -24,12 +31,11 @@ class DbService {
     _db = await openDatabase(
       p.join(dir, 'wsm.db'),
       version: 1,
-      onCreate: (d, v) async {
-        for (final s in _stores) {
-          await d.execute(
-              'CREATE TABLE IF NOT EXISTS "$s" (id TEXT PRIMARY KEY, data TEXT NOT NULL)');
-        }
-      },
+      onCreate: _ensureTables,
+      // Las DB creadas con versiones anteriores (v1) no tenían la tabla
+      // 'categories'. onOpen garantiza que exista también en instalaciones
+      // existentes, sin forzar una migración de versión.
+      onOpen: _ensureTables,
     );
     return _db!;
   }
