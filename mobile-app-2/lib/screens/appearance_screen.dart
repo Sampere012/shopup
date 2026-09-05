@@ -4,7 +4,6 @@ import '../main.dart';
 import '../theme/app_theme.dart';
 import '../services/db_service.dart';
 import '../services/sync_service.dart';
-import '../services/theme_service.dart';
 import '../widgets/common.dart';
 
 /// Apariencia: selector de tema (light/dark/system) + configuración del sitio
@@ -81,33 +80,8 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
   @override
   Widget build(BuildContext context) {
     context.watch<SyncNotifier>();
-    final themeSvc = context.watch<ThemeService>();
 
     return ListView(padding: const EdgeInsets.all(14), children: [
-      // Theme selector
-      Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Row(children: [
-              Icon(Icons.palette_outlined, color: AppTheme.primary, size: 20),
-              const SizedBox(width: 8),
-              Text('Tema de la aplicación',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
-            ]),
-            const SizedBox(height: 12),
-            Row(children: [
-              Expanded(child: _themeOption(context, 'Claro', Icons.light_mode_outlined, ThemeMode.light, themeSvc.mode)),
-              const SizedBox(width: 8),
-              Expanded(child: _themeOption(context, 'Oscuro', Icons.dark_mode_outlined, ThemeMode.dark, themeSvc.mode)),
-              const SizedBox(width: 8),
-              Expanded(child: _themeOption(context, 'Sistema', Icons.phone_android_outlined, ThemeMode.system, themeSvc.mode)),
-            ]),
-          ]),
-        ),
-      ),
-      const SizedBox(height: 10),
-
       // Site appearance — all backend fields
       Card(
         child: Padding(
@@ -173,28 +147,5 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
         ),
       ),
     ]);
-  }
-
-  Widget _themeOption(BuildContext context, String label, IconData icon, ThemeMode mode, ThemeMode current) {
-    final selected = mode == current;
-    return InkWell(
-      borderRadius: BorderRadius.circular(12),
-      onTap: () => ThemeService.I.setMode(mode),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: selected ? AppTheme.primary.withAlpha(20) : null,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: selected ? AppTheme.primary : AppTheme.lightBorder, width: selected ? 2 : 1),
-        ),
-        child: Column(children: [
-          Icon(icon, size: 22, color: selected ? AppTheme.primary : AppTheme.lightMuted),
-          const SizedBox(height: 4),
-          Text(label, style: TextStyle(fontSize: 12,
-              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-              color: selected ? AppTheme.primary : null)),
-        ]),
-      ),
-    );
   }
 }

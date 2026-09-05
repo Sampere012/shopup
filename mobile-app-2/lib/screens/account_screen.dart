@@ -151,8 +151,7 @@ class _AccountScreenState extends State<AccountScreen> {
                     child: FilledButton.icon(
                       onPressed: () {
                         if (_updateInfo!['has_apk'] == true) {
-                          // TODO: Launch APK download URL
-                          U.toast(context, 'Descarga disponible', kind: 'ok');
+                          UpdateService.launchDownload(context, _updateInfo!);
                         } else {
                           UpdateService.showUpdateDialog(context, _updateInfo!);
                         }

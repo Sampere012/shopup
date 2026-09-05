@@ -6,6 +6,6 @@ class AppConfig {
   /// Autosync en segundo plano (minutos). Cambiable desde Configuración.
   static const int autoSyncMinutes = 25;
 
-  /// Versión de ESTE build (debe ser > 0.4.66 del APK Cordova).
-  static const String appVersion = '0.5.0';
+  /// Versión de ESTE build (debe coincidir con la de pubspec.yaml).
+  static const String appVersion = '0.5.3';
 }

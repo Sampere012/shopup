@@ -1,7 +1,7 @@
 name: shopup_panel
 description: "ShopUp Panel — Flutter offline-first"
 publish_to: 'none'
-version: 0.5.2+502
+version: 0.5.3+503
 
 environment:
   sdk: ^3.11.5

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../config.dart';
 import '../theme/app_theme.dart';
 import 'api_service.dart';
@@ -53,6 +54,40 @@ class UpdateService extends ChangeNotifier {
       await sp.setString(_notifiedKey, serverVersion);
     }
     return newVersion;
+  }
+
+  /// Abre la URL de descarga del APK (ahora desde GitHub Releases).
+  static Future<void> launchDownload(
+      BuildContext context, Map<String, dynamic> info) async {
+    final url = '${info['apk_url'] ?? ''}'.trim();
+    if (url.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('No hay enlace de descarga configurado'),
+          backgroundColor: AppTheme.amber,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+      return;
+    }
+    try {
+      final ok = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      if (!ok && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('No se pudo abrir el enlace de descarga'),
+          backgroundColor: AppTheme.danger,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(url),
+          backgroundColor: AppTheme.danger,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    }
   }
 
   /// Show update dialog with changelog.
@@ -115,7 +150,7 @@ class UpdateService extends ChangeNotifier {
             FilledButton.icon(
               onPressed: () {
                 Navigator.pop(ctx);
-                // TODO: launch URL for APK download
+                launchDownload(context, info);
               },
               icon: const Icon(Icons.download, size: 18),
               label: const Text('Descargar'),

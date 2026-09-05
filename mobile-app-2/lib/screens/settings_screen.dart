@@ -1,6 +1,3 @@
-import 'dart:async';
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -10,8 +7,8 @@ import '../theme/app_theme.dart';
 import '../services/auth_service.dart';
 import '../services/db_service.dart';
 import '../services/sync_service.dart';
-import '../services/theme_service.dart';
 import '../services/websocket_service.dart';
+import '../utils/clipboard.dart';
 import '../widgets/common.dart';
 
 /// Configuración: settings del servidor + settings locales del dispositivo.
@@ -31,6 +28,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   List<String> _clipBodyFields = ['name', 'qty', 'sale_price'];
   String _clipFooter = 'total';
   String _clipCustomFooter = '';
+  String _clipFormat = 'bloque';
+  String _clipSeparator = 'linea';
 
   @override
   void initState() {
@@ -67,64 +66,55 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _loadClipboardConfig() async {
     final sp = await SharedPreferences.getInstance();
     final raw = sp.getString('wsm_clipboard_config');
-    if (raw != null) {
-      try {
-        final m = jsonDecode(raw) as Map<String, dynamic>;
-        setState(() {
-          _clipHeader = m['header'] ?? 'nombre';
-          _clipCustomHeader = m['custom_header'] ?? '';
-          _clipBodyFields = List<String>.from(m['body'] ?? ['name', 'qty', 'sale_price']);
-          _clipFooter = m['footer'] ?? 'total';
-          _clipCustomFooter = m['custom_footer'] ?? '';
-        });
-        return;
-      } catch (_) {}
-    }
+    if (raw == null) return;
+    final m = clipboardConfigFromJson(raw);
+    setState(() {
+      _clipHeader = '${m['header'] ?? 'nombre'}';
+      _clipCustomHeader = '${m['custom_header'] ?? ''}';
+      _clipBodyFields = List<String>.from(m['body'] ?? ['name', 'qty', 'sale_price']);
+      _clipFooter = '${m['footer'] ?? 'total'}';
+      _clipCustomFooter = '${m['custom_footer'] ?? ''}';
+      _clipFormat = '${m['format'] ?? 'bloque'}';
+      _clipSeparator = '${m['separator'] ?? 'linea'}';
+    });
   }
 
   Future<void> _saveClipboardConfig() async {
     final sp = await SharedPreferences.getInstance();
-    await sp.setString('wsm_clipboard_config', jsonEncode({
+    await sp.setString('wsm_clipboard_config',
+        clipboardConfigToJson({
+          'header': _clipHeader,
+          'custom_header': _clipCustomHeader,
+          'body': _clipBodyFields,
+          'footer': _clipFooter,
+          'custom_footer': _clipCustomFooter,
+          'format': _clipFormat,
+          'separator': _clipSeparator,
+        }));
+    if (mounted) U.toast(context, 'Configuración de portapapeles guardada', kind: 'ok');
+  }
+
+  String _previewClipboard() {
+    const sample = <String, dynamic>{
+      'name': 'Producto de ejemplo',
+      'qty': 25,
+      'sale_price': 12.5,
+      'cost_price': 8.0,
+      'location_name': 'Tienda Principal',
+      'barcode': '123456789',
+      'category': 'Bebidas',
+      'supplier_name': 'Distribuidora XYZ',
+      'min_stock': 5,
+    };
+    return buildClipboardText([sample], {
       'header': _clipHeader,
       'custom_header': _clipCustomHeader,
       'body': _clipBodyFields,
       'footer': _clipFooter,
       'custom_footer': _clipCustomFooter,
-    }));
-    if (mounted) U.toast(context, 'Configuración de portapapeles guardada', kind: 'ok');
-  }
-
-  String _previewClipboard() {
-    final b = StringBuffer();
-    // Header
-    if (_clipHeader == 'nombre') {
-      b.writeln('Producto de ejemplo');
-    } else if (_clipHeader == 'custom' && _clipCustomHeader.isNotEmpty) {
-      b.writeln(_clipCustomHeader);
-    }
-    // Body
-    final sampleValues = <String, String>{
-      'name': 'Nombre: Producto de ejemplo',
-      'qty': 'Stock: 25 uds',
-      'sale_price': 'Precio venta: €12.50',
-      'cost_price': 'Precio costo: €8.00',
-      'location_name': 'Ubicación: Tienda Principal',
-      'barcode': 'Código barras: 123456789',
-      'category': 'Categoría: Bebidas',
-      'supplier_name': 'Proveedor: Distribuidora XYZ',
-      'min_stock': 'Stock mínimo: 5 uds',
-    };
-    for (final f in _clipBodyFields) {
-      b.writeln(sampleValues[f] ?? f);
-    }
-    // Footer
-    if (_clipFooter == 'total') {
-      b.writeln('---');
-      b.writeln('Total: 1 producto');
-    } else if (_clipFooter == 'custom' && _clipCustomFooter.isNotEmpty) {
-      b.writeln(_clipCustomFooter);
-    }
-    return b.toString().trim();
+      'format': _clipFormat,
+      'separator': _clipSeparator,
+    }, currency: '€', locationName: 'Tienda Principal');
   }
 
   @override
@@ -181,18 +171,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
             ]),
             const SizedBox(height: 12),
-            // Dark mode toggle
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Modo oscuro', style: TextStyle(fontSize: 14)),
-              subtitle: Text(
-                ThemeService.I.mode == ThemeMode.dark ? 'Activado' : (ThemeService.I.mode == ThemeMode.light ? 'Desactivado' : 'Según sistema'),
-                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-              ),
-              value: ThemeService.I.mode == ThemeMode.dark,
-              onChanged: (v) => ThemeService.I.setMode(v ? ThemeMode.dark : ThemeMode.light),
-            ),
-            const Divider(),
             // DB cache info
             FutureBuilder<int>(
               future: _dbSize(),
@@ -309,6 +287,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onChanged: (v) => _clipCustomFooter = v.trim(),
               ),
             ],
+            const SizedBox(height: 14),
+
+            // ── Formato ──
+            Text('Formato del mensaje', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.grey[700])),
+            const SizedBox(height: 6),
+            DropdownButtonFormField<String>(
+              initialValue: _clipFormat,
+              isDense: true,
+              decoration: const InputDecoration(
+                labelText: 'Formato',
+                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              ),
+              items: const [
+                DropdownMenuItem(value: 'bloque', child: Text('Bloque (campos en líneas)', style: TextStyle(fontSize: 13))),
+                DropdownMenuItem(value: 'linea', child: Text('Lista (una línea por producto)', style: TextStyle(fontSize: 13))),
+                DropdownMenuItem(value: 'viñetas', child: Text('Lista con viñetas (•)', style: TextStyle(fontSize: 13))),
+                DropdownMenuItem(value: 'numerada', child: Text('Lista numerada (1. 2. 3.)', style: TextStyle(fontSize: 13))),
+              ],
+              onChanged: (v) => setState(() => _clipFormat = v ?? 'bloque'),
+            ),
+            const SizedBox(height: 12),
+
+            // ── Separador ──
+            Text('Separador entre productos', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.grey[700])),
+            const SizedBox(height: 6),
+            DropdownButtonFormField<String>(
+              initialValue: _clipSeparator,
+              isDense: true,
+              decoration: const InputDecoration(
+                labelText: 'Separador',
+                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              ),
+              items: const [
+                DropdownMenuItem(value: 'linea', child: Text('Línea (---)', style: TextStyle(fontSize: 13))),
+                DropdownMenuItem(value: 'vacio', child: Text('Línea en blanco', style: TextStyle(fontSize: 13))),
+                DropdownMenuItem(value: 'ninguno', child: Text('Ninguno', style: TextStyle(fontSize: 13))),
+              ],
+              onChanged: (v) => setState(() => _clipSeparator = v ?? 'linea'),
+            ),
             const SizedBox(height: 14),
 
             // ── Preview ──

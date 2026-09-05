@@ -146,7 +146,15 @@ class PendingScreen extends StatelessWidget {
               ])),
               FilledButton.icon(
                 onPressed: SyncService.I.isBusy ? null : () async {
-                  await U.handlePush(context, SyncService.I.syncNow(), 'Sincronizado');
+                  final res = await SyncService.I.syncNow();
+                  if (!context.mounted) return;
+                  if (res == 'offline') {
+                    U.toast(context, 'Sin conexión: los cambios quedaron en cola', kind: 'warn');
+                  } else if (res == false) {
+                    U.toast(context, 'Algunos cambios siguen pendientes', kind: 'warn');
+                  } else {
+                    U.toast(context, 'Sincronizado');
+                  }
                 },
                 icon: const Icon(Icons.sync, size: 18),
                 label: const Text('Enviar'),

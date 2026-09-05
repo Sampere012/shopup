@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -11,6 +9,7 @@ import '../services/auth_service.dart';
 import '../services/db_service.dart';
 import '../services/pdf_service.dart';
 import '../services/sync_service.dart';
+import '../utils/clipboard.dart';
 import '../widgets/common.dart';
 import '../widgets/crud.dart';
 
@@ -71,67 +70,8 @@ class _StockScreenState extends State<StockScreen> {
         .where((l) => '${l['id']}' == _locFilter)
         .map((l) => '${l['name'] ?? ''}')
         .firstOrNull ?? '';
-    final b = StringBuffer();
-
-    // ── Header ──
-    final header = config['header'] ?? 'nombre';
-    if (header == 'nombre') {
-      if (locName.isNotEmpty) {
-        b.writeln('Catálogo: $locName');
-      }
-    } else if (header == 'custom') {
-      final custom = config['custom_header'] ?? '';
-      if (custom.isNotEmpty) b.writeln(custom);
-    }
-
-    // ── Body (each product) ──
-    final fields = List<String>.from(config['body'] ?? ['name', 'qty', 'sale_price']);
-    final fieldLabels = <String, String>{
-      'name': '',
-      'qty': 'Stock',
-      'sale_price': 'Precio',
-      'cost_price': 'Costo',
-      'location_name': 'Ubicación',
-      'barcode': 'Código',
-      'category': 'Categoría',
-      'supplier_name': 'Proveedor',
-      'min_stock': 'Mínimo',
-    };
-
-    for (final r in items) {
-      for (final f in fields) {
-        final label = fieldLabels[f] ?? '';
-        if (f == 'name') {
-          b.writeln('${r['name'] ?? ''}');
-        } else if (f == 'qty') {
-          final qty = (num.tryParse('${r['qty']}') ?? 0).toInt();
-          b.writeln('$label: $qty uds');
-        } else if (f == 'sale_price') {
-          final price = num.tryParse('${r['sale_price'] ?? r['price'] ?? 0}') ?? 0;
-          b.writeln('$label: ${U.money(price, cur)}');
-        } else if (f == 'cost_price') {
-          final cost = num.tryParse('${r['cost_price'] ?? 0}') ?? 0;
-          b.writeln('$label: ${U.money(cost, cur)}');
-        } else {
-          final val = '${r[f] ?? ''}';
-          if (val.isNotEmpty && val != 'null') {
-            b.writeln('$label: $val');
-          }
-        }
-      }
-      b.writeln('---');
-    }
-
-    // ── Footer ──
-    final footer = config['footer'] ?? 'total';
-    if (footer == 'total') {
-      b.writeln('Total: ${items.length} producto${items.length != 1 ? 's' : ''}');
-    } else if (footer == 'custom') {
-      final custom = config['custom_footer'] ?? '';
-      if (custom.isNotEmpty) b.writeln(custom);
-    }
-
-    final text = b.toString().trim();
+    final text = buildClipboardText(items, config,
+        currency: cur, locationName: locName);
     await Clipboard.setData(ClipboardData(text: text));
     if (mounted) U.toast(context, 'Copiado al portapapeles (${items.length} productos)', kind: 'ok');
   }
@@ -139,12 +79,8 @@ class _StockScreenState extends State<StockScreen> {
   static Future<Map<String, dynamic>> _loadClipboardConfig() async {
     final sp = await SharedPreferences.getInstance();
     final raw = sp.getString('wsm_clipboard_config');
-    if (raw != null) {
-      try {
-        return jsonDecode(raw) as Map<String, dynamic>;
-      } catch (_) {}
-    }
-    return {'header': 'nombre', 'body': ['name', 'qty', 'sale_price'], 'footer': 'total'};
+    if (raw != null) return clipboardConfigFromJson(raw);
+    return defaultClipboardConfig();
   }
 
   @override

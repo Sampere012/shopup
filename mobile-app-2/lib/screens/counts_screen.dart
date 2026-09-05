@@ -22,6 +22,7 @@ class _CountsScreenState extends State<CountsScreen> {
   List<Map<String, dynamic>> _items = [];
   List<Map<String, dynamic>> _history = [];
   bool _loading = true;
+  final Map<String, TextEditingController> _phys = {};
 
   @override
   void initState() {
@@ -69,17 +70,34 @@ class _CountsScreenState extends State<CountsScreen> {
       setState(() {});
       return;
     }
+    // Conserva lo que el usuario ya contó (físico): solo se rellena el físico
+    // con el virtual cuando el producto es nuevo en la lista. El virtual
+    // (app) nunca se modifica.
+    final prev = <String, Map<String, dynamic>>{
+      for (final r in _items) '${r['product_id']}': r,
+    };
+    List<Map<String, dynamic>> normalize(List<Map<String, dynamic>> rows) {
+      return rows.map((r) {
+        final pid = '${r['product_id']}';
+        final qty = (num.tryParse('${r['qty'] ?? r['virtual_qty']}') ?? 0).toInt();
+        final before = prev[pid];
+        final keptPhysical =
+            (before != null && before['physical'] is int) ? before['physical'] as int : null;
+        return {
+          'product_id': r['product_id'],
+          'name': r['name'],
+          'barcode': r['barcode'],
+          'virtual_qty': qty,
+          'physical': keptPhysical ?? qty,
+        };
+      }).toList();
+    }
+
     // Load from cache first
     final cached = await DbService.I.cacheGet('ws_stock_count_virtual:$_locId');
     if (cached is List && cached.isNotEmpty) {
-      _items = cached.whereType<Map>().toList().cast<Map<String, dynamic>>();
-      _items = _items.map((r) => {
-        'product_id': r['product_id'],
-        'name': r['name'],
-        'barcode': r['barcode'],
-        'virtual_qty': (num.tryParse('${r['qty'] ?? r['virtual_qty']}') ?? 0).toInt(),
-        'physical': (num.tryParse('${r['qty'] ?? r['virtual_qty']}') ?? 0).toInt(),
-      }).toList();
+      _items = normalize(cached.whereType<Map>().toList().cast<Map<String, dynamic>>());
+      _phys.clear();
       setState(() {});
     }
     // Background refresh
@@ -89,14 +107,9 @@ class _CountsScreenState extends State<CountsScreen> {
       final rows = (d is List)
           ? d
           : (d['data'] is List ? d['data'] : []);
-      _items = List<Map<String, dynamic>>.from(rows).map((r) => {
-        'product_id': r['product_id'],
-        'name': r['name'],
-        'barcode': r['barcode'],
-        'virtual_qty': (num.tryParse('${r['qty']}') ?? 0).toInt(),
-        'physical': (num.tryParse('${r['qty']}') ?? 0).toInt(),
-      }).toList();
+      _items = normalize(List<Map<String, dynamic>>.from(rows));
       await DbService.I.cacheSet('ws_stock_count_virtual:$_locId', _items);
+      _phys.clear();
       if (mounted) setState(() {});
     } catch (_) {}
   }
@@ -155,6 +168,7 @@ class _CountsScreenState extends State<CountsScreen> {
                     .toList(),
                 onChanged: (v) {
                   setState(() => _locId = v ?? '');
+                  _phys.clear();
                   _loadVirtual();
                   _loadHistory();
                 },
@@ -256,43 +270,77 @@ class _CountsScreenState extends State<CountsScreen> {
           ...List.generate(_items.length > 200 ? 200 : _items.length, (i) {
             final item = _items[i];
             final d = _diff(item);
-            final diffColor = d > 0
-                ? AppTheme.success
-                : d < 0
-                    ? AppTheme.danger
-                    : AppTheme.success;
-            final diffLabel = d == 0
-                ? '✓'
-                : '${d > 0 ? '+' : ''}$d';
+            final pid = '${item['product_id']}';
+            final ctrl = _phys.putIfAbsent(pid, () {
+              final c = TextEditingController(text: '${item['physical'] ?? 0}');
+              c.addListener(() {
+                final v = (int.tryParse(c.text) ?? 0).clamp(0, 99999);
+                if (v != item['physical']) {
+                  item['physical'] = v;
+                  setInner(() {});
+                }
+              });
+              return c;
+            });
             return Card(
               margin: const EdgeInsets.only(bottom: 4),
-              child: ListTile(
-                dense: true,
-                title: Text('${item['name'] ?? ''}',
-                    style: const TextStyle(
-                        fontSize: 13, fontWeight: FontWeight.w600)),
-                subtitle: Text(
-                    'Virtual: ${item['virtual_qty'] ?? 0} · $diffLabel',
-                    style: TextStyle(
-                        fontSize: 11, color: diffColor)),
-                trailing: SizedBox(
-                  width: 70,
-                  child: TextField(
-                    keyboardType: TextInputType.number,
-                    controller: TextEditingController(
-                        text: '${item['physical'] ?? 0}'),
-                    style: const TextStyle(fontSize: 13),
-                    decoration: const InputDecoration(
-                        isDense: true,
-                        contentPadding: EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 4)),
-                    onChanged: (v) {
-                      item['physical'] =
-                          (int.tryParse(v) ?? 0).clamp(0, 99999);
-                      setInner(() {});
-                    },
-                  ),
-                ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('${item['name'] ?? ''}',
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  if ('${item['barcode'] ?? ''}'.isNotEmpty)
+                    Text('${item['barcode']}',
+                        style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+                  const SizedBox(height: 8),
+                  Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+                    // Virtual (app) — read-only
+                    Expanded(
+                      flex: 3,
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text('Virtual (app)',
+                            style: TextStyle(
+                                fontSize: 10, fontWeight: FontWeight.w600, color: Colors.grey[500])),
+                        const SizedBox(height: 2),
+                        Text('${item['virtual_qty'] ?? 0}',
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                      ]),
+                    ),
+                    const SizedBox(width: 10),
+                    // Físico (contado) — lo introduce el usuario
+                    Expanded(
+                      flex: 3,
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text('Físico (contado)',
+                            style: TextStyle(
+                                fontSize: 10, fontWeight: FontWeight.w600, color: Colors.grey[500])),
+                        const SizedBox(height: 2),
+                        TextField(
+                          controller: ctrl,
+                          keyboardType: TextInputType.number,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                          decoration: const InputDecoration(
+                            isDense: true,
+                            contentPadding:
+                                EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ]),
+                    ),
+                    const SizedBox(width: 10),
+                    // Resultado: falta / cuadra / sobra
+                    Expanded(
+                      flex: 4,
+                      child: d == 0
+                          ? _countDiffBadge('✓ Cuadra', AppTheme.success)
+                          : d > 0
+                              ? _countDiffBadge('Sobra $d', AppTheme.amber)
+                              : _countDiffBadge('Falta ${-d}', AppTheme.danger),
+                    ),
+                  ]),
+                ]),
               ),
             );
           }),
@@ -387,6 +435,22 @@ class _CountsScreenState extends State<CountsScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _countDiffBadge(String text, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: color.withAlpha(15),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withAlpha(50)),
+      ),
+      child: Text(text,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+              fontSize: 12, fontWeight: FontWeight.w700, color: color)),
     );
   }
 

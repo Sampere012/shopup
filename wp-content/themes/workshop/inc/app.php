@@ -18,7 +18,15 @@ defined( 'ABSPATH' ) || exit;
  * Versión del build móvil actual (la sube sync:web / se edita en wp-admin).
  * Es el valor por defecto del ajuste; el administrador lo cambia al publicar.
  */
-define( 'WS_APP_VERSION', '0.4.66' );
+define( 'WS_APP_VERSION', '0.5.3' );
+
+/**
+ * Descarga del APK desde GitHub Releases (repo público del negocio).
+ * Se usa como URL por defecto y como destino de la web (botón "Descargar app").
+ * El asset se genera al publicar una etiqueta vX.Y.Z (workflow de GitHub).
+ */
+define( 'WS_APP_RELEASE_URL', 'https://github.com/Sampere012/shopup/releases/latest/download/shopup-panel.apk' );
+define( 'WS_APP_RELEASE_PAGE', 'https://github.com/Sampere012/shopup/releases/latest' );
 
 /**
  * Ajustes por defecto de la app móvil.
@@ -47,14 +55,15 @@ function ws_app_settings() {
 function ws_app_apk_url() {
 	$s   = ws_app_settings();
 	$url = trim( (string) ( $s['apk_url'] ?? '' ) );
-	// Si no hay URL configurada, usar la ruta por defecto (/app/shopup-panel.apk).
+	$def = WS_APP_RELEASE_URL;
+	// Si no hay URL configurada, usar la de GitHub Releases (default).
 	if ( '' === $url ) {
-		$url = home_url( '/app/shopup-panel.apk' );
+		return $def;
 	}
-	// Ruta relativa (p.ej. /app/shopup-panel.apk): resolver contra el sitio
-	// para que funcione en cualquier dominio (local, producción, subcarpeta).
-	if ( '/' === $url[0] ) {
-		$url = home_url( $url );
+	// Ruta relativa o la antigua ruta /app/...: resolver contra GitHub Releases,
+	// así la carpeta /app/ del servidor ya no se usa para servir el APK.
+	if ( '/' === $url[0] || false !== strpos( $url, '/app/shopup-panel.apk' ) ) {
+		return $def;
 	}
 	return $url;
 }
@@ -80,6 +89,7 @@ function ws_app_version_info() {
 	return array(
 		'version'     => trim( (string) ( $s['version'] ?? WS_APP_VERSION ) ),
 		'apk_url'     => ws_app_apk_url(),
+		'release_url' => WS_APP_RELEASE_PAGE,
 		'changelog'   => trim( (string) ( $s['changelog'] ?? '' ) ),
 		'has_apk'     => ws_app_has_download(),
 		'pwa_version' => defined( 'WS_VERSION' ) ? WS_VERSION : '',
@@ -122,8 +132,8 @@ function ws_admin_page_app() {
 	if ( isset( $_POST['ws_app_nonce'] ) && wp_verify_nonce( $_POST['ws_app_nonce'], 'ws_save_app' ) ) {
 		$apk_url = esc_url_raw( (string) ( $_POST['apk_url'] ?? '' ) );
 		if ( '' === trim( $apk_url ) ) {
-			// Ruta por defecto: carpeta /app/ en la raíz del sitio.
-			$apk_url = home_url( '/app/shopup-panel.apk' );
+			// Ruta por defecto: GitHub Releases (repo público del negocio).
+			$apk_url = WS_APP_RELEASE_URL;
 		}
 		update_option( 'ws_app_download', array(
 			'enabled'   => ! empty( $_POST['enabled'] ) ? 1 : 0,
@@ -163,11 +173,11 @@ function ws_admin_page_app() {
 					<tr>
 						<th scope="row"><label for="ws-app-apk-url"><?php esc_html_e( 'URL del APK', 'workshop' ); ?></label></th>
 						<td>
-							<input type="url" id="ws-app-apk-url" name="apk_url" class="regular-text" value="<?php echo esc_attr( $s['apk_url'] ); ?>" placeholder="<?php echo esc_attr( home_url( '/app/shopup-panel.apk' ) ); ?>">
+							<input type="url" id="ws-app-apk-url" name="apk_url" class="regular-text" value="<?php echo esc_attr( $s['apk_url'] ); ?>" placeholder="<?php echo esc_attr( WS_APP_RELEASE_URL ); ?>">
 							<p class="description">
-								<?php esc_html_e( 'Si lo dejas vacío se usa la ruta por defecto:', 'workshop' ); ?>
-								<code><?php echo esc_html( home_url( '/app/shopup-panel.apk' ) ); ?></code>.
-								<?php esc_html_e( 'Sube el archivo .apk a esa carpeta del servidor (o pega una URL externa).', 'workshop' ); ?>
+								<?php esc_html_e( 'Si lo dejas vacío se usa GitHub Releases:', 'workshop' ); ?>
+								<code><?php echo esc_html( WS_APP_RELEASE_URL ); ?></code>.
+								<?php esc_html_e( 'El archivo .apk se publica como release al etiquetar el repo (workflow automático); la app y la web lo descargan desde ahí.', 'workshop' ); ?>
 							</p>
 						</td>
 					</tr>
