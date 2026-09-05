@@ -21,11 +21,11 @@ defined( 'ABSPATH' ) || exit;
 define( 'WS_APP_VERSION', '0.5.3' );
 
 /**
- * Descarga del APK desde GitHub Releases (repo público del negocio).
- * Se usa como URL por defecto y como destino de la web (botón "Descargar app").
- * El asset se genera al publicar una etiqueta vX.Y.Z (workflow de GitHub).
+ * Descarga del APK desde el repo público de GitHub (raw).
+ * La APK firmada se sube a releases/shopup-panel.apk del repo al publicar
+ * una versión; tanto la app como la web la descargan desde aquí sin login.
  */
-define( 'WS_APP_RELEASE_URL', 'https://github.com/Sampere012/shopup/releases/latest/download/shopup-panel.apk' );
+define( 'WS_APP_RELEASE_URL', 'https://raw.githubusercontent.com/Sampere012/shopup/main/releases/shopup-panel.apk' );
 define( 'WS_APP_RELEASE_PAGE', 'https://github.com/Sampere012/shopup/releases/latest' );
 
 /**
@@ -62,7 +62,7 @@ function ws_app_apk_url() {
 	}
 	// Ruta relativa o la antigua ruta /app/...: resolver contra GitHub Releases,
 	// así la carpeta /app/ del servidor ya no se usa para servir el APK.
-	if ( '/' === $url[0] || false !== strpos( $url, '/app/shopup-panel.apk' ) ) {
+	if ( '/' === $url[0] || false !== strpos( $url, '/app/shopup-panel.apk' ) || false !== strpos( $url, 'releases/latest/download' ) ) {
 		return $def;
 	}
 	return $url;
@@ -175,9 +175,9 @@ function ws_admin_page_app() {
 						<td>
 							<input type="url" id="ws-app-apk-url" name="apk_url" class="regular-text" value="<?php echo esc_attr( $s['apk_url'] ); ?>" placeholder="<?php echo esc_attr( WS_APP_RELEASE_URL ); ?>">
 							<p class="description">
-								<?php esc_html_e( 'Si lo dejas vacío se usa GitHub Releases:', 'workshop' ); ?>
+								<?php esc_html_e( 'Si lo dejas vacío se usa el APK del repo público de GitHub:', 'workshop' ); ?>
 								<code><?php echo esc_html( WS_APP_RELEASE_URL ); ?></code>.
-								<?php esc_html_e( 'El archivo .apk se publica como release al etiquetar el repo (workflow automático); la app y la web lo descargan desde ahí.', 'workshop' ); ?>
+								<?php esc_html_e( 'Al publicar una versión se sube releases/shopup-panel.apk al repo y se cambia aquí la versión; la app y la web lo descargan desde GitHub.', 'workshop' ); ?>
 							</p>
 						</td>
 					</tr>
