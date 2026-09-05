@@ -5,6 +5,11 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Tag del release a publicar (ej: v0.5.3). Solo para builds manuales.'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -45,19 +50,25 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="${{ github.ref_name }}"
+          TAG="${{ inputs.release_tag }}"
+          if [ -z "$TAG" ]; then
+            TAG="${{ github.ref_name }}"
+          fi
+          echo "Target release tag: $TAG"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release $TAG already exists"
           else
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
               --title "ShopUp Panel $TAG" \
-              --notes "[!IMPORTANT]
-Esta APK se genera automáticamente desde el código de la etiqueta $TAG."
+              --notes "APK generada automaticamente desde el codigo de $TAG."
           fi
 
       - name: Upload APK to release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="${{ github.ref_name }}"
+          TAG="${{ inputs.release_tag }}"
+          if [ -z "$TAG" ]; then
+            TAG="${{ github.ref_name }}"
+          fi
           gh release upload "$TAG" ./shopup-panel.apk --repo "$GITHUB_REPOSITORY" --clobber
