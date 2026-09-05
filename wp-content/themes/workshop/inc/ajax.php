@@ -445,7 +445,7 @@ function ws_guard( $cap, $fallback = '' ) {
 function ws_list_paging() {
     $page = isset( $_POST['page'] ) ? max( 1, (int) $_POST['page'] ) : 1;
     $page_size = isset( $_POST['pageSize'] ) ? (int) $_POST['pageSize'] : 10;
-    $page_size = in_array( $page_size, array( 10, 25, 50, 100 ), true ) ? $page_size : 10;
+    $page_size = in_array( $page_size, array( 10, 25, 50, 100, 200, 500, 1000 ), true ) ? $page_size : 10;
     $sort = sanitize_key( $_POST['sort'] ?? '' );
     $dir  = ( ( $_POST['dir'] ?? 'asc' ) === 'desc' ) ? 'DESC' : 'ASC';
     return array(

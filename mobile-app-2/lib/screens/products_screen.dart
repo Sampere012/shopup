@@ -936,13 +936,19 @@ class _CategoriesTabState extends State<_CategoriesTab> {
   // Nueva categoría desde el FAB de la pantalla madre.
   void editNew(BuildContext context) => _edit(context, null, _load);
 
+  // Nueva SUBCATEGORÍA desde el botón "+" de una tarjeta: el padre se prefija,
+  // igual que el addChild() del panel web.
+  void addChild(BuildContext context, Map<String, dynamic> parent) =>
+      _edit(context, null, _load, parentId: int.tryParse('${parent['id'] ?? 0}') ?? 0);
+
   Future<void> _edit(BuildContext context, Map<String, dynamic>? existing,
-      void Function() after) async {
+      void Function() after,
+      {int? parentId}) async {
     final name = TextEditingController(text: '${existing?['name'] ?? ''}');
     final sort = TextEditingController(text: '${existing?['sort_order'] ?? 0}');
     final active = ValueNotifier<bool>(
         existing == null || ('${existing['active']}' != '0' && '${existing['active']}' != 'false'));
-    final parentNotifier = ValueNotifier<int>(
+    final parentNotifier = ValueNotifier<int>(parentId ??
         int.tryParse('${existing?['parent_id'] ?? 0}') ?? 0);
 
     // Flat list of parent candidates (excluye la propia y sus hijos).
@@ -1151,6 +1157,13 @@ class _CategoriesTabState extends State<_CategoriesTab> {
                         trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
+                              if (_depth(c, _cats) < 2)
+                                IconButton(
+                                  icon: Icon(Icons.add_circle_outline,
+                                      size: 19, color: AppTheme.primary),
+                                  tooltip: 'Añadir subcategoría',
+                                  onPressed: () => addChild(context, c),
+                                ),
                               IconButton(
                                 icon: const Icon(Icons.edit_outlined, size: 19),
                                 onPressed: () => _edit(context, c, () => _load()),

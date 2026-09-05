@@ -7,5 +7,5 @@ class AppConfig {
   static const int autoSyncMinutes = 25;
 
   /// Versión de ESTE build (debe coincidir con la de pubspec.yaml).
-  static const String appVersion = '0.5.3';
+  static const String appVersion = '0.5.4';
 }
