@@ -3178,24 +3178,38 @@ function ws_ajax_save_permissions() {
     $raw = isset( $_POST['matrix'] ) ? $_POST['matrix'] : array();
     $all  = array_keys( WS_Capabilities::all_caps() );
     $roles = array( 'owner', 'storekeeper', 'seller' );
+    // El dueño del negocio no puede modificar sus propios permisos: la fila
+    // 'owner' solo la edita el administrador del sitio (manage_options).
+    // Se conserva tal cual para cualquier otro usuario.
+    $can_edit_owner = current_user_can( 'manage_options' );
+    $existing_all = WS_Capabilities::matrix();
     if ( is_string( $raw ) ) {
         // Formato app (JSON): la app manda solo los módulos que tiene. Se
         // combina con la matriz existente para NO pisar los permisos web-only.
         $posted = (array) json_decode( wp_unslash( $raw ), true );
-        $existing = WS_Capabilities::matrix();
         $merged = array();
         foreach ( $roles as $role ) {
             $merged[ $role ] = array();
+            if ( ! $can_edit_owner && 'owner' === $role ) {
+                // Conservar tal cual los permisos del dueño.
+                $merged[ $role ] = isset( $existing_all[ $role ] ) ? $existing_all[ $role ] : array();
+                continue;
+            }
             foreach ( $all as $cap ) {
                 $merged[ $role ][ $cap ] = isset( $posted[ $role ][ $cap ] )
                     ? ! empty( $posted[ $role ][ $cap ] )
-                    : ! empty( $existing[ $role ][ $cap ] );
+                    : ! empty( $existing_all[ $role ][ $cap ] );
             }
         }
         $matrix = $merged;
     } else {
         // Formato web (form): matriz completa, autoritativa.
         $matrix = (array) $raw;
+        if ( ! $can_edit_owner ) {
+            // Forzar la fila 'owner' a los permisos existentes: el panel del
+            // dueño solo edita almacenero y vendedor.
+            $matrix['owner'] = isset( $existing_all['owner'] ) ? $existing_all['owner'] : array();
+        }
     }
     WS_Capabilities::save_matrix( $matrix );
     ws_log_audit( 'permissions_update', 'settings', 0 );

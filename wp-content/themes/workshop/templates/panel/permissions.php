@@ -14,6 +14,7 @@ $roles  = array(
     'storekeeper' => __( 'Almacenero', 'workshop' ),
     'seller'      => __( 'Vendedor', 'workshop' ),
 );
+$can_edit_owner = current_user_can( 'manage_options' );
 ?>
 <div x-data="wsPermissions(<?php echo esc_attr( wp_json_encode( array( 'matrix' => $matrix ) ) ); ?>)">
 
@@ -22,6 +23,11 @@ $roles  = array(
             <h3 class="ws-card-title" style="margin:0"><i class="fa-solid fa-shield-halved"></i> <?php esc_html_e( 'Matriz de permisos', 'workshop' ); ?></h3>
             <button class="ws-btn ws-btn-primary" @click="save()"><i class="fa-solid fa-floppy-disk"></i> <?php esc_html_e( 'Guardar permisos', 'workshop' ); ?></button>
         </div>
+        <?php if ( ! $can_edit_owner ) : ?>
+            <p style="margin:0 0 12px;font-size:12px;color:#888">
+                <i class="fa-solid fa-lock"></i> <?php esc_html_e( 'Los permisos del dueño los gestiona el administrador del sitio.', 'workshop' ); ?>
+            </p>
+        <?php endif; ?>
         <table class="ws-table ws-perm-table">
             <thead>
                 <tr>
@@ -38,7 +44,7 @@ $roles  = array(
                         <?php foreach ( array_keys( $roles ) as $rkey ) : ?>
                             <td class="ws-center">
                                 <label class="ws-check ws-check-switch">
-                                    <input type="checkbox" x-model="matrix['<?php echo esc_attr( $rkey ); ?>']['<?php echo esc_attr( $cap ); ?>']">
+                                    <input type="checkbox" x-model="matrix['<?php echo esc_attr( $rkey ); ?>']['<?php echo esc_attr( $cap ); ?>']"<?php echo ( 'owner' === $rkey && ! $can_edit_owner ) ? ' disabled' : ''; ?>>
                                     <span></span>
                                 </label>
                             </td>

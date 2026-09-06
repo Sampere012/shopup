@@ -24,6 +24,12 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
   bool _saving = false;
   bool _loading = true;
 
+  // Rol del usuario logueado (slug corto: owner/storekeeper/seller).
+  String get _myRole => '${AuthService.I.me?['role'] ?? ''}';
+
+  // El dueño NO se edita a sí mismo: solo el administrador del sitio lo hace.
+  bool get _canEditOwner => _myRole != 'owner';
+
   @override
   void initState() {
     super.initState();
@@ -82,7 +88,13 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
   }
 
   Future<void> _save() async {
-    if (_dirty.isEmpty) {
+    // El dueño no puede modificar su propia fila (solo el admin del sitio la edita).
+    final editable = _dirty.entries.where((e) {
+      final r = e.key.split(':').first;
+      return _canEditOwner || r != 'owner';
+    }).toList();
+    final pending = Map<String, bool>.fromEntries(editable);
+    if (pending.isEmpty) {
       if (mounted) U.toast(context, 'Sin cambios', kind: 'warn');
       return;
     }
@@ -92,7 +104,7 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
     for (final r in _roles) {
       next[r] = Map<String, dynamic>.from(_matrix[r] is Map ? _matrix[r] : {});
     }
-    for (final entry in _dirty.entries) {
+    for (final entry in pending.entries) {
       final parts = entry.key.split(':');
       final r = parts.first;
       final cap = parts.sublist(1).join(':');
@@ -144,6 +156,20 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
         child: Text('Marca qué puede hacer cada rol y pulsa Guardar.',
             style: TextStyle(color: Colors.grey[600], fontSize: 12)),
       ),
+      if (!_canEditOwner)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 6, 14, 0),
+          child: Row(children: [
+            Icon(Icons.lock_outline, size: 14, color: Colors.grey[500]),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                'Tus permisos (Dueño) los gestiona el administrador del sitio. Aquí puedes editarlos si estás viendo otro rol.',
+                style: TextStyle(color: Colors.grey[500], fontSize: 11),
+              ),
+            ),
+          ]),
+        ),
 
       // Role tabs
       SizedBox(
@@ -189,16 +215,22 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
             final cap = capKeys[i];
             final label = _caps[cap] ?? cap;
             final on = _valueFor(_currentRole, cap);
+            // Solo lectura para el dueño en su propia fila (la edita el admin del sitio).
+            final locked = _currentRole == 'owner' && !_canEditOwner;
             return Card(
               child: SwitchListTile.adaptive(
                 title: Text('$label', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                subtitle: Text(cap, style: TextStyle(color: Colors.grey[500], fontSize: 11)),
+                subtitle: Text(
+                    locked ? '$cap · solo lectura' : cap,
+                    style: TextStyle(color: Colors.grey[500], fontSize: 11)),
                 value: on,
-                onChanged: (v) {
-                  setState(() {
-                    _dirty['$_currentRole:$cap'] = v;
-                  });
-                },
+                onChanged: locked
+                    ? null
+                    : (v) {
+                        setState(() {
+                          _dirty['$_currentRole:$cap'] = v;
+                        });
+                      },
               ),
             );
           },
