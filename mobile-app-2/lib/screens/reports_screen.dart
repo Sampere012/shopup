@@ -334,7 +334,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
     final transactions = (_data['transactions'] as List?) ?? [];
     final posProducts = (_data['pos_products'] as List?) ?? [];
     final posSales = (_data['pos_sales'] as List?) ?? [];
-    final utils = Map<String, dynamic>.from(_data['utils'] ?? {});
+    final utils = (_data['utils'] is Map)
+        ? Map<String, dynamic>.from(_data['utils'] as Map)
+        : <String, dynamic>{};
     final periodLabel = (_data['filters'] as Map?)?['period_label'] ?? '$_period días';
 
     return ListView(
@@ -460,7 +462,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
         ],
 
         // ── Utilidades mensuales ──
-        if (utils['months'] != null && (utils['months'] as List).isNotEmpty) ...[
+        if (utils['months'] is List && (utils['months'] as List).isNotEmpty) ...[
           _sectionTitle('Utilidades mensuales', Icons.scale_outlined),
           const SizedBox(height: 6),
           _buildTable(isDark, [
@@ -548,7 +550,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
           _buildTable(isDark, [
             _tableHeader(['Tipo', 'Transacciones', 'Unidades']),
             ...byType.map((t) => _tableRow([
-              '${(t['type'] ?? '').toString()[0].toUpperCase()}${(t['type'] ?? '').toString().substring(1)}',
+              _typeLabel(t),
               '${t['n'] ?? 0}',
               '${t['qty'] ?? 0}',
             ])),
@@ -660,6 +662,12 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 
   // ── Helpers ──
+
+  String _typeLabel(Map<String, dynamic> t) {
+    final s = '${t['type'] ?? ''}';
+    if (s.isEmpty) return '-';
+    return s[0].toUpperCase() + s.substring(1);
+  }
 
   Widget _sectionTitle(String text, IconData icon) {
     return Row(children: [

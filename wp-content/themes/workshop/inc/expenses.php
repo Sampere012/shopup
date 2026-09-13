@@ -97,7 +97,7 @@ class WS_Expenses {
             'expense_date' => gmdate( 'Y-m-d H:i:s', $ts ),
             'created_by'   => get_current_user_id(),
         );
-        if ( $id ) {
+        if ( $id > 0 ) {
             unset( $fields['created_by'] );
             $wpdb->update( self::table(), $fields, array( 'id' => $id ) );
             return $id;

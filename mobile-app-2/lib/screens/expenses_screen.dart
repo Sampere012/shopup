@@ -112,35 +112,59 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
           U.toast(context, 'Concepto y monto son obligatorios', kind: 'err');
           return false;
         }
+        final payload = <String, dynamic>{
+          'id': e != null ? (num.tryParse('${e['id']}') ?? 0) : 0,
+          'concept': concept.text.trim(),
+          'amount': num.tryParse(amount.text) ?? 0,
+          'category': category.value,
+          'expense_date': dateRaw.text.trim(),
+          'location_id': locId.value,
+          'note': note.text.trim(),
+        };
+        final rowId = num.tryParse('${payload['id']}') ?? 0;
+        if (rowId < 0) {
+          // Gasto creado sin conexión (id temporal negativo): la nube aún no lo
+          // tiene. Se actualiza solo local; al sincronizar se creará tal cual.
+          final raw = await DbService.I.cacheGet('ws_expenses_list');
+          final rows = (raw is List)
+              ? List<Map<String, dynamic>>.from(raw)
+              : <Map<String, dynamic>>[];
+          for (final r in rows) {
+            if ('${r['id']}' == '$rowId') {
+              r['concept'] = payload['concept'];
+              r['amount'] = payload['amount'];
+              r['category'] = payload['category'];
+              r['date_raw'] = payload['expense_date'];
+              r['location_id'] = payload['location_id'];
+              r['note'] = payload['note'];
+              break;
+            }
+          }
+          await DbService.I.cacheSet('ws_expenses_list', rows);
+          U.toast(context, 'Guardado (pendiente de sincronizar)', kind: 'ok');
+          return true;
+        }
         return U.handlePush(
           context,
-          SyncService.I.push('ws_expense_save', {
-            'id': e != null ? (num.tryParse('${e['id']}') ?? 0) : 0,
-            'concept': concept.text.trim(),
-            'amount': num.tryParse(amount.text) ?? 0,
-            'category': category.value,
-            'expense_date': dateRaw.text.trim(),
-            'location_id': locId.value,
-            'note': note.text.trim(),
-          }),
+          SyncService.I.push('ws_expense_save', payload),
           'Guardado',
           onOk: () => SyncService.I.pullCache('ws_expenses_list', {'year': 0, 'month': 0}, 'ws_expenses_list'),
-          onQueued: (payload) async {
+          onQueued: (queuedPayload) async {
             final raw = await DbService.I.cacheGet('ws_expenses_list');
             final rows = (raw is List) ? List<Map<String, dynamic>>.from(raw) : <Map<String, dynamic>>[];
-            final id = payload['id'] ?? 0;
+            final id = queuedPayload['id'] ?? 0;
             if (id == 0) {
               rows.add({
                 'id': -DateTime.now().millisecondsSinceEpoch,
-                'concept': payload['concept'], 'amount': payload['amount'],
-                'category': payload['category'], 'date_raw': payload['expense_date'],
-                'location_id': payload['location_id'], 'note': payload['note'],
+                'concept': queuedPayload['concept'], 'amount': queuedPayload['amount'],
+                'category': queuedPayload['category'], 'date_raw': queuedPayload['expense_date'],
+                'location_id': queuedPayload['location_id'], 'note': queuedPayload['note'],
               });
             } else {
               for (final r in rows) {
                 if ('${r['id']}' == '$id') {
-                  r['concept'] = payload['concept']; r['amount'] = payload['amount'];
-                  r['category'] = payload['category']; r['date_raw'] = payload['expense_date'];
+                  r['concept'] = queuedPayload['concept']; r['amount'] = queuedPayload['amount'];
+                  r['category'] = queuedPayload['category']; r['date_raw'] = queuedPayload['expense_date'];
                   break;
                 }
               }
@@ -154,21 +178,86 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   }
 
   Future<void> _delete(Map<String, dynamic> e) async {
-    if (await U.confirm(context, '¿Eliminar este gasto?', action: 'Eliminar')) {
-      await U.handlePush(
-        context,
-        SyncService.I.push('ws_expense_delete', {'id': e['id']}),
-        'Eliminado',
-        onOk: () => SyncService.I.pullCache('ws_expenses_list', {'year': 0, 'month': 0}, 'ws_expenses_list'),
-        onQueued: (qp) async {
-          final raw = await DbService.I.cacheGet('ws_expenses_list');
-          final rows = (raw is List) ? List<Map<String, dynamic>>.from(raw) : <Map<String, dynamic>>[];
-          rows.removeWhere((r) => '${r['id']}' == '${e['id']}');
-          await DbService.I.cacheSet('ws_expenses_list', rows);
-        },
-      );
+    if (!await U.confirm(context, '¿Eliminar este gasto?', action: 'Eliminar')) return;
+    final rowId = num.tryParse('${e['id']}') ?? 0;
+    if (rowId < 0) {
+      // Gasto pendiente de crear en la nube: se quita solo local.
+      final raw = await DbService.I.cacheGet('ws_expenses_list');
+      final rows = (raw is List) ? List<Map<String, dynamic>>.from(raw) : <Map<String, dynamic>>[];
+      rows.removeWhere((r) => '${r['id']}' == '$rowId');
+      await DbService.I.cacheSet('ws_expenses_list', rows);
+      U.toast(context, 'Eliminado (local)');
       _reload(); setState(() {});
+      return;
     }
+    await U.handlePush(
+      context,
+      SyncService.I.push('ws_expense_delete', {'id': e['id']}),
+      'Eliminado',
+      onOk: () => SyncService.I.pullCache('ws_expenses_list', {'year': 0, 'month': 0}, 'ws_expenses_list'),
+      onQueued: (qp) async {
+        final raw = await DbService.I.cacheGet('ws_expenses_list');
+        final rows = (raw is List) ? List<Map<String, dynamic>>.from(raw) : <Map<String, dynamic>>[];
+        rows.removeWhere((r) => '${r['id']}' == '${e['id']}');
+        await DbService.I.cacheSet('ws_expenses_list', rows);
+      },
+    );
+    _reload(); setState(() {});
+  }
+
+  void _view(Map<String, dynamic> e) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cur = AuthService.I.currency;
+    final amount = num.tryParse('${e['amount']}') ?? 0;
+    final rowId = num.tryParse('${e['id']}') ?? 0;
+    final canManage = AuthService.I.has('expenses_manage');
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(children: [
+          const Icon(Icons.receipt_long_outlined, color: AppTheme.danger),
+          const SizedBox(width: 8),
+          const Expanded(child: Text('Detalle del gasto')),
+        ]),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          _detailRow('Concepto', '${e['concept'] ?? ''}'),
+          _detailRow('Monto', U.money(amount, cur)),
+          _detailRow('Categoría', '${e['category'] ?? ''}'),
+          _detailRow('Fecha', '${e['date_label'] ?? e['date_raw'] ?? ''}'),
+          _detailRow('Ubicación', '${e['location_name'] ?? (rowId < 0 ? 'Sin asignar' : '')}'),
+          _detailRow('Nota', '${e['note'] ?? ''}'),
+          if (rowId < 0) const SizedBox(height: 6),
+          if (rowId < 0) Text('Pendiente por sincronizar en la nube.',
+              style: TextStyle(fontSize: 11, color: isDark ? AppTheme.darkMuted : AppTheme.lightMuted)),
+        ]),
+        actions: [
+          if (canManage)
+            TextButton(
+              onPressed: () { Navigator.pop(ctx); _delete(e); },
+              child: const Text('Eliminar', style: TextStyle(color: AppTheme.danger)),
+            ),
+          if (canManage)
+            TextButton(
+              onPressed: () { Navigator.pop(ctx); _edit(e); },
+              child: const Text('Editar'),
+            ),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cerrar')),
+        ],
+      ),
+    );
+  }
+
+  Widget _detailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        SizedBox(
+          width: 90,
+          child: Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.grey[600])),
+        ),
+        Expanded(child: Text(value, style: const TextStyle(fontSize: 13))),
+      ]),
+    );
   }
 
   @override
@@ -265,6 +354,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                         subtitle: Text(
                             '${e['category'] ?? ''} · ${e['date_label'] ?? e['date_raw'] ?? ''}',
                             style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+                        onTap: () => _view(e),
                         trailing: canManage
                             ? Row(mainAxisSize: MainAxisSize.min, children: [
                                 Text(U.money(amount, cur),
