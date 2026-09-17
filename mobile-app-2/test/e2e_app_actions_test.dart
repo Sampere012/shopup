@@ -32,8 +32,8 @@ String _sessionToken = '';
 
 String get _base => (Platform.environment['WS_E2E_BASE'] ?? 'http://localhost/workshop')
     .replaceAll(RegExp(r'/+$'), '');
-String get _user => Platform.environment['WS_E2E_USER'] ?? 'ws_e2e_owner';
-String get _pass => Platform.environment['WS_E2E_PASS'] ?? 'E2eOwner!2026';
+String get _user => Platform.environment['WS_E2E_USER'] ?? 'ws_e2e_app';
+String get _pass => Platform.environment['WS_E2E_PASS'] ?? 'E2eApp!2026';
 String get _php => Platform.environment['WS_E2E_PHP'] ?? r'C:\xampp\php\php.exe';
 String get _workdir => Platform.environment['WS_E2E_WORKDIR'] ?? r'C:\xampp\htdocs\workshop';
 

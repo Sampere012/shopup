@@ -216,6 +216,62 @@ function ws_mobile_me_payload() {
         'locations'    => $my_locations,
         'serverTime'   => current_time( 'mysql' ),
         'wsVersion'    => defined( 'WS_VERSION' ) ? WS_VERSION : '',
+        'plan'         => ws_plan_json( $biz ),
+    );
+}
+
+/**
+ * Estado del plan en JSON ligero para la app móvil: los campos que la app
+ * usa para bloquear el negocio y pintar la pantalla de plan. Se incluye en
+ * el payload de sesión (login/me) y se sirve por el endpoint dedicado que
+ * consulta el worker local de licencia. No arrastra los datasets pesados de
+ * ws_subscription_data (usage/limits completos).
+ *
+ * IMPORTANTE: por defecto NO refresca la suscripción ([$refresh]=false). El
+ * payload de sesión (login/me) entrega el plan sin disparar refresh(), que en
+ * un negocio vencido revoca los tokens móviles (ws_logout_business_users) y
+ * destrozaría el token que se acaba de emitir en el propio login. Solo los
+ * puntos de control que SÍ deben revocar acceso — el endpoint del worker
+ * (ws_mobile_subscription) y ws_guard — pasan [$refresh]=true.
+ */
+function ws_plan_json( $biz, $refresh = false ) {
+    if ( ! function_exists( 'ws_subscription_data' ) ) {
+        return array(
+            'locked' => false, 'lock' => null, 'status' => 'trial',
+            'status_label' => '', 'is_trial' => false, 'is_active' => false,
+            'plan_name' => '', 'trial_days_left' => 0, 'plan_days_left' => 0,
+            'upgrade_pending' => false, 'serverTime' => current_time( 'mysql' ),
+        );
+    }
+    $biz = $biz ?: ws_current_business();
+    if ( ! $biz ) {
+        return array(
+            'locked' => false, 'lock' => null, 'status' => 'trial',
+            'status_label' => '', 'is_trial' => false, 'is_active' => false,
+            'plan_name' => '', 'trial_days_left' => 0, 'plan_days_left' => 0,
+            'upgrade_pending' => false, 'serverTime' => current_time( 'mysql' ),
+        );
+    }
+    $d = ws_subscription_data( $biz, $refresh );
+    return array(
+        'locked'          => (bool) $d['locked'],
+        'lock'            => $d['lock'] ? array(
+            'key'     => (string) ( $d['lock']['key'] ?? '' ),
+            'title'   => (string) ( $d['lock']['title'] ?? '' ),
+            'message' => (string) ( $d['lock']['message'] ?? '' ),
+            'is_limit' => (bool) ( $d['lock']['is_limit'] ?? false ),
+            'limit'   => (int) ( $d['lock']['limit'] ?? 0 ),
+            'used'    => (int) ( $d['lock']['used'] ?? 0 ),
+        ) : null,
+        'status'          => (string) ( $d['status'] ?? 'trial' ),
+        'status_label'    => (string) ( $d['status_label'] ?? '' ),
+        'is_trial'        => (bool) $d['is_trial'],
+        'is_active'       => (bool) $d['is_active'],
+        'plan_name'       => $d['plan'] ? (string) ( $d['plan']->name ?? '' ) : '',
+        'trial_days_left' => (int) $d['trial_days_left'],
+        'plan_days_left'  => (int) $d['plan_days_left'],
+        'upgrade_pending' => (bool) $d['upgrade_pending'],
+        'serverTime'      => current_time( 'mysql' ),
     );
 }
 
@@ -338,6 +394,29 @@ function ws_ajax_settings_get() {
 }
 
 /**
+ * Endpoint ligero de licencia para el worker local de la app: responde el
+ * estado del plan (locked/status) sin el coste del payload completo de plan.
+ * Lo consulta la app cada pocos minutos desde la nube para bloquear el
+ * negocio si la suscripción venció o fue suspendida.
+ */
+add_action( 'wp_ajax_ws_mobile_subscription', 'ws_ajax_mobile_subscription' );
+add_action( 'wp_ajax_nopriv_ws_mobile_subscription', 'ws_ajax_mobile_subscription' );
+function ws_ajax_mobile_subscription() {
+    if ( ! ws_mobile_auth_user() ) {
+        // invalidSession: el token se revocó (venció la suscripción o el
+        // vencimiento de sesión). La app lo interpreta como cierre de sesión.
+        wp_send_json_error( array( 'msg' => __( 'Sesión inválida.', 'workshop' ), 'invalidSession' => true ) );
+    }
+    $biz = function_exists( 'ws_current_business' ) ? ws_current_business() : null;
+    if ( ! $biz ) {
+        wp_send_json_error( array( 'msg' => __( 'Sin negocio.', 'workshop' ) ) );
+    }
+    // $refresh=true: el worker local de licencia SÍ valida y, si el plan
+    // venció, refresh() revoca los tokens del negocio (logout en la app).
+    wp_send_json_success( array( 'plan' => ws_plan_json( $biz, true ) ) );
+}
+
+/**
  * Estado del plan para la app móvil (módulo Plan): suscripción, uso y planes.
  */
 add_action( 'wp_ajax_ws_plan_info', 'ws_ajax_plan_info' );
@@ -421,6 +500,7 @@ function ws_guard( $cap, $fallback = '' ) {
                     $ws_locked      = true;
                     $ws_lock_status = $reason['key'];
                     $ws_lock_msg    = $reason['message'];
+                    $ws_lock_reason = $reason;
                 }
             }
             $ws_lock_checked = true;
@@ -431,7 +511,13 @@ function ws_guard( $cap, $fallback = '' ) {
                 : ( ! empty( $ws_lock_msg )
                     ? $ws_lock_msg . ' ' . __( 'Solicita un upgrade para reactivarlo.', 'workshop' )
                     : __( 'Tu plan venció: el negocio está en pausa.', 'workshop' ) );
-            wp_send_json_error( array( 'msg' => $msg ) );
+            // hasPlanLock: la app puede detectar el bloqueo de plan aunque el
+            // endpoint sea genérico y bloquear la UI / el sync inmediatamente.
+            wp_send_json_error( array(
+                'msg'         => $msg,
+                'hasPlanLock' => true,
+                'lock'        => $ws_lock_reason ?? compact( 'ws_lock_status' ),
+            ) );
         }
     }
 }

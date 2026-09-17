@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
 import 'auth_service.dart';
 import 'db_service.dart';
+import 'plan_guard_service.dart';
 import '../config.dart';
 
 /// Motor offline-first (equivalente a js/sync.js):
@@ -100,8 +101,11 @@ class SyncService extends ChangeNotifier {
     startTimer();
   }
 
-  /// Sube pendientes y baja cambios. Devuelve 'offline' | true | false.
+  /// Sube pendientes y baja cambios. Devuelve
+  /// 'blocked' | 'offline' | true | false.
   Future<Object> syncNow() async {
+    // Plan bloqueado: ni subir ni bajar. La UI muestra la pantalla de bloqueo.
+    if (PlanGuardService.I.isBlocked) return 'blocked';
     await checkConnectivity();
     if (!_online) return 'offline';
     final flushRes = await flush();
@@ -115,7 +119,7 @@ class SyncService extends ChangeNotifier {
 
   Future<void> backgroundSync() async {
     await checkConnectivity();
-    if (_online && !_pulling && !_flushing) {
+    if (_online && !_pulling && !_flushing && !PlanGuardService.I.isBlocked) {
       try { await syncNow(); } catch (_) {}
     }
   }
@@ -124,6 +128,8 @@ class SyncService extends ChangeNotifier {
 
   Future<bool> pull() async {
     if (_pulling) return false;
+    // Plan bloqueado: no se baja nada a la caché local.
+    if (PlanGuardService.I.isBlocked) return false;
     _pulling = true;
     _emit();
     var anySuccess = false;
@@ -372,6 +378,15 @@ class SyncService extends ChangeNotifier {
 
   /// Encola una operación. Ver contrato en el encabezado de la clase.
   Future<dynamic> push(String action, Map<String, dynamic> data) async {
+    // Plan bloqueado: la operación se rechaza en vez de encolarse, para no
+    // acumular escrituras que el servidor va a rechazar igualmente.
+    if (PlanGuardService.I.isBlocked) {
+      final lock = PlanGuardService.I.lock;
+      throw ApiException(
+          '${lock?['title'] ?? 'Tu plan venció o fue suspendido'}. '
+          'El negocio está en pausa.',
+          response: {'success': false, 'data': {'hasPlanLock': true}});
+    }
     if (_online) {
       try {
         // Escritura interactiva: timeout corto para no dejar al usuario
@@ -398,6 +413,10 @@ class SyncService extends ChangeNotifier {
 
   /// Envía pendientes en orden. Devuelve {sent, remaining}.
   Future<Map<String, int>> flush() async {
+    // Plan bloqueado: no se sube nada; la cola se conserva para reactivar.
+    if (PlanGuardService.I.isBlocked) {
+      return {'sent': 0, 'remaining': await DbService.I.pendingCount()};
+    }
     if (_flushing) return {'sent': 0, 'remaining': await DbService.I.pendingCount()};
     if (ApiService.I.token == null) return {'sent': 0, 'remaining': await DbService.I.pendingCount()};
     final ops = await DbService.I.pending();
@@ -445,6 +464,7 @@ class SyncService extends ChangeNotifier {
       String action, Map<String, dynamic> params, String store,
       {String? cacheKey, String? dataKey, bool mergeOnly = true}) async {
     if (!_online) return null;
+    if (PlanGuardService.I.isBlocked) return null;
     try {
       final d = await ApiService.I.req(action, params);
       final raw = dataKey != null ? d[dataKey] : d['data'];
@@ -468,6 +488,7 @@ class SyncService extends ChangeNotifier {
   Future<void> pullCache(String action, Map<String, dynamic> params,
       String cacheKey, {String? dataKey}) async {
     if (!_online) return;
+    if (PlanGuardService.I.isBlocked) return;
     try {
       final d = await ApiService.I.req(action, params);
       final data = dataKey != null ? d[dataKey] : (d['data'] ?? d);

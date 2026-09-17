@@ -412,12 +412,14 @@ class WS_Subscriptions {
      * Razón por la que un negocio está bloqueado, o null si puede operar.
      * El negocio por defecto nunca se bloquea.
      */
-    public static function lock_reason( $biz ) {
+    public static function lock_reason( $biz, $refresh = true ) {
         if ( ! $biz || WS_Business::is_default( $biz ) ) {
             return null;
         }
         $sub = self::ensure( $biz );
-        self::refresh( $biz, $sub );
+        if ( $refresh ) {
+            self::refresh( $biz, $sub );
+        }
         if ( ! $sub ) {
             return null;
         }
@@ -637,6 +639,12 @@ function ws_logout_business_users( $biz ) {
     ) );
     foreach ( array_map( 'intval', $ids ) as $uid ) {
         WP_Session_Tokens::get_instance( $uid )->destroy_all();
+        // Revocar también el token de la app móvil: al vencer/suspender la
+        // suscripción el negocio pierde el acceso inmediatamente en CUALQUIER
+        // dispositivo (la app solo sigue entrando si verifica el plan en la
+        // nube, nunca con un token viejo).
+        delete_user_meta( $uid, 'ws_mobile_token' );
+        delete_user_meta( $uid, 'ws_mobile_token_expires' );
     }
 }
 
@@ -722,13 +730,15 @@ function ws_biz_users_count( $biz ) {
 /**
  * Datos normalizados de la suscripción para las plantillas.
  */
-function ws_subscription_data( $biz = null ) {
+function ws_subscription_data( $biz = null, $refresh = true ) {
     $biz   = $biz ? $biz : ws_current_business();
     $sub   = WS_Subscriptions::ensure( $biz );
-    WS_Subscriptions::refresh( $biz, $sub );
+    if ( $refresh ) {
+        WS_Subscriptions::refresh( $biz, $sub );
+    }
     $plan  = ( $sub && $sub->plan_id ) ? WS_Plans::get( $sub->plan_id ) : WS_Plans::trial_plan();
     $usage = ws_business_usage( $biz );
-    $lock  = WS_Subscriptions::lock_reason( $biz );
+    $lock  = WS_Subscriptions::lock_reason( $biz, $refresh );
 
     $trial_days_left = 0;
     if ( $sub && 'trial' === $sub->status && $sub->trial_ends_at ) {

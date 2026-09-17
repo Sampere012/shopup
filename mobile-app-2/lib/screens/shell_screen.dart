@@ -8,6 +8,7 @@ import '../services/sync_service.dart';
 import '../services/db_service.dart';
 import '../services/theme_service.dart';
 import '../services/update_service.dart';
+import '../services/plan_guard_service.dart';
 import '../widgets/common.dart' show U;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'routes.dart';
@@ -23,7 +24,6 @@ class _ShellScreenState extends State<ShellScreen> with WidgetsBindingObserver {
   String _route = 'dashboard';
   int _unreadCount = 0;
   Timer? _sessionRefreshTimer;
-  bool _planLocked = false;
   bool _hasUpdate = false;
 
   static const _bottomNavKeys = ['dashboard', 'products', 'stock', 'pos', 'pos-sales'];
@@ -33,12 +33,13 @@ class _ShellScreenState extends State<ShellScreen> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     SyncService.I.start();
+    // Worker local de licencia: verifica el plan contra la nube cada pocos
+    // minutos y bloquea el negocio si la suscripción venció/suspendió.
+    PlanGuardService.I.start();
     _sessionRefreshTimer = Timer.periodic(const Duration(minutes: 5), (_) => _refreshSession());
     _updateNotifBadge();
-    _checkPlan();
     _checkUpdate();
     SyncService.I.onChange(_updateNotifBadge);
-    SyncService.I.onChange(_checkPlan);
   }
 
   @override
@@ -53,6 +54,8 @@ class _ShellScreenState extends State<ShellScreen> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       AuthService.I.refresh();
       SyncService.I.checkConnectivity();
+      // Al volver a primer plano: verificación inmediata contra la nube.
+      PlanGuardService.I.checkFromCloud();
       _updateNotifBadge();
       _checkUpdate();
     }
@@ -68,16 +71,6 @@ class _ShellScreenState extends State<ShellScreen> with WidgetsBindingObserver {
     try {
       final count = await DbService.I.getMeta('notif_unread_count');
       if (mounted) setState(() => _unreadCount = (count as num?)?.toInt() ?? 0);
-    } catch (_) {}
-  }
-
-  Future<void> _checkPlan() async {
-    try {
-      final data = await DbService.I.cacheGet('ws_plan_info');
-      if (data is Map && mounted) {
-        final locked = data['locked'] == true;
-        if (locked != _planLocked) setState(() => _planLocked = locked);
-      }
     } catch (_) {}
   }
 
@@ -112,7 +105,9 @@ class _ShellScreenState extends State<ShellScreen> with WidgetsBindingObserver {
     if (sync.isBusy) return;
     final res = await sync.syncNow().catchError((_) => 'offline' as Object);
     if (!mounted) return;
-    if (res == 'offline') U.toast(context, 'Sin conexión: cambios guardados en el dispositivo', kind: 'warn');
+    if (res == 'blocked') {
+      U.toast(context, 'Tu plan está en pausa: no se puede sincronizar', kind: 'err');
+    } else if (res == 'offline') U.toast(context, 'Sin conexión: cambios guardados en el dispositivo', kind: 'warn');
     else if (res == false) U.toast(context, 'Quedaron cambios pendientes de enviar', kind: 'err');
     else U.toast(context, 'Sincronizado');
     _updateNotifBadge();
@@ -176,6 +171,8 @@ class _ShellScreenState extends State<ShellScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthService>();
     final sync = context.watch<SyncNotifier>().sync;
+    final planGuard = context.watch<PlanGuardService>();
+    final planLocked = planGuard.isBlocked;
     final menu = auth.menu.whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isTablet = MediaQuery.of(context).size.width > 600;
@@ -190,10 +187,23 @@ class _ShellScreenState extends State<ShellScreen> with WidgetsBindingObserver {
     }
     if (bottomItems.length < 3) bottomItems.add(const _NavEntry(key: 'more', label: 'Más', icon: Icons.menu));
 
-    if (_planLocked && _route != 'plan') {
+    if (planLocked && _route != 'plan') {
       return Scaffold(
-        appBar: AppBar(title: const Text('ShopUp Panel')),
-        body: _buildPlanLocked(),
+        appBar: AppBar(
+          title: const Text('ShopUp Panel'),
+          actions: [
+            IconButton(
+              tooltip: 'Cerrar sesión',
+              onPressed: () async {
+                if (await U.confirm(context, '¿Cerrar sesión?', action: 'Cerrar sesión')) {
+                  await AuthService.I.logout();
+                }
+              },
+              icon: const Icon(Icons.logout),
+            ),
+          ],
+        ),
+        body: _buildPlanLocked(context, planGuard),
       );
     }
 
@@ -300,7 +310,7 @@ class _ShellScreenState extends State<ShellScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildPlanLocked() {
+  Widget _buildPlanLocked(BuildContext context, PlanGuardService planGuard) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Center(child: Padding(padding: const EdgeInsets.all(32), child: Column(mainAxisSize: MainAxisSize.min, children: [
       Container(width: 80, height: 80, decoration: BoxDecoration(
@@ -308,9 +318,9 @@ class _ShellScreenState extends State<ShellScreen> with WidgetsBindingObserver {
         shape: BoxShape.circle, boxShadow: [BoxShadow(color: AppTheme.amber.withAlpha(60), blurRadius: 24, offset: const Offset(0, 8))],
       ), child: const Icon(Icons.lock_outline, size: 40, color: Colors.white)),
       const SizedBox(height: 24),
-      Text('Negocio en pausa', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
+      Text(planGuard.lockTitle, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800), textAlign: TextAlign.center),
       const SizedBox(height: 8),
-      Text('Tu plan venció o fue suspendido.\nEl negocio está en pausa temporal.',
+      Text(planGuard.lockMessage,
           textAlign: TextAlign.center, style: TextStyle(color: isDark ? AppTheme.darkMuted : AppTheme.lightMuted, fontSize: 14, height: 1.5)),
       const SizedBox(height: 24),
       FilledButton.icon(

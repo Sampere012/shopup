@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
 import 'db_service.dart';
+import 'plan_guard_service.dart';
 
 /// Sesión y perfil (equivalente a js/auth.js).
 /// REGLA ANTI-CIERRE ACCIDENTAL: la sesión SOLO se borra cuando el servidor
@@ -81,6 +82,9 @@ class AuthService extends ChangeNotifier {
     final sp = await SharedPreferences.getInstance();
     await sp.setString(
         _sessKey, jsonEncode({'me': me, 'expiresAt': _expiresAt}));
+    // El plan viene en el payload de sesión (login/me): el PlanGuard lo
+    // aplica al momento — fuente de verdad de la nube sin petición extra.
+    await PlanGuardService.I.applyMe(me, fromCloud: true);
     notifyListeners();
   }
 
@@ -90,6 +94,7 @@ class AuthService extends ChangeNotifier {
     final sp = await SharedPreferences.getInstance();
     await sp.remove(_sessKey);
     await ApiService.I.setToken(null);
+    await PlanGuardService.I.reset();
     notifyListeners();
   }
 

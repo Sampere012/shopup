@@ -14,6 +14,7 @@ import 'services/websocket_service.dart';
 import 'services/pos_local_service.dart';
 import 'services/update_service.dart';
 import 'services/db_service.dart';
+import 'services/plan_guard_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/shell_screen.dart';
 
@@ -36,6 +37,11 @@ void main() async {
   ));
   await ApiService.I.load();
   await AuthService.I.load();
+  await PlanGuardService.I.load();
+  // Hook: cuando el worker de licencia descubre que el token fue revocado
+  // (suscripción expiró), ejecuta el cierre de sesión completo. Se configura
+  // aquí para no crear dependencias circulares dentro de PlanGuardService.
+  PlanGuardService.I.onForceLogout = () async => AuthService.I.logout();
   await ThemeService.I.load();
   await SavedAccountsService.I.load();
   runApp(const ShopUpApp());
@@ -53,6 +59,8 @@ class ShopUpApp extends StatelessWidget {
         ChangeNotifierProvider<ThemeService>.value(value: ThemeService.I),
         ChangeNotifierProvider<SavedAccountsService>.value(
             value: SavedAccountsService.I),
+        ChangeNotifierProvider<PlanGuardService>.value(
+            value: PlanGuardService.I),
         ChangeNotifierProvider<WebSocketService>.value(
             value: WebSocketService.I),
         ChangeNotifierProvider<PosLocalService>.value(
