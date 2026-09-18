@@ -182,7 +182,12 @@ class WS_Capabilities {
                 $defaults[ $role ] = wp_parse_args( $stored[ $role ], $caps );
             }
         }
+        // El dueño del negocio siempre puede gestionar sus permisos y el
+        // control de gastos: aunque la matriz guardada tenga un false heredado
+        // (panel guardado antes de que existiera el módulo), no pierde estos
+        // módulos. Mismo criterio que permissions_manage.
         $defaults['owner']['permissions_manage'] = true;
+        $defaults['owner']['expenses_manage'] = true;
         return $defaults;
     }
 

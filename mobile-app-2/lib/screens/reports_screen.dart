@@ -497,17 +497,24 @@ class _ReportsScreenState extends State<ReportsScreen> {
         ],
 
         // ── Utilidad por punto de venta ──
-        if (utils['by_loc'] != null && (utils['by_loc'] as Map).isNotEmpty) ...[
+        if (utils['by_loc'] is Map && (utils['by_loc'] as Map).isNotEmpty) ...[
           _sectionTitle('Utilidad por punto de venta', Icons.store_outlined),
           const SizedBox(height: 6),
           _buildTable(isDark, [
             _tableHeader(['Punto de venta', 'Ingresos', 'Ganancia', 'Gastos', 'Utilidad']),
             ...(() {
-              final byLoc = Map<String, dynamic>.from(utils['by_loc'] ?? {});
-              final expByLoc = Map<String, dynamic>.from(utils['exp_by_loc'] ?? {});
-              final profitByLoc = Map<String, dynamic>.from(utils['profit_by_loc'] ?? {});
+              final byLoc = (utils['by_loc'] is Map)
+                  ? Map<String, dynamic>.from(utils['by_loc'] as Map)
+                  : <String, dynamic>{};
+              final expByLoc = (utils['exp_by_loc'] is Map)
+                  ? Map<String, dynamic>.from(utils['exp_by_loc'] as Map)
+                  : <String, dynamic>{};
+              final profitByLoc = (utils['profit_by_loc'] is Map)
+                  ? Map<String, dynamic>.from(utils['profit_by_loc'] as Map)
+                  : <String, dynamic>{};
               final locNames = Map<String, String>.fromEntries(
-                (utils['locations'] as List? ?? []).map((l) => MapEntry('${l['id']}', '${l['name'] ?? ''}')),
+                ((utils['locations'] is List) ? utils['locations'] as List : const [])
+                    .map((l) => MapEntry('${l['id']}', '${l['name'] ?? ''}')),
               );
               return byLoc.entries.map((e) {
                 final lid = e.key;

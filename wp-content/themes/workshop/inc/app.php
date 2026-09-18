@@ -18,7 +18,7 @@ defined( 'ABSPATH' ) || exit;
  * Versión del build móvil actual (la sube sync:web / se edita en wp-admin).
  * Es el valor por defecto del ajuste; el administrador lo cambia al publicar.
  */
-define( 'WS_APP_VERSION', '0.5.7' );
+define( 'WS_APP_VERSION', '0.5.8' );
 
 /**
  * Descarga del APK desde el repo público de GitHub (raw).

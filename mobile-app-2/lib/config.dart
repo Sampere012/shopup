@@ -16,5 +16,5 @@ class AppConfig {
   static const int licenseGraceHours = 48;
 
   /// Versión de ESTE build (debe coincidir con la de pubspec.yaml).
-  static const String appVersion = '0.5.7';
+  static const String appVersion = '0.5.8';
 }
