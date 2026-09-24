@@ -18,7 +18,7 @@ defined( 'ABSPATH' ) || exit;
  * Versión del build móvil actual (la sube sync:web / se edita en wp-admin).
  * Es el valor por defecto del ajuste; el administrador lo cambia al publicar.
  */
-define( 'WS_APP_VERSION', '0.5.8' );
+define( 'WS_APP_VERSION', '0.5.9' );
 
 /**
  * Descarga del APK desde el repo público de GitHub (raw).
@@ -86,8 +86,15 @@ function ws_app_has_download() {
  */
 function ws_app_version_info() {
 	$s = ws_app_settings();
+	// La versión del build del tema manda: si la opción guardada en la BD
+	// es más antigua (el admin no la actualizó al desplegar), se reporta la
+	// del tema para que las apps detecten la actualización.
+	$savedVersion = trim( (string) ( $s['version'] ?? '' ) );
+	$version      = ( '' === $savedVersion || version_compare( $savedVersion, WS_APP_VERSION, '<' ) )
+		? WS_APP_VERSION
+		: $savedVersion;
 	return array(
-		'version'     => trim( (string) ( $s['version'] ?? WS_APP_VERSION ) ),
+		'version'     => $version,
 		'apk_url'     => ws_app_apk_url(),
 		'release_url' => WS_APP_RELEASE_PAGE,
 		'changelog'   => trim( (string) ( $s['changelog'] ?? '' ) ),

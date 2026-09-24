@@ -19,8 +19,12 @@ defined( 'ABSPATH' ) || exit;
 add_action( 'init', function () {
     $action    = (string) ( $_POST['action'] ?? '' );
     $has_token = isset( $_SERVER['HTTP_X_WS_TOKEN'] ) || ( isset( $_POST['ws_token'] ) && '' !== (string) $_POST['ws_token'] );
-    // Endpoints móviles sin token previo (login) o petición CORS (preflight).
-    $mobile_ep = in_array( $action, array( 'ws_mobile_login', 'ws_mobile_me', 'ws_mobile_logout', 'ws_mobile_state' ), true );
+    // Endpoints móviles sin token previo (login/registro) o petición CORS (preflight).
+    $mobile_ep = in_array( $action, array(
+        'ws_mobile_login', 'ws_mobile_verify_login', 'ws_mobile_resend_login_code',
+        'ws_mobile_me', 'ws_mobile_logout', 'ws_mobile_state',
+        'ws_mobile_register_step1', 'ws_mobile_register_resend', 'ws_mobile_register_verify',
+    ), true );
     $preflight = 'OPTIONS' === ( $_SERVER['REQUEST_METHOD'] ?? '' ) && '' !== ( $_SERVER['HTTP_ACCESS_CONTROL_REQUEST_HEADERS'] ?? '' );
     if ( $has_token || $mobile_ep || $preflight ) {
         header( 'Access-Control-Allow-Origin: *' );
@@ -112,6 +116,10 @@ add_action( 'admin_init', function () {
  * módulos/acciones de esta lista. La web tiene módulos avanzados que la app
  * no implementa (proveedores, categorías en árbol, fraccionamiento, etc.);
  * esa parte se sigue gestionando y aplicando solo en la web.
+ *
+ * 'expenses_view' es de SOLO LECTURA: el servidor lo concede a quien pueda
+ * gestionar gastos; la app lo usa para mostrar el módulo Gastos a los roles
+ * que ven gastos pero no pueden crearlos (igual que hace la web).
  */
 function ws_app_caps() {
     return array(
@@ -126,7 +134,7 @@ function ws_app_caps() {
         'workers_view', 'workers_manage',
         'customers_view', 'customers_create', 'customers_edit',
         'reviews_view', 'reviews_moderate',
-        'loyalty_manage', 'expenses_manage',
+        'loyalty_manage', 'expenses_manage', 'expenses_view',
         'settings_manage', 'permissions_manage', 'reports_view',
         'site_manage', 'layout_manage',
         'categories_manage',
@@ -275,13 +283,98 @@ function ws_plan_json( $biz, $refresh = false ) {
     );
 }
 
+/* -------------------------------------------------------------------------
+ * Seguridad de los endpoints públicos de la app móvil: rate limiting por
+ * IP e identidad (anti fuerza bruta), reto de verificación de correo en
+ * el login y revocación total de sesiones en el logout.
+ * ---------------------------------------------------------------------- */
+
+/** IP real del cliente (respeta proxies que reenvían X-Forwarded-For). */
+function ws_client_ip() {
+    foreach ( array( 'HTTP_CF_CONNECTING_IP', 'HTTP_X_REAL_IP', 'HTTP_X_FORWARDED_FOR', 'REMOTE_ADDR' ) as $k ) {
+        if ( ! empty( $_SERVER[ $k ] ) ) {
+            $ip = trim( (string) explode( ',', (string) $_SERVER[ $k ] )[0] );
+            if ( filter_var( $ip, FILTER_VALIDATE_IP ) ) {
+                return $ip;
+            }
+        }
+    }
+    return '0.0.0.0';
+}
+
+function ws_sec_key( $scope, $id ) {
+    return 'ws_rl_' . md5( $scope . '|' . $id );
+}
+
+/**
+ * Límite de eventos por ventana (anti fuerza bruta / anti spam). Devuelve
+ * true si DENTRO del límite, o un mensaje de error con el tiempo restante.
+ */
+function ws_rate_limit( $scope, $id, $max, $window ) {
+    $k   = ws_sec_key( $scope, $id );
+    $now = time();
+    $st  = get_transient( $k );
+    if ( ! is_array( $st ) || $now - (int) $st['start'] >= $window ) {
+        $st = array( 'start' => $now, 'count' => 0 );
+    }
+    $st['count'] = (int) $st['count'] + 1;
+    set_transient( $k, $st, max( 60, $window ) );
+    if ( $st['count'] > $max ) {
+        $wait = (int) ceil( ( (int) $st['start'] + $window - $now ) / 60 );
+        return sprintf( __( 'Demasiados intentos. Espera %d minuto(s) y vuelve a intentarlo.', 'workshop' ), max( 1, $wait ) );
+    }
+    return true;
+}
+
+/** Registra un fallo (el contador dura 24 h). */
+function ws_fail( $scope, $id ) {
+    $k   = ws_sec_key( 'fail_' . $scope, $id );
+    $now = time();
+    $st  = get_transient( $k );
+    if ( ! is_array( $st ) || $now - (int) $st['start'] >= DAY_IN_SECONDS ) {
+        $st = array( 'start' => $now, 'count' => 0 );
+    }
+    $st['count'] = (int) $st['count'] + 1;
+    set_transient( $k, $st, DAY_IN_SECONDS );
+}
+
+/** Fallos acumulados de una identidad (0 si ninguno). */
+function ws_fail_count( $scope, $id ) {
+    $st = get_transient( ws_sec_key( 'fail_' . $scope, $id ) );
+    return is_array( $st ) ? (int) $st['count'] : 0;
+}
+
+/** Limpia el contador de fallos tras un éxito. */
+function ws_clear_fails( $scope, $id ) {
+    delete_transient( ws_sec_key( 'fail_' . $scope, $id ) );
+}
+
+/** ¿El usuario ya verificó su correo? Fecha unix o 0. */
+function ws_email_verified_at( $user_id ) {
+    return (int) get_user_meta( (int) $user_id, 'ws_email_verified_at', true );
+}
+
 add_action( 'wp_ajax_ws_mobile_login', 'ws_ajax_mobile_login' );
 add_action( 'wp_ajax_nopriv_ws_mobile_login', 'ws_ajax_mobile_login' );
 function ws_ajax_mobile_login() {
     $user = sanitize_text_field( $_POST['ws_user'] ?? '' );
     $pass = (string) ( $_POST['ws_pass'] ?? '' );
     if ( '' === $user || '' === $pass ) {
-        wp_send_json_error( array( 'msg' => __( 'Usuario y contraseña son obligatorios.', 'workshop' ) ) );
+        wp_send_json_error( array( 'msg' => __( 'Usuario o contraseña son obligatorios.', 'workshop' ) ) );
+    }
+    $ip = ws_client_ip();
+    // Anti fuerza bruta: máximo 60 intentos por IP y hora (suficiente para
+    // varios dispositivos/oficinas detrás de una misma IP, lejos de lo que
+    // permite probar contraseñas a mano o por diccionario).
+    $limit = ws_rate_limit( 'login_ip', $ip, 60, HOUR_IN_SECONDS );
+    if ( true !== $limit ) {
+        wp_send_json_error( array( 'msg' => $limit ) );
+    }
+    // Bloqueo por identidad: 5 fallos en 24 h => 15 minutos de espera.
+    $ident  = strtolower( $user );
+    $fails  = ws_fail_count( 'login', $ident );
+    if ( $fails >= 5 ) {
+        wp_send_json_error( array( 'msg' => __( 'Cuenta temporalmente bloqueada por intentos fallidos. Espera 15 minutos e inténtalo de nuevo.', 'workshop' ) ) );
     }
     $creds = array(
         'user_login'    => $user,
@@ -290,12 +383,33 @@ function ws_ajax_mobile_login() {
     );
     $u = wp_signon( $creds, function_exists( 'ws_login_secure_cookie' ) ? ws_login_secure_cookie() : false );
     if ( is_wp_error( $u ) ) {
+        ws_fail( 'login', $ident );
         wp_send_json_error( array( 'msg' => __( 'Usuario o contraseña incorrectos.', 'workshop' ) ) );
     }
+    ws_clear_fails( 'login', $ident );
     wp_set_current_user( $u->ID );
     $role = ws_user_role( $u->ID );
     if ( ! $role ) {
         wp_send_json_error( array( 'msg' => __( 'Esta cuenta no tiene acceso al panel del negocio.', 'workshop' ) ) );
+    }
+    // Reto de verificación de correo en el login (configurable en wp-admin):
+    // al abrir sesión nueva, si el correo no está verificado se envía un
+    // código de 6 dígitos y NO se entrega token. Es una comprobación única:
+    // verificar una vez marca la cuenta y los siguientes logins son directos.
+    $challenge = apply_filters( 'ws_login_email_challenge', 'unverified' );
+    $need      = ( 'always' === $challenge || ( 'unverified' === $challenge && ws_email_verified_at( $u->ID ) <= 0 ) );
+    if ( $need ) {
+        $sent = ws_send_verification_code( $u->user_email );
+        if ( is_wp_error( $sent ) ) {
+            // No revelar ni invalidar la contraseña: dejar reintentar.
+            wp_send_json_error( array( 'msg' => __( 'No se pudo enviar el código de verificación. Inténtalo de nuevo en unos minutos.', 'workshop' ) ) );
+        }
+        ws_log_audit( 'mobile_login_challenge', 'user', $u->ID );
+        wp_send_json_success( array(
+            'needVerify' => true,
+            'msg'        => sprintf( __( 'Te enviamos un código de 6 dígitos a %s para confirmar tu identidad.', 'workshop' ), $u->user_email ),
+            'email'      => $u->user_email,
+        ) );
     }
     $t = ws_mobile_token_create( $u->ID );
     ws_log_audit( 'mobile_login', 'user', $u->ID );
@@ -305,6 +419,68 @@ function ws_ajax_mobile_login() {
         'sessionDays' => $t['sessionDays'],
         'me'          => ws_mobile_me_payload(),
     ) );
+}
+
+add_action( 'wp_ajax_ws_mobile_verify_login', 'ws_ajax_mobile_verify_login' );
+add_action( 'wp_ajax_nopriv_ws_mobile_verify_login', 'ws_ajax_mobile_verify_login' );
+function ws_ajax_mobile_verify_login() {
+    $email       = sanitize_email( $_POST['email'] ?? '' );
+    $code        = preg_replace( '/[^0-9]/', '', (string) ( $_POST['code'] ?? '' ) );
+    $email_check = ws_email_allowed( $email );
+    if ( true !== $email_check || '' === $code ) {
+        wp_send_json_error( array( 'msg' => true !== $email_check ? (string) $email_check : __( 'Datos incompletos.', 'workshop' ) ) );
+    }
+    $limit = ws_rate_limit( 'verify_login_ip', ws_client_ip(), 15, HOUR_IN_SECONDS );
+    if ( true !== $limit ) {
+        wp_send_json_error( array( 'msg' => $limit ) );
+    }
+    $data = ws_verify_email_code( $email, $code );
+    if ( is_wp_error( $data ) ) {
+        wp_send_json_error( array( 'msg' => $data->get_error_message() ) );
+    }
+    // El código comprueba que quien inicia sesión controla el buzón.
+    // Buscamos al usuario por ese correo y entregamos el token de sesión.
+    $u = get_user_by( 'email', $email );
+    if ( ! $u || ! ws_user_role( $u->ID ) ) {
+        wp_send_json_error( array( 'msg' => __( 'No hay una cuenta del panel con ese correo.', 'workshop' ) ) );
+    }
+    update_user_meta( $u->ID, 'ws_email_verified_at', time() );
+    // Necesario para que ws_mobile_me_payload() devuelva el perfil del
+    // usuario verificado (esta petición llega sin token de sesión).
+    wp_set_current_user( $u->ID );
+    $t = ws_mobile_token_create( $u->ID );
+    ws_log_audit( 'mobile_login_verified', 'user', $u->ID );
+    wp_send_json_success( array(
+        'token'       => $t['token'],
+        'expiresAt'   => $t['expiresAt'],
+        'sessionDays' => $t['sessionDays'],
+        'me'          => ws_mobile_me_payload(),
+    ) );
+}
+
+add_action( 'wp_ajax_ws_mobile_resend_login_code', 'ws_ajax_mobile_resend_login_code' );
+add_action( 'wp_ajax_nopriv_ws_mobile_resend_login_code', 'ws_ajax_mobile_resend_login_code' );
+function ws_ajax_mobile_resend_login_code() {
+    $email       = sanitize_email( $_POST['email'] ?? '' );
+    $email_check = ws_email_allowed( $email );
+    if ( true !== $email_check ) {
+        wp_send_json_error( array( 'msg' => (string) $email_check ) );
+    }
+    $limit = ws_rate_limit( 'resend_login_ip', ws_client_ip(), 5, HOUR_IN_SECONDS );
+    if ( true !== $limit ) {
+        wp_send_json_error( array( 'msg' => $limit ) );
+    }
+    // Solo se reenvía si la cuenta existe y participa del panel: así el
+    // endpoint no sirve para sondear qué correos están registrados.
+    $u = get_user_by( 'email', $email );
+    if ( ! $u || ! ws_user_role( $u->ID ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Si la cuenta existe, te llegará un código nuevo en unos minutos.', 'workshop' ) ) );
+    }
+    $sent = ws_send_verification_code( $email );
+    if ( is_wp_error( $sent ) ) {
+        wp_send_json_error( array( 'msg' => $sent->get_error_message() ) );
+    }
+    wp_send_json_success( array( 'msg' => __( 'Te reenviamos un código nuevo.', 'workshop' ) ) );
 }
 
 add_action( 'wp_ajax_ws_mobile_me', 'ws_ajax_mobile_me' );
@@ -323,9 +499,11 @@ function ws_ajax_mobile_logout() {
     if ( $uid ) {
         delete_user_meta( $uid, 'ws_mobile_token' );
         delete_user_meta( $uid, 'ws_mobile_token_expires' );
-        // Destruir también la sesión WP (cookie) para que el panel deje
-        // de renderizarse al abrir de nuevo la app en el WebView.
-        wp_destroy_current_session();
+        // Revocar TODAS las sesiones del usuario (móvil y web): ni la app ni
+        // el panel web quedan con sesión tras cerrar sesión.
+        wp_destroy_all_sessions();
+        wp_clear_auth_cookie();
+        wp_set_current_user( 0 );
     }
     $biz = function_exists( 'ws_current_business' ) ? ws_current_business() : null;
     $login_url = $biz && ! empty( $biz->slug )
@@ -5245,4 +5423,167 @@ function ws_ajax_announcement_delete() {
     ws_announcement_delete( (int) $ann->id );
     ws_log_audit( 'announcement_delete', 'announcement', (int) $ann->id );
     wp_send_json_success( array( 'list' => ws_announcements_json() ) );
+}
+
+/* -------------------------------------------------------------------------
+ * Registro público de negocios DESDE LA APP MÓVIL (sin nonce de sesión web).
+ * Mismas validaciones y mismo flujo de 2 pasos que templates/register.php:
+ * step1 valida datos y envía el código de 6 dígitos al correo; verify crea
+ * el negocio + usuario dueño + prueba gratis y devuelve token móvil para
+ * entrar directo al panel (el login automático de la web, en versión app).
+ * ---------------------------------------------------------------------- */
+
+add_action( 'wp_ajax_nopriv_ws_mobile_register_step1', 'ws_ajax_mobile_register_step1' );
+add_action( 'wp_ajax_ws_mobile_register_step1', 'ws_ajax_mobile_register_step1' );
+function ws_ajax_mobile_register_step1() {
+    // La app no comparte cookies ni nonce de sesión web: este endpoint es
+    // público por diseño (igual que ws_mobile_login) y valida todo en server.
+    if ( is_user_logged_in() ) {
+        wp_send_json_error( array( 'msg' => __( 'Ya tienes una sesión iniciada.', 'workshop' ) ) );
+    }
+    // Anti abuso: máximo 5 registros (envíos de código) por IP y hora.
+    $limit = ws_rate_limit( 'reg_ip', ws_client_ip(), 5, HOUR_IN_SECONDS );
+    if ( true !== $limit ) {
+        wp_send_json_error( array( 'msg' => $limit ) );
+    }
+    $data = array(
+        'biz_name'   => sanitize_text_field( $_POST['biz_name'] ?? '' ),
+        'slug'       => sanitize_title( (string) ( $_POST['slug'] ?? '' ) ),
+        'owner_name' => sanitize_text_field( $_POST['owner_name'] ?? '' ),
+        'email'      => sanitize_email( $_POST['email'] ?? '' ),
+        'phone'      => sanitize_text_field( $_POST['phone'] ?? '' ),
+        'username'   => sanitize_user( $_POST['username'] ?? '' ),
+        'password'   => (string) ( $_POST['password'] ?? '' ),
+    );
+    if ( '' === $data['biz_name'] ) {
+        wp_send_json_error( array( 'msg' => __( 'El nombre del negocio es obligatorio.', 'workshop' ) ) );
+    }
+    if ( '' === $data['slug'] ) {
+        wp_send_json_error( array( 'msg' => __( 'La dirección (slug) del negocio es obligatoria.', 'workshop' ) ) );
+    }
+    if ( in_array( $data['slug'], WS_Business::RESERVED_SLUGS, true ) || WS_Business::slug_taken( $data['slug'] ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Esa dirección ya está en uso. Prueba con otra.', 'workshop' ) ) );
+    }
+    if ( '' === $data['owner_name'] ) {
+        wp_send_json_error( array( 'msg' => __( 'Tu nombre es obligatorio.', 'workshop' ) ) );
+    }
+    $email_check = ws_email_allowed( $data['email'] );
+    if ( true !== $email_check ) {
+        wp_send_json_error( array( 'msg' => (string) $email_check ) );
+    }
+    if ( email_exists( $data['email'] ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Ese email ya está registrado. Inicia sesión.', 'workshop' ) ) );
+    }
+    if ( '' === $data['username'] ) {
+        wp_send_json_error( array( 'msg' => __( 'El usuario es obligatorio.', 'workshop' ) ) );
+    }
+    if ( username_exists( $data['username'] ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Ese nombre de usuario ya existe.', 'workshop' ) ) );
+    }
+    if ( strlen( $data['password'] ) < 8 ) {
+        wp_send_json_error( array( 'msg' => __( 'La contraseña debe tener al menos 8 caracteres.', 'workshop' ) ) );
+    }
+    $result = ws_send_verification_code( $data['email'], $data );
+    if ( is_wp_error( $result ) ) {
+        wp_send_json_error( array( 'msg' => $result->get_error_message() ) );
+    }
+    ws_log_audit( 'mobile_register_step1', 'user', 0, array( 'email' => $data['email'] ) );
+    wp_send_json_success( array(
+        'msg'     => sprintf( __( 'Te enviamos un código de 6 dígitos a %s', 'workshop' ), $data['email'] ),
+        'email'   => $data['email'],
+        'expires' => 15 * MINUTE_IN_SECONDS,
+    ) );
+}
+
+add_action( 'wp_ajax_nopriv_ws_mobile_register_resend', 'ws_ajax_mobile_register_resend' );
+add_action( 'wp_ajax_ws_mobile_register_resend', 'ws_ajax_mobile_register_resend' );
+function ws_ajax_mobile_register_resend() {
+    $email       = sanitize_email( $_POST['email'] ?? '' );
+    $email_check = ws_email_allowed( $email );
+    if ( true !== $email_check ) {
+        wp_send_json_error( array( 'msg' => (string) $email_check ) );
+    }
+    $limit = ws_rate_limit( 'resend_ip', ws_client_ip(), 5, HOUR_IN_SECONDS );
+    if ( true !== $limit ) {
+        wp_send_json_error( array( 'msg' => $limit ) );
+    }
+    $result = ws_resend_verification_code( $email );
+    if ( is_wp_error( $result ) ) {
+        wp_send_json_error( array( 'msg' => $result->get_error_message() ) );
+    }
+    wp_send_json_success( array( 'msg' => __( 'Te reenviamos un código nuevo.', 'workshop' ) ) );
+}
+add_action( 'wp_ajax_nopriv_ws_mobile_register_verify', 'ws_ajax_mobile_register_verify' );
+add_action( 'wp_ajax_ws_mobile_register_verify', 'ws_ajax_mobile_register_verify' );
+function ws_ajax_mobile_register_verify() {
+    if ( is_user_logged_in() ) {
+        wp_send_json_error( array( 'msg' => __( 'Ya tienes una sesión iniciada.', 'workshop' ) ) );
+    }
+    $limit = ws_rate_limit( 'verify_ip', ws_client_ip(), 15, HOUR_IN_SECONDS );
+    if ( true !== $limit ) {
+        wp_send_json_error( array( 'msg' => $limit ) );
+    }
+    $email       = sanitize_email( $_POST['email'] ?? '' );
+    $code        = preg_replace( '/[^0-9]/', '', (string) ( $_POST['code'] ?? '' ) );
+    $email_check = ws_email_allowed( $email );
+    if ( true !== $email_check || '' === $code ) {
+        wp_send_json_error( array( 'msg' => true !== $email_check ? (string) $email_check : __( 'Datos incompletos.', 'workshop' ) ) );
+    }
+    $data = ws_verify_email_code( $email, $code );
+    if ( is_wp_error( $data ) ) {
+        wp_send_json_error( array( 'msg' => $data->get_error_message() ) );
+    }
+    // La contraseña del borrador se guardó cifrada: descifrar para crear el usuario.
+    if ( ! empty( $data['password'] ) && function_exists( 'ws_crypt_text' ) ) {
+        $data['password'] = ws_crypt_text( (string) $data['password'], true );
+    }
+    if ( empty( $data['password'] ) || strlen( (string) $data['password'] ) < 8 ) {
+        wp_send_json_error( array( 'msg' => __( 'La sesión de registro expiró. Vuelve a empezar con tus datos.', 'workshop' ) ) );
+    }
+    if ( empty( $data['slug'] ) || WS_Business::slug_taken( $data['slug'] ) || email_exists( $email ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Los datos ya no son válidos (la dirección o el email cambiaron). Vuelve a empezar.', 'workshop' ) ) );
+    }
+    $username = sanitize_user( $data['username'] ?? '' );
+    if ( username_exists( $username ) ) {
+        $username = strtolower( sanitize_user( (string) ( $data['owner_name'] ?? 'negocio' ) ) ) . wp_rand( 10, 99 );
+    }
+    $biz_id = WS_Business::create( array(
+        'name'                => $data['biz_name'],
+        'slug'                => $data['slug'],
+        'description'         => sprintf( __( 'Negocio de %s', 'workshop' ), $data['owner_name'] ),
+        'active'              => true,
+        'marketplace_enabled' => true,
+    ) );
+    if ( is_wp_error( $biz_id ) ) {
+        wp_send_json_error( array( 'msg' => $biz_id->get_error_message() ) );
+    }
+    $user_id = wp_insert_user( array(
+        'user_login'      => $username,
+        'user_email'      => $email,
+        'user_pass'       => $data['password'],
+        'display_name'    => sanitize_text_field( $data['owner_name'] ),
+        'role'            => 'ws_owner',
+        'user_registered' => current_time( 'mysql' ),
+    ) );
+    if ( is_wp_error( $user_id ) ) {
+        WS_Business::delete( $biz_id );
+        wp_send_json_error( array( 'msg' => $user_id->get_error_message() ) );
+    }
+    update_user_meta( $user_id, 'ws_business_id', $biz_id );
+    // El correo se verificó con el código de 6 dígitos: marcarlo para que el
+    // login (web y app) no vuelva a pedir verificación.
+    update_user_meta( $user_id, 'ws_email_verified_at', time() );
+    $biz = WS_Business::get( $biz_id );
+    WS_Subscriptions::ensure( $biz );
+    ws_log_audit( 'business_registered', 'business', $biz_id, array( 'source' => 'mobile' ) );
+    $t = ws_mobile_token_create( $user_id );
+    // Primer uso: la app abre la bienvenida con el tour (igual que el panel web).
+    update_user_meta( $user_id, 'ws_tutorial_pending', 1 );
+    wp_send_json_success( array(
+        'msg'         => __( '¡Tu negocio está listo!', 'workshop' ),
+        'token'       => $t['token'],
+        'expiresAt'   => $t['expiresAt'],
+        'sessionDays' => $t['sessionDays'],
+        'me'          => ws_mobile_me_payload(),
+    ) );
 }

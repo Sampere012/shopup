@@ -1,15 +1,15 @@
 import 'dart:async';
-import 'package:flutter/services.dart';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../config.dart';
 import '../theme/app_theme.dart';
-import '../services/api_service.dart';
+import '../services/api_service.dart' show ApiException, ApiService, wsLog;
 import '../services/auth_service.dart';
 import '../services/sync_service.dart';
 import '../services/saved_accounts_service.dart';
+import 'verify_login_screen.dart';
+import 'register_screen.dart';
 import '../widgets/common.dart' show U;
 
 /// Pantalla de login con gradientes y cuentas guardadas.
@@ -84,13 +84,13 @@ class _LoginScreenState extends State<LoginScreen>
     });
     wsLog('LOGIN UI → intento');
     var stage = 'inicio';
+    final user = username ?? _user.text;
+    final pass = password ?? _pass.text;
+    final srv = server ?? ApiService.I.server;
     // Watchdog: si el hilo vive pero un await nunca resuelve, lo veremos aquí.
     final watchdog = Timer.periodic(const Duration(seconds: 5),
         (_) => wsLog('WATCHDOG vivo, stage=$stage'));
     try {
-      final user = username ?? _user.text;
-      final pass = password ?? _pass.text;
-      final srv = server ?? ApiService.I.server;
       stage = 'ws_mobile_login';
       await AuthService.I.login(user, pass, server: srv);
       wsLog('LOGIN UI ✓ AuthService.login completó; RootGate debe cambiar a Shell');
@@ -100,6 +100,18 @@ class _LoginScreenState extends State<LoginScreen>
       // para que el botón nunca quede "dando vueltas" durante el pull.
       stage = 'post-login';
       unawaited(_postLogin(user, pass, srv));
+    } on NeedVerifyException catch (e) {
+      wsLog('LOGIN UI ⚠ reto de verificación de correo');
+      if (!mounted) return;
+      // El servidor pidió confirmar el buzón: pantalla del código de 6
+      // dígitos. Al verificar, la sesión queda creada y RootGate cambia.
+      final ok = await Navigator.of(context).push<bool>(MaterialPageRoute(
+          builder: (_) =>
+              VerifyLoginScreen(email: e.email, message: e.message)));
+      if (ok == true && mounted) {
+        wsLog('LOGIN UI ✓ verificación completada; RootGate cambia a Shell');
+        unawaited(_postLogin(user, pass, srv));
+      }
     } on ApiException catch (e) {
       wsLog('LOGIN UI ✗ ApiException: ${e.message} response=${e.response}');
       if (!mounted) return;
@@ -144,83 +156,11 @@ class _LoginScreenState extends State<LoginScreen>
     }
   }
 
-  /// Abre la página de registro en el navegador externo,
-  /// igual que window.open(base + '/registro/') en la app Cordova.
+  /// Abre el registro DENTRO de la app (2 pasos con código de email),
+  /// igual que el registro público de la web.
   Future<void> _register() async {
-    final url = Uri.parse('${ApiService.I.server}/registro/');
-    try {
-      if (await canLaunchUrl(url)) {
-        await launchUrl(url, mode: LaunchMode.externalApplication);
-      } else {
-        _showRegisterFallback(url);
-      }
-    } catch (_) {
-      // Fallback: mostrar link o compartir URL
-      _showRegisterFallback(url);
-    }
-  }
-
-  /// Fallback si url_launcher falla: muestra el link o lo copia al portapapeles.
-  void _showRegisterFallback(Uri url) {
-    if (!mounted) return;
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => Container(
-        margin: const EdgeInsets.all(16),
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.link, size: 32, color: AppTheme.primary),
-            const SizedBox(height: 12),
-            const Text('Crear cuenta',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 8),
-            Text('Abre este enlace en tu navegador:',
-                style: TextStyle(color: Colors.grey[500], fontSize: 13)),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: SelectableText(url.toString(),
-                  style: const TextStyle(fontSize: 13, fontFamily: 'monospace')),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Cerrar'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FilledButton(
-                    onPressed: () async {
-                      await Clipboard.setData(ClipboardData(text: url.toString()));
-                      if (mounted) {
-                        Navigator.pop(context);
-                        U.toast(context, 'Link copiado al portapapeles');
-                      }
-                    },
-                    child: const Text('Copiar link'),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
+    await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const RegisterScreen()));
   }
 
   /// Bottom sheet con las cuentas guardadas: se abre al tocar el campo de

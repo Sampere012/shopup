@@ -420,15 +420,29 @@ function ws_admin_page_security() {
 
     $saved = false;
     if ( isset( $_POST['ws_security_nonce'] ) && wp_verify_nonce( $_POST['ws_security_nonce'], 'ws_save_security' ) ) {
-        $days = max( 1, min( 365, (int) ( $_POST['session_days'] ?? 30 ) ) );
-        update_option( 'ws_session_expiration_days', $days );
+        // Dos formularios comparten esta página (sesión y reto de correo):
+        // solo se actualiza lo que venga en el POST.
+        if ( isset( $_POST['session_days'] ) ) {
+            $days = max( 1, min( 365, (int) ( $_POST['session_days'] ?? 30 ) ) );
+            update_option( 'ws_session_expiration_days', $days );
+        }
+        // Modo del reto de verificación de correo en el login (web y app):
+        // unverified (solo cuentas sin verificar) / always / off.
+        if ( isset( $_POST['email_challenge'] ) ) {
+            $challenge = (string) ( $_POST['email_challenge'] ?? 'unverified' );
+            if ( ! in_array( $challenge, array( 'unverified', 'always', 'off' ), true ) ) {
+                $challenge = 'unverified';
+            }
+            update_option( 'ws_login_email_challenge', $challenge );
+        }
         if ( function_exists( 'ws_log_audit' ) ) {
-            ws_log_audit( 'security_settings_update', 'settings', $days );
+            ws_log_audit( 'security_settings_update', 'settings', (int) get_option( 'ws_session_expiration_days', 30 ) );
         }
         $saved = true;
     }
 
-    $days = max( 1, min( 365, (int) get_option( 'ws_session_expiration_days', 30 ) ) );
+    $days       = max( 1, min( 365, (int) get_option( 'ws_session_expiration_days', 30 ) ) );
+    $challenge  = (string) get_option( 'ws_login_email_challenge', 'unverified' );
     ?>
     <div class="wrap">
         <h1><span class="dashicons dashicons-lock" style="vertical-align:middle"></span> <?php esc_html_e( 'Sesión y seguridad', 'workshop' ); ?></h1>
@@ -453,6 +467,27 @@ function ws_admin_page_security() {
                 </table>
             </div>
             <?php submit_button( __( 'Guardar sesión', 'workshop' ) ); ?>
+        </form>
+
+        <form method="post" action="">
+            <?php wp_nonce_field( 'ws_save_security', 'ws_security_nonce' ); ?>
+            <div class="ws-mp-admin-group">
+                <h2><span class="dashicons dashicons-shield" style="margin-right:6px"></span><?php esc_html_e( 'Verificación de correo al iniciar sesión', 'workshop' ); ?></h2>
+                <table class="form-table" role="presentation">
+                    <tr>
+                        <th scope="row"><label for="ws-email-challenge"><?php esc_html_e( 'Reto de correo en el login', 'workshop' ); ?></label></th>
+                        <td>
+                            <select id="ws-email-challenge" name="email_challenge">
+                                <option value="unverified" <?php selected( $challenge, 'unverified' ); ?>><?php esc_html_e( 'Solo cuentas sin verificar (recomendado)', 'workshop' ); ?></option>
+                                <option value="always" <?php selected( $challenge, 'always' ); ?>><?php esc_html_e( 'Siempre (cada inicio de sesión)', 'workshop' ); ?></option>
+                                <option value="off" <?php selected( $challenge, 'off' ); ?>><?php esc_html_e( 'Desactivado', 'workshop' ); ?></option>
+                            </select>
+                            <p class="description"><?php esc_html_e( 'Al iniciar sesión en la app se pide un código de 6 dígitos enviado al correo de la cuenta. «Solo cuentas sin verificar» lo pide una única vez (después la cuenta queda marcada como verificada). Aplica a la app móvil.', 'workshop' ); ?></p>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+            <?php submit_button( __( 'Guardar seguridad', 'workshop' ) ); ?>
         </form>
 
         <div class="ws-mp-admin-group">

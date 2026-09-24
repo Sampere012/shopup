@@ -15,8 +15,10 @@ import 'services/pos_local_service.dart';
 import 'services/update_service.dart';
 import 'services/db_service.dart';
 import 'services/plan_guard_service.dart';
+import 'services/tutorial_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/shell_screen.dart';
+import 'screens/onboarding_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -44,6 +46,7 @@ void main() async {
   PlanGuardService.I.onForceLogout = () async => AuthService.I.logout();
   await ThemeService.I.load();
   await SavedAccountsService.I.load();
+  await TutorialService.I.load();
   runApp(const ShopUpApp());
 }
 
@@ -67,6 +70,8 @@ class ShopUpApp extends StatelessWidget {
             value: PosLocalService.I),
         ChangeNotifierProvider<UpdateService>.value(
             value: UpdateService.I),
+        ChangeNotifierProvider<TutorialService>.value(
+            value: TutorialService.I),
       ],
       child: Consumer<ThemeService>(
         builder: (context, themeSvc, _) {
@@ -140,6 +145,7 @@ class _RootGateState extends State<RootGate> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthService>();
+    final tutorial = context.watch<TutorialService>();
     if (!_decided) {
       return Scaffold(
         body: Container(
@@ -171,6 +177,10 @@ class _RootGateState extends State<RootGate> {
     final showShell = auth.hasValidCachedSession;
     wsLog('RootGate rebuild → ${showShell ? 'SHELL (dashboard)' : 'LOGIN'} '
         'me=${auth.me != null} expiresAt=${auth.hasValidCachedSession}');
+    if (showShell && tutorial.welcomePending) {
+      // Primer acceso tras registrarse: bienvenida + tour, como en la web.
+      return const OnboardingScreen(autoWelcome: true);
+    }
     return showShell ? const ShellScreen() : const LoginScreen();
   }
 }

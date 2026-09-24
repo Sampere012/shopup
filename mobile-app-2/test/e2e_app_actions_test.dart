@@ -148,6 +148,10 @@ void main() {
   String ref(String tag) => 'E2E-$tag-$ts';
 
   setUpAll(() async {
+    // Precondiciones del reto de correo: usuarios e2e verificados y modo
+    // "unverified" para que los logins de la suite no pidan código.
+    await _phpCli(['ws-test-seed.php', 'seed']);
+    await _phpCli(['ws-test-seed.php', 'challenge-mode', 'unverified']);
     final r = await _postRaw('ws_mobile_login', {'ws_user': _user, 'ws_pass': _pass});
     expect(r['success'], isTrue, reason: 'login falló: ${r['data']}');
     final data = _asMap(r['data']);

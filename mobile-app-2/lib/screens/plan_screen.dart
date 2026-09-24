@@ -3,8 +3,15 @@ import 'package:provider/provider.dart';
 import '../main.dart';
 import '../theme/app_theme.dart';
 import '../services/db_service.dart';
+import '../services/api_service.dart';
+import '../services/auth_service.dart';
+import '../services/sync_service.dart';
+import '../widgets/common.dart' show U;
 
 /// Plan con features incluidas, consumo/uso y planes disponibles.
+/// Cambio de plan IGUAL QUE LA WEB: elegir plan → solicitar upgrade
+/// (ws_plan_request) → queda pendiente hasta que el admin lo apruebe;
+/// se puede cancelar (ws_plan_cancel_request).
 class PlanScreen extends StatefulWidget {
   const PlanScreen({super.key});
 
@@ -15,6 +22,7 @@ class PlanScreen extends StatefulWidget {
 class _PlanScreenState extends State<PlanScreen> {
   Map<String, dynamic> _data = {};
   bool _loading = true;
+  bool _busyRequest = false;
 
   @override
   void initState() {
@@ -62,6 +70,8 @@ class _PlanScreenState extends State<PlanScreen> {
     final plans = ((_data['plans'] as List?)?.whereType<Map>()
         .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
         .toList() ?? <Map<String, dynamic>>[]);
+    final upgradePending = _data['upgrade_pending'] == true;
+    final rejected = '${_data['upgrade_status'] ?? ''}' == 'rejected';
 
     return RefreshIndicator(
       onRefresh: _load,
@@ -71,6 +81,26 @@ class _PlanScreenState extends State<PlanScreen> {
           // Plan status card
           _buildStatusCard(planName, statusLabel, locked, isActive, isTrial, trialDaysLeft, planDaysLeft, isDark),
           const SizedBox(height: 16),
+
+          // Solicitud pendiente / rechazada (igual que la web).
+          if (upgradePending) _pendingBanner(isDark, planName: '${_data['upgrade_plan'] ?? ''}'),
+          if (rejected && !upgradePending)
+            Container(
+              margin: const EdgeInsets.only(bottom: 14),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppTheme.amber.withAlpha(18),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppTheme.amber.withAlpha(60)),
+              ),
+              child: const Row(children: [
+                Icon(Icons.close, color: AppTheme.amber, size: 20),
+                SizedBox(width: 10),
+                Expanded(
+                    child: Text('Tu última solicitud de plan fue rechazada. Puedes solicitar otro plan.',
+                        style: TextStyle(fontSize: 12.5))),
+              ]),
+            ),
 
           // Usage / consumption
           if (usage.isNotEmpty || limits.isNotEmpty) ...[
@@ -90,13 +120,93 @@ class _PlanScreenState extends State<PlanScreen> {
 
           // Planes disponibles para upgrade
           if (plans.isNotEmpty) ...[
-            Text('Planes disponibles',
+            Text('Cambiar de plan',
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            Text('Elige el plan que necesitas y envía la solicitud: el administrador la aprobará.',
+                style: TextStyle(color: Colors.grey[600], fontSize: 12)),
             const SizedBox(height: 8),
             ...plans.map((p) => _planCard(p, isDark)),
           ],
         ],
       ),
+    );
+  }
+
+  // ---------------- Cambio de plan (igual que la web) ----------------
+
+  bool get _isOwner => '${(AuthService.I.me ?? const {})['role']}' == 'owner';
+
+  Future<void> _requestUpgrade(Map<String, dynamic> p) async {
+    final name = '${p['name'] ?? ''}';
+    if (!await U.confirm(context,
+        '¿Solicitar el plan $name? El administrador lo revisará y habilitará tu negocio cuando lo apruebe.',
+        action: 'Solicitar')) {
+      return;
+    }
+    setState(() => _busyRequest = true);
+    try {
+      await ApiService.I.req('ws_plan_request', {'plan_id': p['id'] ?? 0});
+      if (!mounted) return;
+      U.toast(context, 'Solicitud enviada. El administrador la revisará.');
+      await SyncService.I.pullCache('ws_plan_info', {}, 'ws_plan_info');
+      await _load();
+      setState(() {});
+    } on ApiException catch (e) {
+      if (mounted) U.toast(context, e.message, kind: 'err');
+    } catch (_) {
+      if (mounted) U.toast(context, 'No se pudo enviar la solicitud', kind: 'err');
+    } finally {
+      if (mounted) setState(() => _busyRequest = false);
+    }
+  }
+
+  Future<void> _cancelUpgrade() async {
+    if (!await U.confirm(context, '¿Cancelar tu solicitud de upgrade?', action: 'Cancelar solicitud')) {
+      return;
+    }
+    setState(() => _busyRequest = true);
+    try {
+      await ApiService.I.req('ws_plan_cancel_request', {});
+      if (!mounted) return;
+      U.toast(context, 'Solicitud cancelada.');
+      await SyncService.I.pullCache('ws_plan_info', {}, 'ws_plan_info');
+      await _load();
+      setState(() {});
+    } on ApiException catch (e) {
+      if (mounted) U.toast(context, e.message, kind: 'err');
+    } catch (_) {
+      if (mounted) U.toast(context, 'No se pudo cancelar', kind: 'err');
+    } finally {
+      if (mounted) setState(() => _busyRequest = false);
+    }
+  }
+
+  Widget _pendingBanner(bool isDark, {String? planName}) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.amber.withAlpha(18),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.amber.withAlpha(60)),
+      ),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Icon(Icons.hourglass_top, color: AppTheme.amber, size: 20),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+              planName != null && planName.isNotEmpty
+                  ? 'Tienes una solicitud pendiente para el plan $planName. El administrador la revisará y habilitará tu negocio cuando la apruebe.'
+                  : 'Tienes una solicitud de upgrade pendiente de aprobación.',
+              style: const TextStyle(fontSize: 12.5, height: 1.35)),
+        ),
+        if (_isOwner)
+          TextButton(
+            onPressed: _busyRequest ? null : _cancelUpgrade,
+            child: const Text('Cancelar', style: TextStyle(fontSize: 12)),
+          ),
+      ]),
     );
   }
 
@@ -273,26 +383,101 @@ class _PlanScreenState extends State<PlanScreen> {
   }
 
   Widget _planCard(Map<String, dynamic> p, bool isDark) {
+    final name = '${p['name'] ?? ''}';
+    final isCurrent = !_data.isEmpty && name == '${_data['plan_name'] ?? ''}';
+    final isTrialPlan = p['is_trial'] == true;
+    final price = '${p['price_text'] ?? ''}';
+    final duration = '${p['duration_label'] ?? ''}';
+    final popular = '${p['slug'] ?? ''}' == 'pro';
+    final upgradePending = _data['upgrade_pending'] == true;
+    final canRequest = _isOwner;
+
     return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        leading: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: AppTheme.primary.withAlpha(20),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Icon(Icons.workspace_premium_outlined, color: AppTheme.primary, size: 20),
-        ),
-        title: Text('${p['name'] ?? ''}',
-            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
-        subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          if ('${p['price_text'] ?? ''}'.isNotEmpty)
-            Text('${p['price_text']}', style: TextStyle(color: AppTheme.success, fontWeight: FontWeight.w600, fontSize: 13)),
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: (popular ? AppTheme.amber : AppTheme.primary).withAlpha(20),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(Icons.workspace_premium_outlined,
+                  color: popular ? AppTheme.amber : AppTheme.primary, size: 20),
+            ),
+            const SizedBox(width: 10),
+            Expanded(child: Text(name,
+                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15))),
+            if (popular)
+              U.badge('Más popular', color: AppTheme.amber, small: true),
+            if (isTrialPlan) ...[
+              const SizedBox(width: 4),
+              U.badge('Prueba gratis', color: AppTheme.primary, small: true),
+            ],
+          ]),
+          const SizedBox(height: 8),
+          if (price.isNotEmpty)
+            Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+              Text(price,
+                  style: const TextStyle(
+                      color: AppTheme.success, fontWeight: FontWeight.w800, fontSize: 17)),
+              if (duration.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(left: 4, bottom: 2),
+                  child: Text(duration,
+                      style: TextStyle(color: Colors.grey[600], fontSize: 11)),
+                ),
+            ]),
           if ('${p['description'] ?? ''}'.isNotEmpty)
-            Text('${p['description']}', style: TextStyle(color: Colors.grey[600], fontSize: 12), maxLines: 2, overflow: TextOverflow.ellipsis),
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text('${p['description']}',
+                  style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+            ),
+          const SizedBox(height: 10),
+          if (isCurrent)
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: null,
+                icon: const Icon(Icons.check, size: 16),
+                label: const Text('Plan actual'),
+              ),
+            )
+          else if (upgradePending)
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: null,
+                icon: const Icon(Icons.hourglass_top, size: 16),
+                label: const Text('Solicitud pendiente'),
+              ),
+            )
+          else if (isTrialPlan)
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: null,
+                child: const Text('Solo para negocios nuevos'),
+              ),
+            )
+          else if (canRequest)
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _busyRequest ? null : () => _requestUpgrade(p),
+                icon: const Icon(Icons.arrow_upward, size: 16),
+                label: const Text('Solicitar upgrade'),
+              ),
+            )
+          else
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(onPressed: null, child: const Text('Disponible')),
+            ),
         ]),
-        isThreeLine: true,
       ),
     );
   }

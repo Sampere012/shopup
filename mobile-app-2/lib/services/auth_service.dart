@@ -7,6 +7,17 @@ import 'api_service.dart';
 import 'db_service.dart';
 import 'plan_guard_service.dart';
 
+/// El servidor pidió verificación de correo al iniciar sesión (reto
+/// anti-robo de contraseña): hay que confirmar el código de 6 dígitos
+/// enviado al buzón antes de recibir el token de sesión.
+class NeedVerifyException implements Exception {
+  NeedVerifyException(this.email, this.message);
+  final String email;
+  final String message;
+  @override
+  String toString() => message;
+}
+
 /// Sesión y perfil (equivalente a js/auth.js).
 /// REGLA ANTI-CIERRE ACCIDENTAL: la sesión SOLO se borra cuando el servidor
 /// responde explícitamente loggedIn:false. Errores transitorios (red, 5xx,
@@ -119,6 +130,12 @@ class AuthService extends ChangeNotifier {
       throw ApiException('Tiempo de espera agotado');
     });
     wsLog('login() respuesta keys=${data is Map ? data.keys.toList() : data.runtimeType}');
+    // Reto de verificación de correo: el servidor envía un código al buzón
+    // y NO entrega token hasta confirmarlo (pantalla de verificación).
+    if (data is Map && data['needVerify'] == true) {
+      throw NeedVerifyException(
+          '${data['email'] ?? ''}', '${data['msg'] ?? 'Verifica tu correo para continuar'}');
+    }
     // El backend de login NO envía 'loggedIn': el éxito se confirma por el
     // token (igual que auth.js: setToken(data.token) directo).
     if (data is Map && data['token'] != null) {
@@ -136,6 +153,21 @@ class AuthService extends ChangeNotifier {
     wsLog('login() RECHAZADA sin token');
     throw ApiException('Usuario o contraseña incorrectos',
         response: data is Map<String, dynamic> ? data : null);
+  }
+
+  /// Completa la sesión tras verificar el correo en el login (el endpoint
+  /// ws_mobile_verify_login devuelve token + me igual que el login).
+  Future<void> completeLoginFromVerify(Map<String, dynamic> data) async {
+    if (data['token'] == null) {
+      throw ApiException('Verificación incompleta');
+    }
+    await ApiService.I.setToken('${data['token']}');
+    final rawDays = data['sessionDays'];
+    final days = (rawDays is num && rawDays >= 1) ? rawDays.toInt() : 30;
+    final me = (data['me'] is Map)
+        ? Map<String, dynamic>.from(data['me'] as Map)
+        : <String, dynamic>{};
+    await store(me, days);
   }
 
   /// Valida contra ws_mobile_me. Devuelve me o null.

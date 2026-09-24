@@ -9,6 +9,8 @@ import '../widgets/common.dart';
 import '../widgets/crud.dart';
 
 /// Gastos con navegación por mes, resumen y crear/editar/eliminar.
+/// El gasto es POR MES (como la web): cada fila lleva su fecha y se agrupa
+/// en el mes elegido. Soporta repetir un gasto recurrente en varios meses.
 class ExpensesScreen extends StatefulWidget {
   const ExpensesScreen({super.key});
 
@@ -20,6 +22,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   int _year = DateTime.now().year;
   int _month = DateTime.now().month;
   late Future<List<Map<String, dynamic>>> _future;
+
+  /// Meses elegidos para repetir un gasto (1 = un solo gasto).
+  int _repeatMonths = 1;
 
   static const _months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
       'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
@@ -64,6 +69,55 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     });
   }
 
+  /// Suma [n] meses a una fecha 'YYYY-MM-DD' (ajusta el día si el mes no
+  /// lo tiene, p. ej. 31 en febrero), igual que addMonths() de la web.
+  String _addMonths(String dateStr, int n) {
+    final parts = dateStr.split('-');
+    var y = int.tryParse(parts.isNotEmpty ? parts[0] : '') ?? _year;
+    var m = int.tryParse(parts.length > 1 ? parts[1] : '') ?? _month;
+    var d = int.tryParse(parts.length > 2 ? parts[2] : '') ?? 1;
+    final total = (m - 1) + n;
+    y += total ~/ 12;
+    m = total % 12 + 1;
+    const daysIn = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    var max = daysIn[m - 1];
+    final leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+    if (m == 2 && leap) max = 29;
+    if (d > max) d = max;
+    return '$y-${m.toString().padLeft(2, '0')}-${d.toString().padLeft(2, '0')}';
+  }
+
+  /// Marca/limpia la repetición del gasto en meses siguientes.
+  void _askRepeatMonths(ValueNotifier<int> repeat) async {
+    final sel = await showModalBottomSheet<int>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
+      builder: (ctx) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Padding(
+            padding: EdgeInsets.all(14),
+            child: Text('¿Repetir en cuántos meses?',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+          ),
+          ...[1, 3, 6, 12].map((n) => ListTile(
+                title: Text(n == 1 ? 'Solo este mes' : '$n meses seguidos'),
+                subtitle: n == 1
+                    ? null
+                    : const Text('Se creará un gasto por mes con estos mismos datos'),
+                trailing: n > 1
+                    ? const Icon(Icons.calendar_month_outlined,
+                        color: AppTheme.primary)
+                    : null,
+                onTap: () => Navigator.pop(ctx, n),
+              )),
+          const SizedBox(height: 6),
+        ]),
+      ),
+    );
+    if (sel != null) repeat.value = sel;
+  }
+
   Future<void> _edit(Map<String, dynamic>? e) async {
     final locations = await DbService.I.all('locations');
     final concept = TextEditingController(text: '${e?['concept'] ?? ''}');
@@ -73,11 +127,32 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     final dateRaw = TextEditingController(text: e?['date_raw'] ??
         '$_year-${_month.toString().padLeft(2, '0')}-${DateTime.now().day.toString().padLeft(2, '0')}');
     final locId = ValueNotifier<String>('${e?['location_id'] ?? '0'}');
+    final repeat = ValueNotifier<int>(_repeatMonths);
 
     final ok = await showFormSheet(
       context,
       title: e == null ? 'Nuevo gasto' : 'Editar gasto',
       fields: [
+        if (e == null)
+          ValueListenableBuilder<int>(
+            valueListenable: repeat,
+            builder: (_, v, __) => ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.repeat, color: AppTheme.primary),
+              title: Text(v <= 1 ? 'Gasto único (este mes)' : 'Se repetirá en $v meses',
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+              subtitle: v > 1
+                  ? const Text('Se crea un gasto por mes con estos datos',
+                      style: TextStyle(fontSize: 11))
+                  : null,
+              trailing: TextButton(
+                onPressed: () => _askRepeatMonths(repeat),
+                child: const Text('Cambiar'),
+              ),
+              onTap: () => _askRepeatMonths(repeat),
+            ),
+          ),
         fField('Concepto *', concept),
         Row(children: [
           Expanded(child: fField('Monto *', amount, type: TextInputType.number)),
@@ -112,31 +187,34 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
           U.toast(context, 'Concepto y monto son obligatorios', kind: 'err');
           return false;
         }
-        final payload = <String, dynamic>{
+        // La fecha decide el MES del gasto (como la web): los gastos se
+        // agrupan y cuentan en el mes de su fecha, no en el mes "actual".
+        final pickedDate = dateRaw.text.trim();
+        final basePayload = <String, dynamic>{
           'id': e != null ? (num.tryParse('${e['id']}') ?? 0) : 0,
           'concept': concept.text.trim(),
           'amount': num.tryParse(amount.text) ?? 0,
           'category': category.value,
-          'expense_date': dateRaw.text.trim(),
+          'expense_date': pickedDate,
           'location_id': locId.value,
           'note': note.text.trim(),
         };
-        final rowId = num.tryParse('${payload['id']}') ?? 0;
+        final rowId = num.tryParse('${basePayload['id']}') ?? 0;
         if (rowId < 0) {
-          // Gasto creado sin conexión (id temporal negativo): la nube aún no lo
-          // tiene. Se actualiza solo local; al sincronizar se creará tal cual.
+          // Gasto creado sin conexión (id temporal negativo): se actualiza
+          // solo local; al sincronizar se creará tal cual.
           final raw = await DbService.I.cacheGet('ws_expenses_list');
           final rows = (raw is List)
               ? List<Map<String, dynamic>>.from(raw)
               : <Map<String, dynamic>>[];
           for (final r in rows) {
             if ('${r['id']}' == '$rowId') {
-              r['concept'] = payload['concept'];
-              r['amount'] = payload['amount'];
-              r['category'] = payload['category'];
-              r['date_raw'] = payload['expense_date'];
-              r['location_id'] = payload['location_id'];
-              r['note'] = payload['note'];
+              r['concept'] = basePayload['concept'];
+              r['amount'] = basePayload['amount'];
+              r['category'] = basePayload['category'];
+              r['date_raw'] = basePayload['expense_date'];
+              r['location_id'] = basePayload['location_id'];
+              r['note'] = basePayload['note'];
               break;
             }
           }
@@ -144,9 +222,37 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
           U.toast(context, 'Guardado (pendiente de sincronizar)', kind: 'ok');
           return true;
         }
+        // Repetición en varios meses (solo gasto nuevo, como el duplicar de
+        // la web): un gasto por mes a partir de la fecha elegida.
+        final months = e == null ? (repeat.value.clamp(1, 12)) : 1;
+        if (months > 1) {
+          var okAll = true, sent = 0;
+          for (var i = 0; i < months; i++) {
+            final payload = Map<String, dynamic>.from(basePayload);
+            payload['id'] = 0;
+            payload['expense_date'] = _addMonths(pickedDate, i);
+            final res = await U.handlePush(
+              context,
+              SyncService.I.push('ws_expense_save', payload),
+              i == months - 1 ? 'Guardado' : '',
+              onOk: null,
+            );
+            if (!res) { okAll = false; break; }
+            sent++;
+          }
+          if (okAll && mounted) {
+            U.toast(context, months > sent
+                ? 'Guardados $sent de $months gastos; el resto se enviará al reconectar'
+                : '$months gastos guardados',
+                kind: months > sent ? 'warn' : 'ok');
+            await SyncService.I.pullCache(
+                'ws_expenses_list', {'year': 0, 'month': 0}, 'ws_expenses_list');
+          }
+          return okAll;
+        }
         return U.handlePush(
           context,
-          SyncService.I.push('ws_expense_save', payload),
+          SyncService.I.push('ws_expense_save', basePayload),
           'Guardado',
           onOk: () => SyncService.I.pullCache('ws_expenses_list', {'year': 0, 'month': 0}, 'ws_expenses_list'),
           onQueued: (queuedPayload) async {
@@ -165,6 +271,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                 if ('${r['id']}' == '$id') {
                   r['concept'] = queuedPayload['concept']; r['amount'] = queuedPayload['amount'];
                   r['category'] = queuedPayload['category']; r['date_raw'] = queuedPayload['expense_date'];
+                  r['note'] = queuedPayload['note'];
                   break;
                 }
               }
@@ -179,6 +286,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
 
   Future<void> _delete(Map<String, dynamic> e) async {
     if (!await U.confirm(context, '¿Eliminar este gasto?', action: 'Eliminar')) return;
+    if (!mounted) return;
     final rowId = num.tryParse('${e['id']}') ?? 0;
     if (rowId < 0) {
       // Gasto pendiente de crear en la nube: se quita solo local.
@@ -202,6 +310,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         await DbService.I.cacheSet('ws_expenses_list', rows);
       },
     );
+    if (!mounted) return;
     _reload(); setState(() {});
   }
 
@@ -237,7 +346,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               child: const Text('Eliminar', style: TextStyle(color: AppTheme.danger)),
             ),
           if (canManage)
-            TextButton(
+            FilledButton.tonal(
               onPressed: () { Navigator.pop(ctx); _edit(e); },
               child: const Text('Editar'),
             ),
@@ -355,16 +464,41 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                             '${e['category'] ?? ''} · ${e['date_label'] ?? e['date_raw'] ?? ''}',
                             style: TextStyle(color: Colors.grey[600], fontSize: 12)),
                         onTap: () => _view(e),
+                        onLongPress: canManage ? () => _edit(e) : null,
                         trailing: canManage
                             ? Row(mainAxisSize: MainAxisSize.min, children: [
                                 Text(U.money(amount, cur),
                                     style: const TextStyle(fontWeight: FontWeight.w800, color: AppTheme.danger)),
-                                IconButton(
-                                    icon: const Icon(Icons.edit_outlined, size: 18),
-                                    onPressed: () => _edit(e)),
-                                IconButton(
-                                    icon: const Icon(Icons.delete_outline, size: 18, color: AppTheme.danger),
-                                    onPressed: () => _delete(e)),
+                                // Menú ⋮: Editar / Eliminar siempre visibles y
+                                // sin apretar la fila (igual que la web).
+                                PopupMenuButton<String>(
+                                  icon: const Icon(Icons.more_vert, size: 20),
+                                  padding: EdgeInsets.zero,
+                                  onSelected: (v) {
+                                    if (v == 'edit') _edit(e);
+                                    if (v == 'delete') _delete(e);
+                                  },
+                                  itemBuilder: (_) => const [
+                                    PopupMenuItem(
+                                        value: 'edit',
+                                        height: 42,
+                                        child: Row(children: [
+                                          Icon(Icons.edit_outlined, size: 18),
+                                          SizedBox(width: 10),
+                                          Text('Editar'),
+                                        ])),
+                                    PopupMenuItem(
+                                        value: 'delete',
+                                        height: 42,
+                                        child: Row(children: [
+                                          Icon(Icons.delete_outline,
+                                              size: 18, color: AppTheme.danger),
+                                          SizedBox(width: 10),
+                                          Text('Eliminar',
+                                              style: TextStyle(color: AppTheme.danger)),
+                                        ])),
+                                  ],
+                                ),
                               ])
                             : Text(U.money(amount, cur),
                                 style: const TextStyle(fontWeight: FontWeight.w800, color: AppTheme.danger)),

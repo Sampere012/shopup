@@ -86,6 +86,18 @@ Future<({int status, Map<String, dynamic>? json})> _postLenient(
   return (status: res.statusCode, json: _tryJson(res.bodyBytes));
 }
 
+/// Ejecuta un comando CLI del sembrador (ws-test-seed.php) con el PHP de
+/// XAMPP: precondiciones de los tests (usuarios verificados, modo de reto).
+Future<void> _phpCli(List<String> args) async {
+  final php = Platform.environment['WS_E2E_PHP'] ?? r'C:\xampp\php\php.exe';
+  final workdir = Platform.environment['WS_E2E_WORKDIR'] ?? Directory.current.parent.path;
+  final res = await Process.run(php, args, workingDirectory: workdir)
+      .timeout(const Duration(seconds: 60));
+  if (res.exitCode != 0) {
+    fail('CLI ${args.join(" ")} falló: ${res.stdout} ${res.stderr}');
+  }
+}
+
 Map<String, dynamic>? _tryJson(List<int> bytes) {
   try {
     final d = jsonDecode(utf8.decode(bytes, allowMalformed: true));
@@ -134,6 +146,10 @@ void main() {
   late List<Map<String, dynamic>> myLocations;
 
   setUpAll(() async {
+    // Garantiza precondiciones del reto de correo: usuarios e2e verificados
+    // y modo "unverified" (los logins de la suite no deben disparar el reto).
+    await _phpCli(['ws-test-seed.php', 'seed']);
+    await _phpCli(['ws-test-seed.php', 'challenge-mode', 'unverified']);
     final r = await _postRaw('ws_mobile_login', {'ws_user': _user, 'ws_pass': _pass});
     expect(r['success'], isTrue, reason: 'login falló: ${r['data']}');
     final data = _asMap(r['data']);

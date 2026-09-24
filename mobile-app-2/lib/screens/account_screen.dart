@@ -10,6 +10,7 @@ import '../services/saved_accounts_service.dart';
 import '../services/sync_service.dart';
 import '../services/update_service.dart';
 import '../widgets/common.dart' show U;
+import 'onboarding_screen.dart';
 
 /// Mi cuenta: datos del usuario, actualización de app y cambio de cuenta.
 class AccountScreen extends StatefulWidget {
@@ -105,6 +106,20 @@ class _AccountScreenState extends State<AccountScreen> {
             _infoRow('Servidor', ApiService.I.server),
             _infoRow('Versión', 'v${AppConfig.appVersion}'),
           ]),
+        ),
+      ),
+
+      // ── Bienvenida y tour ──
+      const SizedBox(height: 10),
+      Card(
+        child: ListTile(
+          leading: const Icon(Icons.tour_outlined, color: AppTheme.primary),
+          title: const Text('Bienvenida y tour de la app',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+          subtitle: Text('Guía paso a paso por cada módulo',
+              style: TextStyle(color: Colors.grey[500], fontSize: 12)),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => OnboardingScreen.open(context),
         ),
       ),
 

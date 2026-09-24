@@ -169,6 +169,9 @@ function ws_ajax_register_verify() {
         wp_send_json_error( array( 'msg' => $user_id->get_error_message() ) );
     }
     update_user_meta( $user_id, 'ws_business_id', $biz_id );
+    // El correo se verificó con el código de 6 dígitos: marcarlo para que el
+    // login (web y app) no vuelva a pedir verificación.
+    update_user_meta( $user_id, 'ws_email_verified_at', time() );
 
     // 3) Suscripción de prueba gratis (ws_trial_days() días por defecto).
     // ensure() crea la fila con estado trial y su fecha de caducidad (UTC).
