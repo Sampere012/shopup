@@ -28,6 +28,9 @@ class _PlanScreenState extends State<PlanScreen> {
   void initState() {
     super.initState();
     _load();
+    // La caché local puede ser anterior al servidor: refresca el plan y los
+    // planes disponibles (features/límites) apenas se abre la pantalla.
+    _pull();
   }
 
   Future<void> _load() async {
@@ -40,6 +43,12 @@ class _PlanScreenState extends State<PlanScreen> {
     } else if (mounted) {
       setState(() => _loading = false);
     }
+  }
+
+  /// Refresca el estado del plan desde la nube y repinta (pull-to-refresh).
+  Future<void> _pull() async {
+    await SyncService.I.pullCache('ws_plan_info', {}, 'ws_plan_info');
+    await _load();
   }
 
   @override
@@ -67,14 +76,23 @@ class _PlanScreenState extends State<PlanScreen> {
     final planDaysLeft = (_data['plan_days_left'] as num?)?.toInt() ?? 0;
     final usage = _data['usage'] is Map ? Map<String, dynamic>.from(_data['usage'] as Map) : <String, dynamic>{};
     final limits = _data['limits'] is Map ? Map<String, dynamic>.from(_data['limits'] as Map) : <String, dynamic>{};
+    // Features del plan actual (límites + chatbot) desde el servidor.
+    final planFeatures = ((_data['plan_features'] as List?)?.whereType<Map>()
+        .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
+        .toList() ?? <Map<String, dynamic>>[]);
+    // IGUAL QUE LA WEB: sin el plan legacy interno. Filtrado defensivo extra
+    // por si el servidor aún lo mandara (is_active=0 o slug legacy).
     final plans = ((_data['plans'] as List?)?.whereType<Map>()
         .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
+        .where((p) => '${p['slug'] ?? ''}' != 'legacy')
         .toList() ?? <Map<String, dynamic>>[]);
     final upgradePending = _data['upgrade_pending'] == true;
     final rejected = '${_data['upgrade_status'] ?? ''}' == 'rejected';
+    // Funciones del plan ACTUAL (límites + chatbot), igual que la web.
+    final currentFeatures = _featuresFor(planFeatures, limits);
 
     return RefreshIndicator(
-      onRefresh: _load,
+      onRefresh: _pull,
       child: ListView(
         padding: const EdgeInsets.all(14),
         children: [
@@ -111,12 +129,14 @@ class _PlanScreenState extends State<PlanScreen> {
             const SizedBox(height: 16),
           ],
 
-          // Features incluidas según el plan
-          Text('Funciones incluidas',
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
-          const SizedBox(height: 8),
-          ..._planFeaturesFor(planName).map((f) => _featureTile(f, isDark)),
-          const SizedBox(height: 16),
+          // Features incluidas según el plan (límites + chatbot, como la web)
+          if (currentFeatures.isNotEmpty) ...[
+            Text('Funciones incluidas',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 8),
+            ...currentFeatures.map((f) => _featureTile(f, isDark)),
+            const SizedBox(height: 16),
+          ],
 
           // Planes disponibles para upgrade
           if (plans.isNotEmpty) ...[
@@ -325,46 +345,63 @@ class _PlanScreenState extends State<PlanScreen> {
     );
   }
 
-  List<_Feature> _planFeaturesFor(String plan) {
-    const features = {
-      'Gratuito': [
-        _Feature('Inventario básico', Icons.inventory_2_outlined),
-        _Feature('Punto de venta', Icons.point_of_sale_outlined),
-        _Feature('Pedidos web', Icons.receipt_long_outlined),
-        _Feature('Clientes', Icons.groups_2_outlined),
-        _Feature('Reportes básicos', Icons.analytics_outlined),
-      ],
-      'Básico': [
-        _Feature('Todo lo del plan Gratuito', Icons.check_circle_outline),
-        _Feature('Movimientos de stock', Icons.swap_horiz),
-        _Feature('Historial de movimientos', Icons.history),
-        _Feature('Turnos de trabajo', Icons.schedule),
-        _Feature('Gastos', Icons.payments_outlined),
-        _Feature('Pedidos congelados', Icons.ac_unit),
-      ],
-      'Profesional': [
-        _Feature('Todo lo del plan Básico', Icons.check_circle_outline),
-        _Feature('Transferencias entre ubicaciones', Icons.swap_horizontal_circle_outlined),
-        _Feature('Cuadre de inventario', Icons.fact_check_outlined),
-        _Feature('Trabajadores y permisos', Icons.manage_accounts_outlined),
-        _Feature('Valoraciones', Icons.star_outline),
-        _Feature('Fidelización', Icons.card_giftcard_outlined),
-        _Feature('Anuncios', Icons.campaign_outlined),
-        _Feature('Reportes avanzados', Icons.leaderboard_outlined),
-      ],
-      'Empresarial': [
-        _Feature('Todo lo del plan Profesional', Icons.check_circle_outline),
-        _Feature('Múltiples ubicaciones', Icons.store_outlined),
-        _Feature('Catálogo PDF', Icons.picture_as_pdf),
-        _Feature('API y webhooks', Icons.code_outlined),
-        _Feature('Soporte prioritario', Icons.support_agent_outlined),
-        _Feature('Configuración avanzada', Icons.tune),
-      ],
+  /// Features del plan actual. Prioridad: las que manda el servidor
+  /// (plan_features, mismo formato que la web). Fallback: límites conocidos.
+  /// Regla: límites SIEMPRE incluidos (0 = ilimitado ∞); chatbot según value.
+  List<_Feature> _featuresFor(List<Map<String, dynamic>> planFeatures, Map<String, dynamic> limits) {
+    if (planFeatures.isNotEmpty) {
+      return [
+        for (final f in planFeatures)
+          _Feature(
+            '${f['key'] ?? ''}' == 'chatbot'
+                ? '${f['label'] ?? ''}'
+                : '${f['label'] ?? ''}: ${f['text'] ?? ''}',
+            _featureIcon('${f['key'] ?? ''}'),
+            included: '${f['key'] ?? ''}' == 'chatbot'
+                ? ((f['value'] as num?)?.toInt() ?? 0) == 1
+                : true,
+          ),
+      ];
+    }
+    // Fallback (servidor sin plan_features): límites conocidos con su
+    // etiqueta en español, misma presentación "Límite: cantidad | ∞".
+    const labels = {
+      'products': 'Productos',
+      'users': 'Usuarios',
+      'pvs': 'Puntos de venta',
+      'warehouses': 'Almacenes',
+      'suppliers': 'Proveedores',
     };
-    return features[plan] ?? features['Gratuito']!;
+    const icons = {
+      'products': Icons.inventory_2_outlined,
+      'users': Icons.groups_2_outlined,
+      'pvs': Icons.store_outlined,
+      'warehouses': Icons.warehouse_outlined,
+      'suppliers': Icons.local_shipping_outlined,
+    };
+    return [
+      for (final e in limits.entries)
+        _Feature(
+          '${labels[e.key] ?? e.key}: ${(e.value is num && (e.value as num).toInt() > 0) ? e.value : '∞'}',
+          icons[e.key] ?? Icons.check_circle_outline,
+        ),
+    ];
+  }
+
+  IconData _featureIcon(String key) {
+    const icons = {
+      'products': Icons.inventory_2_outlined,
+      'users': Icons.groups_2_outlined,
+      'pvs': Icons.store_outlined,
+      'warehouses': Icons.warehouse_outlined,
+      'suppliers': Icons.local_shipping_outlined,
+      'chatbot': Icons.smart_toy_outlined,
+    };
+    return icons[key] ?? Icons.check_circle_outline;
   }
 
   Widget _featureTile(_Feature f, bool isDark) {
+    final ok = f.included;
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -374,10 +411,11 @@ class _PlanScreenState extends State<PlanScreen> {
         border: Border.all(color: isDark ? AppTheme.darkBorder : AppTheme.lightBorder),
       ),
       child: Row(children: [
-        Icon(f.icon, size: 20, color: AppTheme.success),
+        Icon(f.icon, size: 20, color: ok ? AppTheme.success : Colors.grey),
         const SizedBox(width: 12),
         Expanded(child: Text(f.label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500))),
-        Icon(Icons.check_circle, size: 18, color: AppTheme.success.withAlpha(180)),
+        Icon(ok ? Icons.check_circle : Icons.cancel,
+            size: 18, color: (ok ? AppTheme.success : Colors.grey).withAlpha(180)),
       ]),
     );
   }
@@ -391,6 +429,10 @@ class _PlanScreenState extends State<PlanScreen> {
     final popular = '${p['slug'] ?? ''}' == 'pro';
     final upgradePending = _data['upgrade_pending'] == true;
     final canRequest = _isOwner;
+    // Features/límites del plan (lista "X: N" o "∞"), IGUAL QUE LA WEB.
+    final features = ((p['features'] as List?)?.whereType<Map>()
+        .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
+        .toList() ?? <Map<String, dynamic>>[]);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
@@ -437,6 +479,34 @@ class _PlanScreenState extends State<PlanScreen> {
                   style: TextStyle(color: Colors.grey[600], fontSize: 12)),
             ),
           const SizedBox(height: 10),
+          // Features del plan (límites + chatbot), igual que la web.
+          if (features.isNotEmpty) ...[
+            for (final f in features)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Row(children: [
+                  Icon(
+                    '${f['key'] ?? ''}' == 'chatbot'
+                        ? (((f['value'] as num?)?.toInt() ?? 0) == 1
+                            ? Icons.check_circle_outline
+                            : Icons.cancel_outlined)
+                        : Icons.check_circle_outline,
+                    size: 15,
+                    color: '${f['key'] ?? ''}' == 'chatbot' && ((f['value'] as num?)?.toInt() ?? 0) == 0
+                        ? Colors.grey
+                        : AppTheme.success,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                      child: Text(
+                          '${f['key'] ?? ''}' == 'chatbot'
+                              ? '${f['label'] ?? ''}'
+                              : '${f['label'] ?? ''}: ${f['text'] ?? ''}',
+                          style: const TextStyle(fontSize: 12.5))),
+                ]),
+              ),
+            const SizedBox(height: 8),
+          ],
           if (isCurrent)
             SizedBox(
               width: double.infinity,
@@ -486,7 +556,8 @@ class _PlanScreenState extends State<PlanScreen> {
 class _Feature {
   final String label;
   final IconData icon;
-  const _Feature(this.label, this.icon);
+  final bool included;
+  const _Feature(this.label, this.icon, {this.included = true});
 }
 
 class _UsageItem {

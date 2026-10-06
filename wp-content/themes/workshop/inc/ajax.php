@@ -612,18 +612,60 @@ function ws_ajax_plan_info() {
     }
     $d = function_exists( 'ws_subscription_data' ) ? ws_subscription_data( $biz ) : array();
     $plans = array();
-    if ( class_exists( 'WS_Plans' ) && method_exists( 'WS_Plans', 'all' ) ) {
-        foreach ( WS_Plans::all() as $p ) {
+    // IGUAL QUE LA WEB (WS_Plans::active): activos y SIN el plan legacy interno.
+    if ( class_exists( 'WS_Plans' ) && method_exists( 'WS_Plans', 'active' ) ) {
+        foreach ( WS_Plans::active() as $p ) {
+            $limits = method_exists( 'WS_Plans', 'limits' ) ? WS_Plans::limits( $p ) : array();
+            $features = array();
+            foreach ( $limits as $k => $v ) {
+                $features[] = array(
+                    'key'   => (string) $k,
+                    'label' => ucfirst( method_exists( 'WS_Plans', 'limit_label' ) ? WS_Plans::limit_label( $k ) : (string) $k ),
+                    'value' => (int) $v,
+                    // 0 = ilimitado (∞), igual que la web.
+                    'text'  => $v > 0 ? (string) $v : '∞',
+                );
+            }
+            // Feature booleana del plan: asistente chatbot en el panel.
+            $features[] = array(
+                'key'   => 'chatbot',
+                'label' => method_exists( 'WS_Plans', 'has_chatbot' ) && WS_Plans::has_chatbot( $p )
+                    ? __( 'Asistente chatbot en tu panel', 'workshop' )
+                    : __( 'Sin chatbot (mejora con upgrade)', 'workshop' ),
+                'value' => ( method_exists( 'WS_Plans', 'has_chatbot' ) && WS_Plans::has_chatbot( $p ) ) ? 1 : 0,
+                'text'  => '',
+            );
             $plans[] = array(
                 'id'          => (int) $p->id,
                 'name'        => (string) $p->name,
                 'slug'        => (string) ( $p->slug ?? '' ),
                 'price_text'  => method_exists( 'WS_Plans', 'format_price' ) ? WS_Plans::format_price( $p ) : '',
+                'duration_label' => method_exists( 'WS_Plans', 'duration_label' ) ? WS_Plans::duration_label( $p ) : '',
                 'description' => (string) ( $p->description ?? '' ),
                 'is_trial'    => (int) ( $p->is_trial ?? 0 ) === 1,
+                'limits'      => $limits,
+                'features'    => $features,
             );
         }
     }
+
+    // Features del plan ACTUAL (límites + chatbot), igual formato que plans[].features.
+    $cur_features = array();
+    foreach ( (array) ( $d['limits'] ?? array() ) as $k => $v ) {
+        $cur_features[] = array(
+            'key'   => (string) $k,
+            'label' => ucfirst( method_exists( 'WS_Plans', 'limit_label' ) ? WS_Plans::limit_label( (string) $k ) : (string) $k ),
+            'value' => (int) $v,
+            'text'  => ( (int) $v ) > 0 ? (string) (int) $v : '∞',
+        );
+    }
+    $cur_has_chatbot = ! empty( $d['plan'] ) && method_exists( 'WS_Plans', 'has_chatbot' ) && WS_Plans::has_chatbot( $d['plan'] );
+    $cur_features[] = array(
+        'key'   => 'chatbot',
+        'label' => $cur_has_chatbot ? __( 'Asistente chatbot en tu panel', 'workshop' ) : __( 'Sin chatbot (mejora con upgrade)', 'workshop' ),
+        'value' => $cur_has_chatbot ? 1 : 0,
+        'text'  => '',
+    );
     wp_send_json_success( array(
         'data' => array(
             'status'          => (string) ( $d['status'] ?? 'trial' ),
@@ -635,6 +677,7 @@ function ws_ajax_plan_info() {
             'plan_name'       => $d['plan'] ? (string) ( $d['plan']->name ?? '' ) : '',
             'usage'           => $d['usage'] ?? array(),
             'limits'          => $d['limits'] ?? array(),
+            'plan_features'   => $cur_features,
             'locked'          => ! empty( $d['locked'] ),
             'lock'            => is_string( $d['lock'] ?? null ) ? $d['lock'] : '',
             'upgrade_pending' => ! empty( $d['upgrade_pending'] ),
@@ -2778,8 +2821,16 @@ function ws_ajax_order_list() {
             'date_from'    => $date_from,
             'date_to'      => $date_to,
         ), $args ) );
+        // Ítems de TODOS los pedidos de la página en 1 consulta: la app móvil
+        // muestra los productos del pedido sin pedir el detalle uno a uno.
+        $items_by_order = WS_Orders::items_for( wp_list_pluck( $rows, 'id' ) );
         $out = array();
         foreach ( $rows as $o ) {
+            $items = isset( $items_by_order[ (int) $o->id ] ) ? $items_by_order[ (int) $o->id ] : array();
+            $items_text = array();
+            foreach ( $items as $it ) {
+                $items_text[] = $it['qty'] . '× ' . $it['product_name'];
+            }
             $out[] = array(
                 'id'              => (int) $o->id,
                 'number'          => $o->number,
@@ -2787,6 +2838,9 @@ function ws_ajax_order_list() {
                 'customer_name'   => $o->customer_name,
                 'customer_phone'  => $o->customer_phone,
                 'customer_address'=> $o->customer_address,
+                'items_count'     => count( $items ),
+                'items'           => $items,
+                'items_text'      => implode( ', ', $items_text ),
                 'subtotal'        => (float) $o->subtotal,
                 'delivery_cost'   => (float) $o->delivery_cost,
                 'delivery_currency' => $o->delivery_currency ? $o->delivery_currency : $o->currency,

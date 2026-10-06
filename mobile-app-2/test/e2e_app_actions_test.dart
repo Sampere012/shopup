@@ -198,12 +198,49 @@ void main() {
       expect((s['hash'] as String).length, 32);
     });
 
-    test('ws_plan_info expone estado del plan y planes', () async {
+    test('ws_plan_info expone estado del plan, planes activos y features', () async {
       final d = await _postOk('ws_plan_info', {});
-      for (final k in ['status', 'status_label', 'is_trial', 'is_active', 'usage', 'limits', 'plans']) {
+      for (final k in
+          ['status', 'status_label', 'is_trial', 'is_active', 'usage', 'limits', 'plans', 'plan_features']) {
         expect(d.containsKey(k), isTrue, reason: 'plan_info sin $k');
       }
       expect(d['plans'], isA<List>());
+      expect(d['plan_features'], isA<List>());
+
+      final plans = _asList(d['plans']);
+      expect(plans, isNotEmpty, reason: 'ws_plan_info no lista ningún plan');
+      for (final p in plans) {
+        for (final k in ['id', 'name', 'slug', 'price_text', 'duration_label', 'limits', 'features']) {
+          expect(p.containsKey(k), isTrue, reason: 'plan sin $k: $p');
+        }
+        // El plan legacy interno NUNCA se muestra en la app (como la web).
+        expect(p['slug'], isNot('legacy'), reason: 'plan legacy expuesto en plan_info');
+
+        // Cada plan trae sus features: 5 límites (0 = ilimitado → ∞) + chatbot.
+        final feats = _asList(p['features']);
+        expect(feats.length, 6, reason: 'features de ${p['name']} != 6: $feats');
+        expect(feats.map((f) => f['key']).toList(),
+            containsAll(['products', 'users', 'pvs', 'warehouses', 'suppliers']));
+        expect(feats.last['key'], 'chatbot');
+        for (final f in feats) {
+          for (final k in ['key', 'label', 'value', 'text']) {
+            expect(f.containsKey(k), isTrue, reason: 'feature sin $k: $f');
+          }
+          if (f['key'] != 'chatbot' && (f['value'] as num).toInt() == 0) {
+            expect(f['text'], '\u221e', reason: 'límite ilimitado sin ∞: $f');
+          }
+        }
+      }
+
+      // Features del plan ACTUAL, mismo formato que las de cada plan.
+      final cur = _asList(d['plan_features']);
+      expect(cur, isNotEmpty, reason: 'plan_info sin plan_features');
+      expect(cur.any((f) => f['key'] == 'chatbot'), isTrue);
+      for (final f in cur) {
+        for (final k in ['key', 'label', 'value', 'text']) {
+          expect(f.containsKey(k), isTrue, reason: 'plan_features sin $k: $f');
+        }
+      }
     });
 
     test('settings_get → save_settings idempotente → mismos valores', () async {
@@ -508,13 +545,30 @@ void main() {
   });
 
   group('Pedidos (flujo real + errores)', () {
-    test('order_list mantiene shape paginado', () async {
+    test('order_list mantiene shape paginado e incluye los ítems', () async {
       final d = await _postOk('ws_order_list',
-          {'date_from': '2000-01-01', 'date_to': '2099-12-31'});
+          {'date_from': '2000-01-01', 'date_to': '2099-12-31', 'pageSize': 200});
       expect(d['orders'], isA<List>());
       expect(d['total'], isA<num>());
       expect(d.containsKey('page'), isTrue);
       expect(d.containsKey('pageSize'), isTrue);
+      // Los ítems viajan en el LISTADO: la app pinta el detalle del pedido
+      // sin llamar a ws_order_detail fila a fila.
+      for (final o in _asList(d['orders'])) {
+        for (final k in ['items', 'items_text', 'items_count']) {
+          expect(o.containsKey(k), isTrue, reason: 'order_list sin $k: $o');
+        }
+        expect(o['items'], isA<List>());
+        expect((o['items_count'] as num).toInt(),
+            (o['items'] as List).length, reason: 'items_count != items.length');
+        expect(o['items_text'], isA<String>());
+        for (final it in (o['items'] as List)) {
+          final m = _asMap(it);
+          for (final k in ['product_id', 'product_name', 'qty', 'price']) {
+            expect(m.containsKey(k), isTrue, reason: 'order_item sin $k: $m');
+          }
+        }
+      }
     });
 
     test('crear → detalle → aceptar → completar (con limpieza)', () async {
@@ -537,6 +591,28 @@ void main() {
         expect(int.parse('${order['id']}'), id);
         expect(order['items'], isA<List>());
         expect((order['items'] as List), isNotEmpty);
+
+        // El MISMO pedido aparece en el listado con sus ítems resueltos.
+        final today = DateTime.now();
+        final ymd = '${today.year}-'
+            '${today.month.toString().padLeft(2, '0')}-'
+            '${today.day.toString().padLeft(2, '0')}';
+        final lst = await _postOk(
+            'ws_order_list', {'date_from': ymd, 'date_to': ymd, 'pageSize': 200});
+        final rows = _asList(lst['orders'])
+            .where((o) => (o['id'] as num).toInt() == id)
+            .toList();
+        expect(rows, isNotEmpty, reason: 'el pedido nuevo no está en order_list');
+        final r0 = rows.first;
+        expect((r0['items_count'] as num).toInt(), 1);
+        expect((r0['items'] as List), isNotEmpty);
+        // Los ítems del listado son los MISMOS que devuelve el detalle.
+        final detailItem = _asMap((order['items'] as List).first);
+        final listItem = _asMap((r0['items'] as List).first);
+        expect(listItem['product_id'], detailItem['product_id']);
+        expect(listItem['product_name'], detailItem['product_name']);
+        expect(_num(listItem['qty']), _num(detailItem['qty']));
+        expect('${r0['items_text']}', contains('${listItem['product_name']}'));
 
         await _postOkAny('ws_order_accept', {'id': id});
         await _postOkAny('ws_order_complete', {'id': id});
@@ -642,6 +718,96 @@ void main() {
       }
       final after = await _postOk('ws_expenses_list', {'year': now.year, 'month': now.month});
       expect(_asList(after['expenses']).any((e) => (e['id'] as num).toInt() == id), isFalse);
+    });
+
+    test('gastos: la FECHA decide el mes, ubicación y edición (como la web)', () async {
+      final concept = 'E2E Gasto Mes $ts';
+      final y = DateTime.now().year;
+      const d1 = '-03-15', d2 = '-06-10';
+      final date1 = '$y$d1';
+      final date2 = '$y$d2';
+
+      final created = await _postOk('ws_expense_save', {
+        'concept': concept,
+        'amount': 12.5,
+        'category': 'Test',
+        'note': 'e2e mes',
+        'expense_date': date1,
+        'location_id': locA,
+      });
+      final id = (created['id'] as num).toInt();
+      expect(id, greaterThan(0));
+      try {
+        // Vive SOLO en el mes de su fecha (marzo)…
+        final inM1 = await _postOk('ws_expenses_list', {'year': y, 'month': 3});
+        final row = _asList(inM1['expenses'])
+            .where((e) => (e['id'] as num).toInt() == id)
+            .toList();
+        expect(row, isNotEmpty, reason: 'el gasto no aparece en el mes de su fecha');
+        expect(row.first['date_raw'], date1);
+        expect((row.first['location_id'] as num).toInt(), locA);
+        expect('${row.first['category']}', 'Test');
+        expect('${row.first['note']}', 'e2e mes');
+
+        // …nunca en otro mes…
+        final inOther = await _postOk('ws_expenses_list', {'year': y, 'month': 6});
+        expect(
+            _asList(inOther['expenses']).any((e) => (e['id'] as num).toInt() == id),
+            isFalse,
+            reason: 'no debe aparecer en un mes distinto al de su fecha');
+
+        // …pero sí en el listado COMPLETO que usa la app para la caché.
+        final all = await _postOk('ws_expenses_list', {'year': 0, 'month': 0});
+        expect(_asList(all['expenses']).any((e) => (e['id'] as num).toInt() == id),
+            isTrue,
+            reason: 'year=0 / month=0 debe devolver todos los gastos');
+
+        // Editar con otra fecha → el gasto se MUEVE de mes.
+        final edited = await _postOk('ws_expense_save', {
+          'id': id,
+          'concept': concept,
+          'amount': 25.5,
+          'category': 'Test',
+          'note': 'editado',
+          'expense_date': date2,
+          'location_id': 0,
+        });
+        expect((edited['id'] as num).toInt(), id);
+
+        final m1After = await _postOk('ws_expenses_list', {'year': y, 'month': 3});
+        expect(
+            _asList(m1After['expenses']).any((e) => (e['id'] as num).toInt() == id),
+            isFalse,
+            reason: 'al cambiar la fecha debe salirse del mes anterior');
+
+        final m2After = await _postOk('ws_expenses_list', {'year': y, 'month': 6});
+        final moved = _asList(m2After['expenses'])
+            .firstWhere((e) => (e['id'] as num).toInt() == id);
+        expect(moved['date_raw'], date2);
+        expect(_num(moved['amount']), 25.5);
+        expect((moved['location_id'] as num).toInt(), 0, reason: 'General = 0');
+        expect('${moved['note']}', 'editado');
+
+        // Validaciones que la app aplica igual (mensajes del backend).
+        final noAmount =
+            await _postErrMsg('ws_expense_save', {'concept': 'x', 'amount': 0});
+        expect(noAmount, 'El monto del gasto debe ser mayor que 0.');
+        final badDate = await _postErrMsg('ws_expense_save',
+            {'concept': 'x', 'amount': 1, 'expense_date': 'no-es-fecha'});
+        expect(badDate, 'La fecha del gasto no es válida.');
+        final badLoc = await _postErrMsg('ws_expense_save', {
+          'concept': 'x',
+          'amount': 1,
+          'expense_date': date2,
+          'location_id': 999999,
+        });
+        expect(badLoc, 'La ubicación elegida no es válida.');
+      } finally {
+        await _postOkAny('ws_expense_delete', {'id': id});
+      }
+      final after = await _postOk('ws_expenses_list', {'year': 0, 'month': 0});
+      expect(_asList(after['expenses']).any((e) => (e['id'] as num).toInt() == id),
+          isFalse, reason: 'el gasto no se eliminó');
     });
 
     test('fidelización: rama según cap de negocio', () async {

@@ -37,6 +37,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
     }
     _reload();
     SyncService.I.onChange(_onSync);
+    // Baja los pedidos al abrir: el servidor incluye los ítems de cada uno
+    // (items/items_text/items_count) y la caché local puede ser anterior.
+    _pull();
   }
 
   void _onSync() {
@@ -47,10 +50,26 @@ class _OrdersScreenState extends State<OrdersScreen> {
     _future = DbService.I.all('orders');
   }
 
+  /// Refresca los pedidos desde la nube (con sus productos) y repinta.
+  Future<void> _pull() async {
+    await SyncService.I.pullStore('ws_order_list', {'pageSize': 200, 'page': 1},
+        'orders', cacheKey: 'ws_order_list', dataKey: 'orders');
+    if (mounted) { _reload(); setState(() {}); }
+  }
+
   void _openDetail(Map<String, dynamic> o) {
     final cur = AuthService.I.currency;
     final canAct = AuthService.I.has('orders_accept');
     final status = '${o['status'] ?? ''}';
+    // Ítems del pedido: llegan en ws_order_list (items / items_text).
+    final items = (o['items'] as List?)
+        ?.whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList() ??
+        const <Map<String, dynamic>>[];
+    final itemsText = '${o['items_text'] ?? ''}';
+    final itemsCount = (o['items_count'] as num?)?.toInt() ?? items.length;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -70,10 +89,58 @@ class _OrdersScreenState extends State<OrdersScreen> {
             Text('${o['customer_phone']}', style: TextStyle(color: Colors.grey[600], fontSize: 13)),
           if ('${o['customer_address'] ?? ''}'.isNotEmpty)
             Text('${o['customer_address']}', style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+          const SizedBox(height: 10),
+          // Lista de productos del pedido (igual que el detalle web).
+          if (items.isNotEmpty) ...[
+            Text('Productos del pedido',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13,
+                    color: isDark ? AppTheme.darkMuted : AppTheme.lightMuted)),
+            const SizedBox(height: 6),
+            Container(
+              decoration: BoxDecoration(
+                color: isDark ? AppTheme.darkSurface : Colors.grey[50],
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                    color: isDark ? AppTheme.darkBorder : AppTheme.lightBorder),
+              ),
+              child: Column(children: [
+                for (var i = 0; i < items.length; i++) ...[
+                  if (i > 0)
+                    Divider(height: 1, thickness: 0.5,
+                        color: isDark ? AppTheme.darkBorder : AppTheme.lightBorder),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    child: Row(children: [
+                      Expanded(child: Text('${items[i]['product_name'] ?? ''}',
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                          overflow: TextOverflow.ellipsis)),
+                      const SizedBox(width: 8),
+                      Text('${items[i]['qty']} ×',
+                          style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                      const SizedBox(width: 6),
+                      SizedBox(
+                        width: 84,
+                        child: Text(
+                            U.money(num.tryParse('${items[i]['price']}') ?? 0, cur),
+                            textAlign: TextAlign.end,
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                      ),
+                    ]),
+                  ),
+                ],
+              ]),
+            ),
+          ] else if (itemsText.isNotEmpty) ...[
+            Text(itemsText, style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+          ],
+          if (items.isEmpty && itemsText.isEmpty)
+            Text('Sin detalle de productos.',
+                style: TextStyle(color: Colors.grey[500], fontSize: 12)),
           const SizedBox(height: 8),
           Text('Total: ${U.money(num.tryParse('${o['total']}') ?? 0, cur)}',
               style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-          Text('${o['items_count'] ?? ''} ítems', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+          Text('$itemsCount ítem${itemsCount == 1 ? '' : 's'}',
+              style: TextStyle(color: Colors.grey[600], fontSize: 12)),
           const SizedBox(height: 12),
           Row(children: [
             if (status == 'pending' && canAct) ...[
@@ -223,7 +290,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
             }
             final locList = locs.toList()..sort();
             return RefreshIndicator(
-              onRefresh: () async { _reload(); await _future; setState(() {}); },
+              onRefresh: _pull,
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(14, 8, 14, 90),
                 children: [
@@ -253,6 +320,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
   Widget _orderTile(Map<String, dynamic> o, String cur, bool isDark) {
     final total = num.tryParse('${o['total']}') ?? 0;
     final status = '${o['status_label'] ?? o['status'] ?? ''}';
+    // Resumen de productos: '2× Pizza, 1× Refresco' (items del listado).
+    final itemsText = '${o['items_text'] ?? ''}';
+    final itemsCount = (o['items_count'] as num?)?.toInt() ?? 0;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Card(
@@ -269,9 +339,21 @@ class _OrdersScreenState extends State<OrdersScreen> {
           title: Text('#${o['number'] ?? o['id']} · ${o['customer_name'] ?? ''}',
               style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
               overflow: TextOverflow.ellipsis),
-          subtitle: Text(
-              '${o['location_name'] ?? ''} · ${U.fmtDate(o['created_at'] ?? o['date'])}',
-              style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+          subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('${o['location_name'] ?? ''} · ${U.fmtDate(o['created_at'] ?? o['date'])}',
+                style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+            const SizedBox(height: 2),
+            Text(
+                itemsText.isNotEmpty
+                    ? itemsText
+                    : (itemsCount > 0 ? '$itemsCount ítem${itemsCount == 1 ? '' : 's'}' : 'Sin detalle de productos.'),
+                style: TextStyle(
+                    color: isDark ? AppTheme.darkMuted : AppTheme.lightMuted,
+                    fontSize: 11.5),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis),
+          ]),
+          isThreeLine: true,
           trailing: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.end,

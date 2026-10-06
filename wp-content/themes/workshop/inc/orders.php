@@ -162,6 +162,35 @@ class WS_Orders {
         ) );
     }
 
+    /**
+     * Ítems de MUCHOS pedidos en UNA sola consulta (para el listado paginado
+     * de la app móvil, que muestra los productos de cada pedido sin pedir el
+     * detalle uno a uno). Devuelve array order_id => lista de ítems.
+     */
+    public static function items_for( $order_ids ) {
+        global $wpdb;
+        $ids = array_values( array_filter( array_map( 'intval', (array) $order_ids ) ) );
+        if ( ! $ids ) {
+            return array();
+        }
+        $ph   = implode( ',', array_fill( 0, count( $ids ), '%d' ) );
+        $rows = $wpdb->get_results( $wpdb->prepare(
+            'SELECT order_id, product_id, combo_id, product_name, qty, price FROM ' . self::table( 'order_items' ) . " WHERE order_id IN ( {$ph} ) ORDER BY id ASC",
+            ...$ids
+        ) );
+        $by = array();
+        foreach ( (array) $rows as $it ) {
+            $by[ (int) $it->order_id ][] = array(
+                'product_id'   => (int) $it->product_id,
+                'combo_id'     => (int) ( $it->combo_id ?? 0 ),
+                'product_name' => (string) $it->product_name,
+                'qty'          => (float) $it->qty,
+                'price'        => (float) $it->price,
+            );
+        }
+        return $by;
+    }
+
     public static function all( $args = array() ) {
         global $wpdb;
         $where = self::orders_where( $args );
