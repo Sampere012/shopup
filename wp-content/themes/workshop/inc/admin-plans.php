@@ -256,11 +256,60 @@ function ws_admin_page_subscriptions() {
         } elseif ( 'trial_days' === $action ) {
             update_option( 'ws_trial_days', max( 1, (int) ( $_POST['trial_days'] ?? 7 ) ) );
             $notice = array( 'success', __( 'Duración de la prueba guardada.', 'workshop' ) );
+        } elseif ( $biz_id && 'edit_business' === $action ) {
+            // Editar el negocio desde Suscripciones: nombre y/o slug.
+            $res = WS_Business::update( $biz_id, array(
+                'name' => sanitize_text_field( $_POST['biz_name'] ?? '' ),
+                'slug' => sanitize_title( $_POST['biz_slug'] ?? '' ),
+            ) );
+            $notice = is_wp_error( $res )
+                ? array( 'error', $res->get_error_message() )
+                : array( 'success', __( 'Negocio actualizado.', 'workshop' ) );
+        } elseif ( $biz_id && ( 'deactivate_business' === $action || 'activate_business' === $action ) ) {
+            // Desactivar/reactivar el negocio: la TIENDA pública queda cerrada
+            // y desaparece del mercado; el panel/app quedan bloqueados por el
+            // lock de negocio inactivo (WS_Subscriptions::lock_reason).
+            $disable = ( 'deactivate_business' === $action );
+            if ( WS_Business::is_default_id( $biz_id ) && $disable ) {
+                $notice = array( 'error', __( 'El negocio por defecto no se puede desactivar.', 'workshop' ) );
+            } else {
+                $biz0 = WS_Business::get( $biz_id );
+                if ( $biz0 ) {
+                    global $wpdb;
+                    $wpdb->update( WS_Business::table(), array( 'active' => $disable ? 0 : 1, 'updated_at' => current_time( 'mysql' ) ), array( 'id' => $biz_id ) );
+                    $notice = array( 'success', $disable ? __( 'Negocio desactivado: su tienda y su panel quedan cerrados.', 'workshop' ) : __( 'Negocio reactivado.', 'workshop' ) );
+                }
+            }
+        } elseif ( $biz_id && 'delete_subscription' === $action ) {
+            // Eliminar la suscripción (fila ws_subscriptions) del negocio:
+            // la próxima visita recreate una NUEVA en trial (reset).
+            global $wpdb;
+            $del = $wpdb->delete( WS_Subscriptions::table(), array( 'business_id' => $biz_id ) );
+            $notice = $del ? array( 'success', __( 'Suscripción eliminada. El negocio iniciará una nueva prueba al entrar.', 'workshop' ) ) : array( 'error', __( 'No se pudo eliminar la suscripción.', 'workshop' ) );
         }
     }
 
+    // Filtros de búsqueda (GET): texto libre + estado del plan.
+    $search  = sanitize_text_field( (string) ( $_GET['s'] ?? '' ) );
+    $fstatus = sanitize_key( (string) ( $_GET['status'] ?? '' ) );
     $businesses = class_exists( 'WS_Business' ) ? WS_Business::all() : array();
+    $businesses = array_values( array_filter( $businesses, function ( $b ) use ( $search, $fstatus ) {
+        if ( '' !== $search && false === stripos( (string) $b->name, $search ) && false === stripos( (string) ( $b->slug ?? '' ), $search ) ) {
+            return false;
+        }
+        if ( '' !== $fstatus ) {
+            $sub0 = WS_Subscriptions::get( (int) $b->id );
+            if ( 'locked' === $fstatus && ! WS_Subscriptions::is_locked( $b ) ) {
+                return false;
+            }
+            if ( 'locked' !== $fstatus && (string) ( $sub0->status ?? '' ) !== $fstatus ) {
+                return false;
+            }
+        }
+        return true;
+    } ) );
     $plans      = WS_Plans::all();
+    $page_link  = admin_url( 'admin.php?page=ws-subscriptions' );
     ?>
     <div class="wrap">
         <h1><span class="dashicons dashicons-shield-alt" style="vertical-align:middle"></span> <?php esc_html_e( 'Suscripciones de los negocios', 'workshop' ); ?></h1>
@@ -269,6 +318,22 @@ function ws_admin_page_subscriptions() {
         <?php if ( $notice ) : ?>
             <div class="notice notice-<?php echo esc_attr( $notice[0] ); ?> is-dismissible"><p><?php echo esc_html( $notice[1] ); ?></p></div>
         <?php endif; ?>
+
+        <form method="get" action="" style="margin:14px 0; background:#fff; border:1px solid #c3c4c7; padding:10px 14px">
+            <input type="hidden" name="page" value="ws-subscriptions">
+            <input type="search" name="s" value="<?php echo esc_attr( $search ); ?>" placeholder="<?php esc_attr_e( 'Buscar negocio o slug…', 'workshop' ); ?>" style="width:220px">
+            <select name="status">
+                <option value=""><?php esc_html_e( 'Todos los estados', 'workshop' ); ?></option>
+                <?php foreach ( array( 'trial', 'active', 'expired', 'suspended' ) as $st ) : ?>
+                    <option value="<?php echo esc_attr( $st ); ?>" <?php selected( $fstatus, $st ); ?>><?php echo esc_html( ws_status_label( $st ) ); ?></option>
+                <?php endforeach; ?>
+                <option value="locked" <?php selected( $fstatus, 'locked' ); ?>><?php esc_html_e( 'Bloqueados (cualquier causa)', 'workshop' ); ?></option>
+            </select>
+            <button class="button"><?php esc_html_e( 'Filtrar', 'workshop' ); ?></button>
+            <?php if ( '' !== $search || '' !== $fstatus ) : ?>
+                <a class="button button-link-delete" href="<?php echo esc_url( $page_link ); ?>"><?php esc_html_e( 'Limpiar', 'workshop' ); ?></a>
+            <?php endif; ?>
+        </form>
 
         <form method="post" style="margin:14px 0; background:#fff; border:1px solid #c3c4c7; padding:10px 14px; display:inline-block">
             <?php wp_nonce_field( 'ws_subs_actions', 'ws_subs_nonce' ); ?>
@@ -349,6 +414,38 @@ function ws_admin_page_subscriptions() {
                             <?php endif; ?>
                         </td>
                         <td>
+                            <details style="margin-bottom:8px">
+                                <summary class="button button-small" style="display:inline-block;line-height:22px;cursor:pointer"><?php esc_html_e( 'Editar negocio', 'workshop' ); ?></summary>
+                                <form method="post" style="margin-top:6px;background:#f6f7f7;padding:8px;border-radius:6px">
+                                    <?php wp_nonce_field( 'ws_subs_actions', 'ws_subs_nonce' ); ?>
+                                    <input type="hidden" name="ws_action" value="edit_business">
+                                    <input type="hidden" name="biz_id" value="<?php echo (int) $b->id; ?>">
+                                    <div style="margin-bottom:6px"><label style="display:block;font-size:11px"><?php esc_html_e( 'Nombre', 'workshop' ); ?></label>
+                                    <input type="text" name="biz_name" value="<?php echo esc_attr( $b->name ); ?>" style="width:100%"></div>
+                                    <div style="margin-bottom:6px"><label style="display:block;font-size:11px"><?php esc_html_e( 'Slug (URL)', 'workshop' ); ?></label>
+                                    <input type="text" name="biz_slug" value="<?php echo esc_attr( $b->slug ); ?>" <?php echo WS_Business::is_default( $b ) ? "placeholder='(raíz)'" : ''; ?> style="width:100%"></div>
+                                    <button class="button button-primary button-small"><?php esc_html_e( 'Guardar', 'workshop' ); ?></button>
+                                </form>
+                            </details>
+                            <?php if ( ! WS_Business::is_default( $b ) ) :
+                                $b_inactive = (int) ( $b->active ?? 1 ) !== 1;
+                                ?>
+                                <?php if ( $b_inactive ) : ?>
+                                    <form method="post" style="display:inline;margin-right:4px">
+                                        <?php wp_nonce_field( 'ws_subs_actions', 'ws_subs_nonce' ); ?>
+                                        <input type="hidden" name="ws_action" value="activate_business">
+                                        <input type="hidden" name="biz_id" value="<?php echo (int) $b->id; ?>">
+                                        <button class="button button-small" title="<?php esc_attr_e( 'Reactiva la tienda y el panel', 'workshop' ); ?>"><?php esc_html_e( 'Reactivar', 'workshop' ); ?></button>
+                                    </form>
+                                <?php else : ?>
+                                    <form method="post" style="display:inline;margin-right:4px" onsubmit="return confirm('<?php echo esc_js( __( '¿Desactivar el negocio? Su tienda se cierra y el panel queda bloqueado.', 'workshop' ) ); ?>')">
+                                        <?php wp_nonce_field( 'ws_subs_actions', 'ws_subs_nonce' ); ?>
+                                        <input type="hidden" name="ws_action" value="deactivate_business">
+                                        <input type="hidden" name="biz_id" value="<?php echo (int) $b->id; ?>">
+                                        <button class="button button-small button-link-delete"><?php esc_html_e( 'Desactivar', 'workshop' ); ?></button>
+                                    </form>
+                                <?php endif; ?>
+                            <?php endif; ?>
                             <form method="post" style="margin-bottom:6px">
                                 <?php wp_nonce_field( 'ws_subs_actions', 'ws_subs_nonce' ); ?>
                                 <input type="hidden" name="ws_action" value="apply">
@@ -375,6 +472,12 @@ function ws_admin_page_subscriptions() {
                                     <button class="button button-small button-link-delete"><?php esc_html_e( 'Bloquear', 'workshop' ); ?></button>
                                 </form>
                             <?php endif; ?>
+                            <form method="post" style="display:inline;margin-top:6px" onsubmit="return confirm('<?php echo esc_js( __( '¿Eliminar la suscripción? El negocio volverá a modo prueba y se desbloqueará (la suscripción se recrea sola).', 'workshop' ) ); ?>')">
+                                <?php wp_nonce_field( 'ws_subs_actions', 'ws_subs_nonce' ); ?>
+                                <input type="hidden" name="ws_action" value="delete_subscription">
+                                <input type="hidden" name="biz_id" value="<?php echo (int) $b->id; ?>">
+                                <button class="button button-small button-link-delete" title="<?php esc_attr_e( 'Elimina la suscripción y devuelve el negocio a prueba gratis (lo desbloquea).', 'workshop' ); ?>"><?php esc_html_e( 'Eliminar suscripción', 'workshop' ); ?></button>
+                            </form>
                         </td>
                     </tr>
                 <?php endforeach; ?>

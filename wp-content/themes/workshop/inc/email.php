@@ -150,6 +150,24 @@ function ws_crypt_text( $text, $decrypt = false ) {
 }
 
 /**
+ * Aviso al DUEÑO del negocio cuando un trabajador inicia sesión con el reto
+ * de correo en modo «Siempre»: recibe aviso del ingreso de su empleado para
+ * autorizar (o no; pidiéndole el código que recibió) el acceso al panel.
+ */
+function ws_owner_notify_login( $user, $owner_email ) {
+    if ( ! is_email( $owner_email ) ) {
+        return;
+    }
+    $biz  = function_exists( 'ws_current_business' ) ? ws_current_business() : null;
+    $name = (string) ( $user->display_name ?? $user->user_login );
+    $subject = sprintf( __( 'Ingreso de %1$s en %2$s', 'workshop' ), $name, ( $biz ? (string) $biz->name : wp_specialchars_decode( get_bloginfo( 'name' ) ) ) );
+    $content = '<p>' . esc_html( sprintf( __( 'Tu trabajador %1$s (%2$s) está iniciando sesión en el panel.', 'workshop' ), $name, (string) $user->user_email ) ) . '</p>'
+        . '<p>' . esc_html__( 'La verificación de correo está en modo «Siempre»: el trabajador ya recibió su propio código en su buzón y deberá introducirlo en la app para entrar. Si es tu trabajador de confianza, puede decirte el código para autorizar el ingreso.', 'workshop' ) . '</p>'
+        . '<p class="muted">' . esc_html__( 'Si no reconoces este intento de acceso, contacta con soporte.', 'workshop' ) . '</p>';
+    ws_send_mail( $owner_email, $subject, $content );
+}
+
+/**
  * Genera y envía un código de verificación de 6 dígitos a un email.
  * Guarda el código (hash), la fecha de caducidad (15 min), los intentos y los
  * datos asociados (p. ej. el borrador del registro del negocio).

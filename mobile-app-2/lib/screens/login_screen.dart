@@ -26,8 +26,7 @@ class _LoginScreenState extends State<LoginScreen>
   final _pass = TextEditingController();
   bool _busy = false;
   bool _remember = true;
-  String? _error;
-  Timer? _errorTimer;
+  bool _popupOpen = false;
   late AnimationController _logoCtrl;
   late AnimationController _cardCtrl;
   late Animation<double> _logoScale;
@@ -57,18 +56,83 @@ class _LoginScreenState extends State<LoginScreen>
     _logoCtrl.forward().then((_) => _cardCtrl.forward());
   }
 
-  /// Muestra un error y lo auto-descarta a los 10 s.
-  void _setError(String msg) {
-    _errorTimer?.cancel();
-    setState(() => _error = msg);
-    _errorTimer = Timer(const Duration(seconds: 10), () {
-      if (mounted) setState(() => _error = null);
+
+  /// Aviso del negocio BLOQUEADO (advertencia, no error): suscripción en
+  /// pausa, vencida o negocio desactivado por la administración.
+  void _showLockedPopup(String msg) {
+    _showPopup(msg, warn: true);
+  }
+
+  /// Popup animado que aparece, se auto-descarta a los ~5 s y puede
+  /// cerrarse tocando fuera o con «Entendido».
+  void _showPopup(String msg, {bool warn = false}) {
+    if (!mounted || _popupOpen) return;
+    _popupOpen = true;
+    final color = warn ? AppTheme.amber : AppTheme.danger;
+    final icon = warn ? Icons.pause_circle_outline : Icons.error_outline;
+    final title = warn ? 'Aviso de acceso' : 'Error de acceso';
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'login_popup',
+      barrierColor: Colors.black.withAlpha(140),
+      transitionDuration: const Duration(milliseconds: 340),
+      pageBuilder: (ctx, a1, a2) {
+        // Desaparece solo (como pidió la UI): 5 s y se cierra si nadie tocó.
+        Future.delayed(const Duration(milliseconds: 5000), () {
+          if (ctx.mounted && Navigator.of(ctx).canPop()) Navigator.of(ctx).pop();
+        });
+        return Dialog(
+              backgroundColor: Colors.transparent,
+              insetPadding: const EdgeInsets.symmetric(horizontal: 36),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: isDark ? AppTheme.darkCard : Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                padding: const EdgeInsets.fromLTRB(20, 22, 20, 16),
+                child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.center, children: [
+                  Container(
+                    width: 74,
+                    height: 74,
+                    decoration: BoxDecoration(
+                      color: color.withAlpha(24),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(icon, size: 40, color: color),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                  const SizedBox(height: 8),
+                  Text(msg, textAlign: TextAlign.center, style: TextStyle(fontSize: 13.5, height: 1.35, color: isDark ? AppTheme.darkText : AppTheme.lightText)),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(backgroundColor: color),
+                      onPressed: () => Navigator.of(ctx).pop(),
+                      child: const Text('Entendido'),
+                    ),
+                  ),
+                ]),
+              ),
+            );
+      },
+      transitionBuilder: (ctx, anim, anim2, child) => ScaleTransition(
+        scale: CurvedAnimation(parent: anim, curve: Curves.easeOutBack),
+        child: FadeTransition(
+          opacity: CurvedAnimation(parent: anim, curve: Curves.easeOut),
+          child: child,
+        ),
+      ),
+    ).then((_) {
+      _popupOpen = false;
     });
   }
 
   @override
   void dispose() {
-    _errorTimer?.cancel();
     _logoCtrl.dispose();
     _cardCtrl.dispose();
     _user.dispose();
@@ -78,10 +142,7 @@ class _LoginScreenState extends State<LoginScreen>
 
   Future<void> _login({String? username, String? password, String? server}) async {
     if (_busy) return;
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
+    setState(() => _busy = true);
     wsLog('LOGIN UI → intento');
     var stage = 'inicio';
     final user = username ?? _user.text;
@@ -115,11 +176,17 @@ class _LoginScreenState extends State<LoginScreen>
     } on ApiException catch (e) {
       wsLog('LOGIN UI ✗ ApiException: ${e.message} response=${e.response}');
       if (!mounted) return;
-      _setError(e.message);
+      // Bloqueo del negocio → popup de advertencia (no error SMTP ni rojo).
+      final isLocked = e.response?['locked'] == true;
+      if (isLocked) {
+        _showLockedPopup(e.message);
+      } else {
+        _showPopup(e.message);
+      }
     } catch (e, st) {
       wsLog('LOGIN UI ✗ error inesperado en stage=$stage: $e\n$st');
       if (!mounted) return;
-      _setError('No se pudo conectar con el servidor');
+      _showPopup('No se pudo conectar con el servidor');
     } finally {
       watchdog.cancel();
       wsLog('LOGIN UI finally busy=false');
@@ -352,40 +419,7 @@ class _LoginScreenState extends State<LoginScreen>
                           autofillHints: const [AutofillHints.password],
                           onSubmitted: (_) => _login(),
                         ),
-                        // Error: aparece/desaparece con animación y se
-                        // auto-descarta a los 10 segundos.
-                        AnimatedSize(
-                          duration: const Duration(milliseconds: 250),
-                          curve: Curves.easeOut,
-                          child: _error == null
-                              ? const SizedBox(width: double.infinity)
-                              : Container(
-                                  key: ValueKey(_error),
-                                  padding: const EdgeInsets.all(10),
-                                  margin:
-                                      const EdgeInsets.only(bottom: 4, top: 12),
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.danger.withAlpha(20),
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(
-                                        color: AppTheme.danger.withAlpha(60)),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      const Icon(Icons.error_outline,
-                                          size: 18, color: AppTheme.danger),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text(_error!,
-                                            style: const TextStyle(
-                                                color: AppTheme.danger,
-                                                fontSize: 13)),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                        ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 20),
                         FilledButton(
                           onPressed: _busy ? null : () => _login(),
                           child: _busy

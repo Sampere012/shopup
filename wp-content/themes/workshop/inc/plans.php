@@ -423,6 +423,17 @@ class WS_Subscriptions {
         if ( ! $sub ) {
             return null;
         }
+        // Negocio desactivado por el administrador: bloqueo TOTAL igual que
+        // con la suscripción. La tienda queda inhabilitada, desaparece del
+        // mercado y nadie (dueño ni trabajadores) entra al panel ni a la app.
+        if ( ! \WS_Business::is_default( $biz ) && (int) ( $biz->active ?? 1 ) !== 1 ) {
+            return array(
+                'key'      => 'business_inactive',
+                'title'    => __( 'Negocio desactivado', 'workshop' ),
+                'message'  => __( 'La administración desactivó este negocio temporalmente. La tienda y el panel quedan cerrados hasta que se reactive o se resuelva la suscripción.', 'workshop' ),
+                'is_limit' => false,
+            );
+        }
         if ( 'suspended' === $sub->status ) {
             return array(
                 'key'     => 'suspended',

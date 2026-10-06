@@ -52,6 +52,9 @@ function ws_rewrite_rules() {
     // Registro público de negocios (solo en la raíz, sin prefijo de negocio).
     add_rewrite_rule( '^registro/?$', 'index.php?ws_public=register', 'top' );
 
+    // Verificación de correo en el login web: /login/verify/.
+    add_rewrite_rule( '^login/verify/?$', 'index.php?ws_public=login-verify', 'top' );
+
     // Directorio de tiendas del mercado: /marketplace/ (antes de la landing
     // genérica de negocio, que se comería el slug).
     add_rewrite_rule( '^marketplace/?$', 'index.php?ws_public=stores', 'top' );
@@ -260,6 +263,11 @@ function ws_render_wp_content_by_url() {
 }
 
 function ws_handle_public( $public ) {
+    // Verificación de correo del login (web): plantilla /login/verify/.
+    if ( 'login-verify' === $public ) {
+        include WS_PATH . 'inc/router-login-verify.php';
+        exit;
+    }
     if ( 'login' === $public ) {
         if ( is_user_logged_in() ) {
             wp_safe_redirect( ws_dashboard_url() );

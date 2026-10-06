@@ -94,6 +94,21 @@ class _ShellScreenState extends State<ShellScreen> with WidgetsBindingObserver {
     }
   }
 
+  /// Descarga el APK (vía Android Download Manager con notificación) e
+  /// intenta abrirlo inmediatamente para instalar. Si el navegador solo
+  /// descarga sin instalar, la notificación de descarga permite abrirlo.
+  Future<void> _updateNow() async {
+    final info = UpdateService.I.updateInfo;
+    if (info == null && mounted) {
+      U.toast(context, 'No hay datos de la actualización', kind: 'warn');
+      return;
+    }
+    if (mounted) UpdateService.launchDownload(context, info!);
+    if (mounted) {
+      U.toast(context, 'Descargando la actualización… busca la notificación al terminar', kind: 'ok');
+    }
+  }
+
   void _go(String key) {
     NavBus.clear();
     setState(() => _route = key);
@@ -218,8 +233,8 @@ class _ShellScreenState extends State<ShellScreen> with WidgetsBindingObserver {
           if (_hasUpdate)
             Stack(clipBehavior: Clip.none, children: [
               IconButton(
-                tooltip: 'Actualización disponible',
-                onPressed: () => UpdateService.I.check(silent: false),
+                tooltip: 'Nueva versión: actualizar ahora',
+                onPressed: _updateNow,
                 icon: const Icon(Icons.system_update_outlined),
               ),
               Positioned(right: 4, top: 4, child: Container(

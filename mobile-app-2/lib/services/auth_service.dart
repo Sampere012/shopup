@@ -136,6 +136,15 @@ class AuthService extends ChangeNotifier {
       throw NeedVerifyException(
           '${data['email'] ?? ''}', '${data['msg'] ?? 'Verifica tu correo para continuar'}');
     }
+    // Negocio bloqueado (suscripción vencida/suspendida, límite superado o
+    // negocio desactivado por el admin): NO hay token. Mostramos el MOTIVO
+    // real del bloqueo (no «usuario incorrecto»).
+    if (data is Map && data['locked'] == true) {
+      wsLog('login() ✗ negocio bloqueado');
+      throw ApiException(
+          '${data['msg'] ?? 'El negocio está en pausa: la suscripción venció o fue suspendida. No se puede iniciar sesión.'}',
+          response: data is Map<String, dynamic> ? data : null);
+    }
     // El backend de login NO envía 'loggedIn': el éxito se confirma por el
     // token (igual que auth.js: setToken(data.token) directo).
     if (data is Map && data['token'] != null) {
@@ -146,6 +155,15 @@ class AuthService extends ChangeNotifier {
       final me = (data['me'] is Map)
           ? Map<String, dynamic>.from(data['me'] as Map)
           : <String, dynamic>{};
+      // La marca de «correo ya verificado» es ACUMULATIVA: si la cuenta
+      // verificó en un login anterior, se conserva aunque el payload venga
+      // sin refrescar (el backend solo manda true cuando ya está marcado).
+      if (data['me'] is Map) {
+        final m = data['me'] as Map;
+        if (m['account_email_verified'] == true) {
+          me['account_email_verified'] = true;
+        }
+      }
       await store(me, days);
       wsLog('login() OK sesión guardada días=$days menuItems=${(me['menu'] as List?)?.length ?? 0}');
       return _me;
@@ -182,6 +200,15 @@ class AuthService extends ChangeNotifier {
           ? Map<String, dynamic>.from(data['me'] as Map)
           : <String, dynamic>{};
       final rawDays = data['sessionDays'];
+      // Flags de seguridad acumulativos (verificación de correo del login).
+      if (_me != null) {
+        if (_me!['account_email_verified'] == true) {
+          me['account_email_verified'] = true;
+        }
+        if (_me!['business_active'] != null && me['business_active'] == null) {
+          me['business_active'] = _me!['business_active'];
+        }
+      }
       await store(
           me, (rawDays is num && rawDays >= 1) ? rawDays.toInt() : 30);
       return me;

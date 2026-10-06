@@ -37,6 +37,7 @@ require_once WS_PATH . 'inc/shifts.php';
 require_once WS_PATH . 'inc/sessions.php';
 require_once WS_PATH . 'inc/router.php';
 require_once WS_PATH . 'inc/login.php';
+require_once WS_PATH . 'inc/login-verify.php';
 require_once WS_PATH . 'inc/ajax.php';
 require_once WS_PATH . 'inc/reports.php';
 require_once WS_PATH . 'inc/notifications.php';

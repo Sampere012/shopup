@@ -147,6 +147,7 @@ function ws_app_caps() {
  */
 function ws_mobile_me_payload() {
     $user_id = get_current_user_id();
+    // Business activo (0/1) para bloqueo total en la app.
     $role    = ws_user_role( $user_id );
     $items   = array(
         'dashboard' => array( 'icon' => 'fa-gauge-high', 'label' => __( 'Dashboard', 'workshop' ), 'caps' => array() ),
@@ -209,7 +210,9 @@ function ws_mobile_me_payload() {
     );
     $biz = function_exists( 'ws_current_business' ) ? ws_current_business() : null;
     return array(
-        'userId'       => $user_id,
+        'userId'            => $user_id,
+        'account_email_verified' => (int) ws_email_verified_at( $user_id ) > 0,
+        'business_active'   => $biz ? (int) ( $biz->active ?? 1 ) : 1,
         'name'         => wp_get_current_user()->display_name,
         'email'        => wp_get_current_user()->user_email,
         'role'         => $role,
@@ -392,12 +395,43 @@ function ws_ajax_mobile_login() {
     if ( ! $role ) {
         wp_send_json_error( array( 'msg' => __( 'Esta cuenta no tiene acceso al panel del negocio.', 'workshop' ) ) );
     }
+    // Correo del DUEÑO del negocio del usuario (para avisos del reto
+    // «Siempre» con trabajadores).
+    $owner_email = '';
+    $biz_id = (int) get_user_meta( $u->ID, 'ws_business_id', true );
+    $owners = get_users( array(
+        'role'       => 'ws_owner',
+        'meta_key'   => 'ws_business_id',
+        'meta_value' => $biz_id,
+        'number'     => 1,
+        'fields'     => 'all',
+    ) );
+    if ( $owners ) {
+        $own = $owners[0];
+        if ( (int) $own->ID !== (int) $u->ID ) {
+            $owner_email = (string) $own->user_email;
+        }
+    }
+    // Bloqueo del negocio (suscripción vencida/suspendida/límite superado o
+    // negocio desactivado por el admin): el token NO se emite y ni la web ni
+    // la app abren sesión. El mismo motivo se aplica dentro de la sesión vía
+    // ws_plan_json/PlanGuard y en las tiendas públicas (router) y el mercado.
+    if ( \WS_Subscriptions::is_locked( ws_current_business() ) ) {
+        $lock  = \WS_Subscriptions::lock_reason( ws_current_business(), false );
+        wp_send_json_error( array(
+            'msg'    => $lock ? (string) ( $lock['title'] ?? '' ) . ': ' . (string) ( $lock['message'] ?? '' ) : __( 'El negocio está en pausa. No se puede iniciar sesión.', 'workshop' ),
+            'locked' => true,
+        ) );
+    }
     // Reto de verificación de correo en el login (configurable en wp-admin):
     // al abrir sesión nueva, si el correo no está verificado se envía un
     // código de 6 dígitos y NO se entrega token. Es una comprobación única:
     // verificar una vez marca la cuenta y los siguientes logins son directos.
-    $challenge = apply_filters( 'ws_login_email_challenge', 'unverified' );
-    $need      = ( 'always' === $challenge || ( 'unverified' === $challenge && ws_email_verified_at( $u->ID ) <= 0 ) );
+    $challenge = (string) get_option( 'ws_login_email_challenge', 'unverified' );
+    if ( ! in_array( $challenge, array( 'unverified', 'always', 'off' ), true ) ) {
+        $challenge = 'unverified';
+    }
+    $need = ( 'always' === $challenge || ( 'unverified' === $challenge && ws_email_verified_at( $u->ID ) <= 0 ) );
     if ( $need ) {
         $sent = ws_send_verification_code( $u->user_email );
         if ( is_wp_error( $sent ) ) {
@@ -405,6 +439,11 @@ function ws_ajax_mobile_login() {
             wp_send_json_error( array( 'msg' => __( 'No se pudo enviar el código de verificación. Inténtalo de nuevo en unos minutos.', 'workshop' ) ) );
         }
         ws_log_audit( 'mobile_login_challenge', 'user', $u->ID );
+        // Modo «Siempre» con trabajador: avisa al DUEÑO del negocio con el
+        // código para que autorice el ingreso de su equipo.
+        if ( in_array( $role, array( 'ws_storekeeper', 'ws_seller' ), true ) && $u->user_email !== $owner_email && $owner_email ) {
+            ws_owner_notify_login( $u, $owner_email );
+        }
         wp_send_json_success( array(
             'needVerify' => true,
             'msg'        => sprintf( __( 'Te enviamos un código de 6 dígitos a %s para confirmar tu identidad.', 'workshop' ), $u->user_email ),

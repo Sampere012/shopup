@@ -181,6 +181,38 @@ function ws_handle_login_post() {
         exit;
     } else {
         wp_set_current_user( $user->ID );
+        // Bloqueo del negocio (suscripción o negocio desactivado): la web NO
+        // abre el panel (el router ya corta las páginas y la app el login);
+        // aquí la sesión ya existe pero el panel la bloquea al navegar.
+        $role0 = ws_user_role( $user->ID );
+        // Reto de verificación de correo en el login (web), el mismo ajuste
+        // que la app: wp-admin → Sesión y seguridad.
+        $need_verify = function_exists( 'ws_login_challenge_needed' )
+            ? ws_login_challenge_needed( $user->ID )
+            : false;
+        if ( $need_verify && ! user_can( $user->ID, 'manage_options' ) ) {
+            if ( function_exists( 'ws_log_audit' ) ) {
+                ws_log_audit( 'web_login_challenge', 'user', $user->ID );
+            }
+            // Aviso al DUEÑO del negocio cuando el usuario es trabajador.
+            if ( in_array( (string) $role0, array( 'ws_storekeeper', 'ws_seller' ), true ) ) {
+                $owner_email = ws_owner_email_of( $user->ID );
+                if ( $owner_email && function_exists( 'ws_owner_notify_login' ) ) {
+                    ws_owner_notify_login( $user, $owner_email );
+                }
+            }
+            // Manda el código y marca la sesión como pendiente.
+            $sent = ws_send_verification_code( $user->user_email );
+            $sid  = session_id();
+            if ( '' !== $sid ) {
+                set_transient( 'ws_login_challenge_pending_' . md5( $sid ), 1, 30 * MINUTE_IN_SECONDS );
+            }
+            update_user_meta( $user->ID, 'ws_login_challenge_pending', 1 );
+            delete_user_meta( $user->ID, 'ws_login_seen_ok' );
+            $verify = add_query_arg( 'redirect_to', rawurlencode( $_POST['redirect_to'] ?? '' ), ws_login_scheme_url( home_url( '/login/verify/' ) ) );
+            wp_safe_redirect( $verify );
+            exit;
+        }
         if ( user_can( $user->ID, 'manage_options' ) ) {
             // El admin del sistema va directo a wp-admin, con el esquema de
             // la petición (https) para no rebotar a http y buclar. Aunque
