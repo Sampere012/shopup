@@ -18,7 +18,7 @@ defined( 'ABSPATH' ) || exit;
  * Versión del build móvil actual (la sube sync:web / se edita en wp-admin).
  * Es el valor por defecto del ajuste; el administrador lo cambia al publicar.
  */
-define( 'WS_APP_VERSION', '0.6.0' );
+define( 'WS_APP_VERSION', '0.6.1' );
 
 /**
  * Descarga del APK desde el repo público de GitHub (raw).
@@ -69,15 +69,22 @@ function ws_app_apk_url() {
 }
 
 /**
- * ¿Hay descarga disponible? Siempre True cuando hay URL (configurada o por defecto).
- * El admin puede ocultar el botón deshabilitando la descarga en wp-admin.
+ * ¿Hay descarga disponible? True cuando hay URL (configurada o por defecto).
+ *
+ * La casilla «Activar descarga» del admin oculta los botones de la web
+ * (footer y asistente), pero la app móvil usa una cadena distinta: la APK
+ * siempre debe estar disponible mientras haya URL válida, incluso si el
+ * admin desactivó la descarga en web. El flag real para la app es que
+ * apk_url no esté vacío.
  */
 function ws_app_has_download() {
 	$s = ws_app_settings();
-	// Si el admin deshabilitó explícitamente, no mostrar.
-	if ( isset( $s['enabled'] ) && empty( $s['enabled'] ) && '' !== trim( (string) ( $s['apk_url'] ?? '' ) ) ) {
+	$apk = trim( (string) ( $s['apk_url'] ?? '' ) );
+	if ( '' === $apk ) {
 		return false;
 	}
+	// URL válida = descarga disponible para la app (el desactivador es solo
+	// para ocultar botones en web, no para quitar la APK de la app).
 	return true;
 }
 

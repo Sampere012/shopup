@@ -164,9 +164,17 @@ class _AccountScreenState extends State<AccountScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
-                      onPressed: () {
+                      onPressed: () async {
                         if (_updateInfo!['has_apk'] == true) {
-                          UpdateService.launchDownload(context, _updateInfo!);
+                          final ok =
+                              await UpdateService.launchDownload(_updateInfo!);
+                          if (!mounted) return;
+                          U.toast(
+                              context,
+                              ok
+                                  ? 'Descargando la actualización… busca la notificación al terminar'
+                                  : 'No se pudo abrir la descarga',
+                              kind: ok ? 'ok' : 'err');
                         } else {
                           UpdateService.showUpdateDialog(context, _updateInfo!);
                         }

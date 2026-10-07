@@ -89,7 +89,7 @@ function ws_rewrite_rules() {
  */
 add_action( 'init', 'ws_maybe_flush_rewrite_rules', 20 );
 function ws_maybe_flush_rewrite_rules() {
-    $version = '2026-08-13-panel-suppliers-tab';
+    $version = '2026-10-07-login-verify-rule';
     if ( get_option( 'ws_rewrite_rules_version' ) !== $version ) {
         update_option( 'ws_rewrite_rules_version', $version );
         ws_flush_rewrite_rules();
@@ -270,6 +270,15 @@ function ws_handle_public( $public ) {
     }
     if ( 'login' === $public ) {
         if ( is_user_logged_in() ) {
+            // Sesión con el reto de correo aún pendiente: volver a la
+            // pantalla del código en vez de entrar al panel.
+            if ( function_exists( 'ws_login_challenge_pending' )
+                && function_exists( 'ws_login_challenge_needed' )
+                && ws_login_challenge_pending()
+                && ws_login_challenge_needed( get_current_user_id() ) ) {
+                wp_safe_redirect( ws_login_scheme_url( home_url( '/login/verify/' ) ) );
+                exit;
+            }
             wp_safe_redirect( ws_dashboard_url() );
             exit;
         }
@@ -344,6 +353,16 @@ function ws_handle_panel( $role ) {
     // probar: su lugar es wp-admin.
     if ( current_user_can( 'manage_options' ) ) {
         wp_safe_redirect( ws_login_scheme_url( admin_url() ) );
+        exit;
+    }
+    // Reto de correo pendiente: la sesión todavía no ha confirmado el buzón,
+    // así que el panel queda cerrado hasta hacerlo. Si no, un enlace directo
+    // al panel (o el 404 de /login/verify/) dejaría entrar sin verificar.
+    if ( function_exists( 'ws_login_challenge_pending' )
+        && function_exists( 'ws_login_challenge_needed' )
+        && ws_login_challenge_pending()
+        && ws_login_challenge_needed( get_current_user_id() ) ) {
+        wp_safe_redirect( ws_login_scheme_url( home_url( '/login/verify/' ) ) );
         exit;
     }
     $user_role = ws_user_role();

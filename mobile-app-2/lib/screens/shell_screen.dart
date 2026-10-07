@@ -25,6 +25,7 @@ class _ShellScreenState extends State<ShellScreen> with WidgetsBindingObserver {
   int _unreadCount = 0;
   Timer? _sessionRefreshTimer;
   bool _hasUpdate = false;
+  bool _busyUpdate = false;
 
   static const _bottomNavKeys = ['dashboard', 'products', 'stock', 'pos', 'pos-sales'];
 
@@ -94,18 +95,38 @@ class _ShellScreenState extends State<ShellScreen> with WidgetsBindingObserver {
     }
   }
 
-  /// Descarga el APK (vía Android Download Manager con notificación) e
+  /// Descarga el APK (vía Download Manager del sistema con notificación) e
   /// intenta abrirlo inmediatamente para instalar. Si el navegador solo
   /// descarga sin instalar, la notificación de descarga permite abrirlo.
+  ///
+  /// Espera a que la descarga se lance de verdad antes de avisar: el botón
+  /// del navbar tiene que responder siempre, así que si no hay datos en
+  /// caché se vuelve a consultar la versión al servidor en lugar de no
+  /// hacer nada.
   Future<void> _updateNow() async {
-    final info = UpdateService.I.updateInfo;
-    if (info == null && mounted) {
-      U.toast(context, 'No hay datos de la actualización', kind: 'warn');
-      return;
-    }
-    if (mounted) UpdateService.launchDownload(context, info!);
-    if (mounted) {
-      U.toast(context, 'Descargando la actualización… busca la notificación al terminar', kind: 'ok');
+    if (!mounted || _busyUpdate) return;
+    setState(() => _busyUpdate = true);
+    try {
+      var info = UpdateService.I.updateInfo;
+      if (info == null) {
+        await UpdateService.I.check(silent: false);
+        info = UpdateService.I.updateInfo;
+        if (mounted) setState(() => _hasUpdate = UpdateService.I.hasUpdate);
+      }
+      if (info == null) {
+        if (mounted) U.toast(context, 'No se pudo comprobar la actualización', kind: 'err');
+        return;
+      }
+      final ok = await UpdateService.launchDownload(info);
+      if (!mounted) return;
+      U.toast(
+          context,
+          ok
+              ? 'Descargando la actualización… busca la notificación al terminar'
+              : 'No se pudo abrir la descarga',
+          kind: ok ? 'ok' : 'err');
+    } finally {
+      if (mounted) setState(() => _busyUpdate = false);
     }
   }
 

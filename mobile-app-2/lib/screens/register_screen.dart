@@ -6,6 +6,7 @@ import '../config.dart';
 import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
+import '../services/pending_register_service.dart';
 import '../services/sync_service.dart';
 import '../services/tutorial_service.dart';
 
@@ -40,6 +41,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Timer? _resendTimer;
   int _resendIn = 0;
   String _okMsg = '';
+
+  @override
+  void initState() {
+    super.initState();
+    // Retoma un registro que quedó a medias: si la app se cerró en el paso 2
+    // (código ya enviado), se vuelve a esa pantalla con el email puesto en
+    // vez de perder el estado y dejar al usuario sin dónde escribir el código.
+    PendingRegisterService.I.resumeEmail().then((email) {
+      if (!mounted || email == null || _step != 1) return;
+      setState(() {
+        _email.text = email;
+        _step = 2;
+        _okMsg = 'Retomamos tu registro: te enviamos un código de 6 dígitos '
+            'a $email. Si no lo ves, solicita uno nuevo.';
+        _error = null;
+      });
+    });
+  }
 
   @override
   void dispose() {
@@ -109,6 +128,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
         'password': _password.text,
       });
       if (!mounted) return;
+      // El código ya salió: guardar el estado para retomar si cierran la app.
+      unawaited(PendingRegisterService.I.save(_email.text.trim()));
       setState(() {
         _step = 2;
         _okMsg = '${d is Map ? d['msg'] ?? '' : ''}';
@@ -168,6 +189,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
       // Login automático, igual que la web: el servidor devuelve el token
       // móvil y el payload de sesión; RootGate cambia a la app al notificarse.
       if (d is Map && d['token'] != null) {
+        // Cuenta creada y confirmada: ya no hay registro pendiente.
+        unawaited(PendingRegisterService.I.clear());
         await ApiService.I.setToken('${d['token']}');
         final rawDays = d['sessionDays'];
         final days = (rawDays is num && rawDays >= 1) ? rawDays.toInt() : 30;

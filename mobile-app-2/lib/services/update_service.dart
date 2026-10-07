@@ -5,6 +5,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../config.dart';
 import '../theme/app_theme.dart';
 import 'api_service.dart';
+import '../widgets/common.dart' show U;
+
 
 /// Servicio de actualizaciones con changelog y comparación semver.
 class UpdateService extends ChangeNotifier {
@@ -56,38 +58,28 @@ class UpdateService extends ChangeNotifier {
     return newVersion;
   }
 
-  /// Abre la URL de descarga del APK (ahora desde GitHub Releases).
-  static Future<void> launchDownload(
-      BuildContext context, Map<String, dynamic> info) async {
-    final url = '${info['apk_url'] ?? ''}'.trim();
-    if (url.isEmpty) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Text('No hay enlace de descarga configurado'),
-          backgroundColor: AppTheme.amber,
-          behavior: SnackBarBehavior.floating,
-        ));
-      }
-      return;
-    }
-    try {
-      final ok = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-      if (!ok && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Text('No se pudo abrir el enlace de descarga'),
-          backgroundColor: AppTheme.danger,
-          behavior: SnackBarBehavior.floating,
-        ));
-      }
-    } catch (_) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(url),
-          backgroundColor: AppTheme.danger,
-          behavior: SnackBarBehavior.floating,
-        ));
+  /// Abre la descarga de la nueva versión y devuelve true si algo se lanzó.
+  ///
+  /// Prueba primero el APK (el navegador/DownloadManager del sistema lo
+  /// descarga y la notificación permite instalarlo) y, si eso no abre nada,
+  /// la página de releases del repo. Nunca devuelve true sin haber abierto
+  /// realmente un enlace: el navbar (`_updateNow`) y el botón del diálogo
+  /// deciden qué avisar según el resultado, así que un fallo se comunica
+  /// en lugar de fingir que la descarga va en marcha.
+  static Future<bool> launchDownload(Map<String, dynamic> info) async {
+    final apk = '${info['apk_url'] ?? ''}'.trim();
+    final release = '${info['release_url'] ?? ''}'.trim();
+    for (final candidate in <String>[apk, release]) {
+      if (candidate.isEmpty) continue;
+      try {
+        final ok = await launchUrl(Uri.parse(candidate),
+            mode: LaunchMode.externalApplication);
+        if (ok) return true;
+      } catch (_) {
+        // Sin visor para este esquema/tipo: probamos con la siguiente URL.
       }
     }
+    return false;
   }
 
   /// Show update dialog with changelog.
@@ -146,14 +138,21 @@ class UpdateService extends ChangeNotifier {
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Más tarde'),
           ),
-          if (hasApk)
-            FilledButton.icon(
-              onPressed: () {
+          FilledButton.icon(
+              onPressed: () async {
                 Navigator.pop(ctx);
-                launchDownload(context, info);
+                final ok = await launchDownload(info);
+                if (context.mounted) {
+                  U.toast(
+                      context,
+                      ok
+                          ? 'Descargando la actualización. Busca la notificación al terminar'
+                          : 'No se pudo abrir la descarga. Entra en la página de versiones del repo',
+                      kind: ok ? 'ok' : 'err');
+                }
               },
               icon: const Icon(Icons.download, size: 18),
-              label: const Text('Descargar'),
+              label: Text(hasApk ? 'Descargar' : 'Ver versiones'),
             ),
         ],
       ),

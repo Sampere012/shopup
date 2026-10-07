@@ -16,7 +16,7 @@ class AppConfig {
   static const int licenseGraceHours = 48;
 
   /// Versión de ESTE build (debe coincidir con la de pubspec.yaml).
-  static const String appVersion = '0.6.0';
+  static const String appVersion = '0.6.1';
 
   /// Días de prueba gratis que ofrece el registro (informativo; el valor
   /// real lo aplica el servidor al crear la suscripción).

@@ -6,6 +6,7 @@ import '../config.dart';
 import '../theme/app_theme.dart';
 import '../services/api_service.dart' show ApiException, ApiService, wsLog;
 import '../services/auth_service.dart';
+import '../services/pending_register_service.dart';
 import '../services/sync_service.dart';
 import '../services/saved_accounts_service.dart';
 import 'verify_login_screen.dart';
@@ -27,6 +28,7 @@ class _LoginScreenState extends State<LoginScreen>
   bool _busy = false;
   bool _remember = true;
   bool _popupOpen = false;
+  String? _pendingEmail;
   late AnimationController _logoCtrl;
   late AnimationController _cardCtrl;
   late Animation<double> _logoScale;
@@ -54,6 +56,12 @@ class _LoginScreenState extends State<LoginScreen>
     ).animate(CurvedAnimation(parent: _cardCtrl, curve: Curves.easeOutCubic));
     // Stagger: logo first, then card
     _logoCtrl.forward().then((_) => _cardCtrl.forward());
+    // Registro quedado a medias (la app se cerró en el paso 2): avisar aquí
+    // para que el usuario pueda volver a la pantalla del código.
+    PendingRegisterService.I.resumeEmail()
+        .then((email) {
+      if (mounted) setState(() => _pendingEmail = email);
+    });
   }
 
 
@@ -196,6 +204,8 @@ class _LoginScreenState extends State<LoginScreen>
 
   /// Tareas posteriores al login SIN bloquear la navegación.
   Future<void> _postLogin(String user, String pass, String srv) async {
+    // Ya hay sesión abierta: un registro a medias quedó superado.
+    unawaited(PendingRegisterService.I.clear());
     try {
       if (_remember) {
         final me = AuthService.I.me ?? {};
@@ -393,6 +403,61 @@ class _LoginScreenState extends State<LoginScreen>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                        if (_pendingEmail != null) ...[
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: AppTheme.amber.withAlpha(25),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: AppTheme.amber.withAlpha(90)),
+                            ),
+                            child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(children: [
+                                    const Icon(Icons.mark_email_unread_outlined,
+                                        size: 18, color: AppTheme.amber),
+                                    const SizedBox(width: 8),
+                                    const Expanded(
+                                        child: Text('Registro sin confirmar',
+                                            style: TextStyle(
+                                                fontWeight: FontWeight.w700,
+                                                fontSize: 13))),
+                                    IconButton(
+                                      tooltip: 'Descartar aviso',
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                      onPressed: () =>
+                                          setState(() => _pendingEmail = null),
+                                      icon: const Icon(Icons.close, size: 18),
+                                    ),
+                                  ]),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                      'Te enviamos un código de 6 dígitos a $_pendingEmail y '
+                                      'cerraste la app antes de introducirlo.',
+                                      style: TextStyle(
+                                          fontSize: 12.5,
+                                          height: 1.35,
+                                          color: isDark
+                                              ? AppTheme.darkText
+                                              : AppTheme.lightText)),
+                                  const SizedBox(height: 10),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: FilledButton.icon(
+                                      onPressed: _register,
+                                      icon: const Icon(Icons.arrow_forward,
+                                          size: 18),
+                                      label:
+                                          const Text('Continuar mi registro'),
+                                    ),
+                                  ),
+                                ]),
+                          ),
+                          const SizedBox(height: 18),
+                        ],
                         Text('Iniciar sesión',
                             style: Theme.of(context)
                                 .textTheme
