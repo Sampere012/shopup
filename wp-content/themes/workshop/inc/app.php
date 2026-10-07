@@ -69,23 +69,16 @@ function ws_app_apk_url() {
 }
 
 /**
- * ¿Hay descarga disponible? True cuando hay URL (configurada o por defecto).
+ * ¿Hay descarga disponible? True cuando hay URL efectiva de descarga.
  *
- * La casilla «Activar descarga» del admin oculta los botones de la web
- * (footer y asistente), pero la app móvil usa una cadena distinta: la APK
- * siempre debe estar disponible mientras haya URL válida, incluso si el
- * admin desactivó la descarga en web. El flag real para la app es que
- * apk_url no esté vacío.
+ * Se mira la URL efectiva (ws_app_apk_url): si el admin no configuró una,
+ * cae al APK del repo público, que siempre existe. La casilla «Activar
+ * descarga» del admin no entra aquí: footer, asistente y app consumen esta
+ * función (o has_apk) y la APK debe poder descargarse siempre que haya URL.
  */
 function ws_app_has_download() {
-	$s = ws_app_settings();
-	$apk = trim( (string) ( $s['apk_url'] ?? '' ) );
-	if ( '' === $apk ) {
-		return false;
-	}
-	// URL válida = descarga disponible para la app (el desactivador es solo
-	// para ocultar botones en web, no para quitar la APK de la app).
-	return true;
+	$apk = trim( (string) ws_app_apk_url() );
+	return '' !== $apk;
 }
 
 /**
