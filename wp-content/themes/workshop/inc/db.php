@@ -1416,7 +1416,7 @@ function ws_db_migrate() {
         if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $ct ) ) !== $ct ) {
             continue;
         }
-        $ccols = $wpdb->get_col( "SHOW COLUMN FROM {$ct}", 0 );
+        $ccols = $wpdb->get_col( "SHOW COLUMNS FROM {$ct}", 0 );
         if ( ! in_array( 'doc', $ccols, true ) ) {
             $wpdb->query( "ALTER TABLE {$ct} ADD COLUMN doc VARCHAR(60) NOT NULL DEFAULT '' AFTER phone" );
         }

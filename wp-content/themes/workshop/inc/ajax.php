@@ -117,9 +117,8 @@ add_action( 'admin_init', function () {
  * no implementa (proveedores, categorías en árbol, fraccionamiento, etc.);
  * esa parte se sigue gestionando y aplicando solo en la web.
  *
- * 'expenses_view' es de SOLO LECTURA: el servidor lo concede a quien pueda
- * gestionar gastos; la app lo usa para mostrar el módulo Gastos a los roles
- * que ven gastos pero no pueden crearlos (igual que hace la web).
+ * Gastos solo distingue gestionar (expenses_manage): la app no tiene modo de
+ * solo lectura y los roles sin permiso no ven el módulo.
  */
 function ws_app_caps() {
     return array(
@@ -134,7 +133,7 @@ function ws_app_caps() {
         'workers_view', 'workers_manage',
         'customers_view', 'customers_create', 'customers_edit',
         'reviews_view', 'reviews_moderate',
-        'loyalty_manage', 'expenses_manage', 'expenses_view',
+        'loyalty_manage', 'expenses_manage',
         'settings_manage', 'permissions_manage', 'reports_view',
         'site_manage', 'layout_manage',
         'categories_manage',
@@ -572,7 +571,8 @@ function ws_ajax_mobile_state() {
             continue;
         }
         $count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table}" );
-        $max   = $wpdb->get_var( "SELECT MAX(created_at) FROM {$table}" );
+        $cols  = $wpdb->get_col( "SHOW COLUMNS FROM {$table}", 0 );
+        $max   = in_array( 'created_at', $cols, true ) ? $wpdb->get_var( "SELECT MAX(created_at) FROM {$table}" ) : null;
         $parts[ $t ] = $count . ':' . ( $max ? $max : '' );
     }
     $hash = md5( wp_json_encode( $parts ) );
