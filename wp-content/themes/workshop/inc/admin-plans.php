@@ -220,41 +220,98 @@ function ws_admin_page_subscriptions() {
     if ( isset( $_POST['ws_subs_nonce'] ) && wp_verify_nonce( $_POST['ws_subs_nonce'], 'ws_subs_actions' ) ) {
         $action = sanitize_key( $_POST['ws_action'] ?? '' );
         $biz_id = (int) ( $_POST['biz_id'] ?? 0 );
+        // Auditoría de acciones de plan: guarda antes/después para poder
+        // rastrear quién extendió o modificó una suscripción (Logs de la app).
+        $snap_sub = function ( $s ) {
+            return $s ? array(
+                'status'          => $s->status,
+                'trial_ends_at'   => $s->trial_ends_at,
+                'plan_ends_at'    => $s->plan_ends_at,
+                'upgrade_status'  => $s->upgrade_status,
+                'upgrade_plan_id' => (int) $s->upgrade_plan_id,
+            ) : null;
+        };
+        $audit_sub = function ( $action_name, $sub_biz, $before, $extra = array() ) {
+            $after  = WS_Subscriptions::get( $sub_biz );
+            $detail = array_merge( $extra, array(
+                'before' => $before,
+                'after'  => $after ? array(
+                    'status'         => $after->status,
+                    'trial_ends_at'  => $after->trial_ends_at,
+                    'plan_ends_at'   => $after->plan_ends_at,
+                    'upgrade_status' => $after->upgrade_status,
+                ) : null,
+            ) );
+            ws_log_audit( $action_name, 'business', $sub_biz, $detail );
+            // También a app.log para que sea visible en el módulo Logs.
+            $f = function ( $v ) { return null === $v || '' === $v ? '—' : (string) $v; };
+            ws_log_info( sprintf(
+                'Plan %s · negocio #%d · estado %s → %s · fin de prueba %s → %s · fin de plan %s → %s',
+                $action_name,
+                $sub_biz,
+                $f( $before['status'] ?? null ),
+                $f( $detail['after']['status'] ?? null ),
+                $f( $before['trial_ends_at'] ?? null ),
+                $f( $detail['after']['trial_ends_at'] ?? null ),
+                $f( $before['plan_ends_at'] ?? null ),
+                $f( $detail['after']['plan_ends_at'] ?? null )
+            ), $detail );
+        };
         if ( $biz_id && 'approve' === $action ) {
             $sub = WS_Subscriptions::get( $biz_id );
             if ( $sub && $sub->upgrade_plan_id && 'pending' === $sub->upgrade_status ) {
+                $before = $snap_sub( $sub );
                 WS_Subscriptions::apply_plan( $biz_id, (int) $sub->upgrade_plan_id, 'active' );
+                $audit_sub( 'plan_approve', $biz_id, $before );
                 $notice = array( 'success', __( 'Solicitud aprobada: el negocio quedó habilitado con el plan solicitado.', 'workshop' ) );
             } else {
                 $notice = array( 'error', __( 'No hay solicitud pendiente para ese negocio.', 'workshop' ) );
             }
         } elseif ( $biz_id && 'reject' === $action ) {
             global $wpdb;
+            $before = $snap_sub( WS_Subscriptions::get( $biz_id ) );
             $wpdb->update( WS_Subscriptions::table(), array(
                 'upgrade_status'    => 'rejected',
                 'upgrade_decided_at' => current_time( 'mysql' ),
                 'updated_at'        => current_time( 'mysql' ),
             ), array( 'business_id' => $biz_id ) );
+            $audit_sub( 'plan_reject', $biz_id, $before );
             $notice = array( 'success', __( 'Solicitud rechazada.', 'workshop' ) );
         } elseif ( $biz_id && 'apply' === $action ) {
             $plan_id = (int) ( $_POST['plan_id'] ?? 0 );
+            $before  = $snap_sub( WS_Subscriptions::get( $biz_id ) );
             if ( $plan_id && WS_Subscriptions::apply_plan( $biz_id, $plan_id, 'active' ) ) {
+                $audit_sub( 'plan_apply', $biz_id, $before, array( 'plan_id' => $plan_id ) );
                 $notice = array( 'success', __( 'Plan aplicado al negocio.', 'workshop' ) );
             } else {
                 $notice = array( 'error', __( 'No se pudo aplicar el plan.', 'workshop' ) );
             }
         } elseif ( $biz_id && 'block' === $action ) {
             global $wpdb;
+            $before = $snap_sub( WS_Subscriptions::get( $biz_id ) );
             $wpdb->update( WS_Subscriptions::table(), array( 'status' => 'suspended', 'updated_at' => current_time( 'mysql' ) ), array( 'business_id' => $biz_id ) );
+            $audit_sub( 'plan_block', $biz_id, $before );
             $notice = array( 'success', __( 'Negocio suspendido (bloqueado).', 'workshop' ) );
         } elseif ( $biz_id && 'unblock' === $action ) {
-            $sub = WS_Subscriptions::get( $biz_id );
-            $plan_id = $sub && $sub->plan_id ? (int) $sub->plan_id : 0;
-            $trial = WS_Plans::trial_plan();
-            WS_Subscriptions::apply_plan( $biz_id, $plan_id ? $plan_id : ( $trial ? (int) $trial->id : 0 ), 'active' );
-            $notice = array( 'success', __( 'Negocio habilitado.', 'workshop' ) );
+            // FIX: antes llamar apply_plan() y regalaba un periodo COMPLETO
+            // nuevo sin renovación. Ahora sólo se restaura el estado según
+            // las fechas existentes (sin tocar trial/plan fechas).
+            $before     = $snap_sub( WS_Subscriptions::get( $biz_id ) );
+            $new_status = WS_Subscriptions::unblock( $biz_id );
+            if ( false === $new_status ) {
+                $notice = array( 'error', __( 'Ese negocio no está suspendido.', 'workshop' ) );
+            } else {
+                $audit_sub( 'plan_unblock', $biz_id, $before );
+                $notice = 'expired' === $new_status
+                    ? array( 'success', __( 'Negocio habilitado, pero su plan venció: aprueba o aplica un plan nuevo para que pueda operar. No se otorgó periodo nuevo.', 'workshop' ) )
+                    : array( 'success', __( 'Negocio habilitado. Se conservaron las fechas del plan (sin periodo nuevo).', 'workshop' ) );
+            }
         } elseif ( 'trial_days' === $action ) {
-            update_option( 'ws_trial_days', max( 1, (int) ( $_POST['trial_days'] ?? 7 ) ) );
+            $old_days = (int) get_option( 'ws_trial_days', 7 );
+            $new_days = max( 1, (int) ( $_POST['trial_days'] ?? 7 ) );
+            update_option( 'ws_trial_days', $new_days );
+            ws_log_audit( 'plan_trial_days', 'settings', 0, array( 'before' => $old_days, 'after' => $new_days ) );
+            ws_log_info( sprintf( 'Plan plan_trial_days · duración de prueba %d → %d días', $old_days, $new_days ), array( 'before' => $old_days, 'after' => $new_days ) );
             $notice = array( 'success', __( 'Duración de la prueba guardada.', 'workshop' ) );
         } elseif ( $biz_id && 'edit_business' === $action ) {
             // Editar el negocio desde Suscripciones: nombre y/o slug.
@@ -284,8 +341,14 @@ function ws_admin_page_subscriptions() {
             // Eliminar la suscripción (fila ws_subscriptions) del negocio:
             // la próxima visita recreate una NUEVA en trial (reset).
             global $wpdb;
+            $before = $snap_sub( WS_Subscriptions::get( $biz_id ) );
             $del = $wpdb->delete( WS_Subscriptions::table(), array( 'business_id' => $biz_id ) );
-            $notice = $del ? array( 'success', __( 'Suscripción eliminada. El negocio iniciará una nueva prueba al entrar.', 'workshop' ) ) : array( 'error', __( 'No se pudo eliminar la suscripción.', 'workshop' ) );
+            if ( $del ) {
+                $audit_sub( 'plan_subscription_delete', $biz_id, $before );
+                $notice = array( 'success', __( 'Suscripción eliminada. El negocio iniciará una nueva prueba al entrar.', 'workshop' ) );
+            } else {
+                $notice = array( 'error', __( 'No se pudo eliminar la suscripción.', 'workshop' ) );
+            }
         }
     }
 

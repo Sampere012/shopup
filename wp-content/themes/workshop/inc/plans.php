@@ -580,6 +580,38 @@ class WS_Subscriptions {
         }
         return true;
     }
+
+    /**
+     * Habilita una suscripción suspendida SIN otorgar un periodo nuevo:
+     * sólo restaura el estado calculado a partir de las fechas existentes
+     * (trial/plan se conservan exactamente como estaban). Si el periodo
+     * venció durante la suspensión, el negocio queda 'expired' y deberá
+     * renovar/aprobar un plan para operar.
+     * Devuelve el estado resultante o false si no estaba suspendida.
+     */
+    public static function unblock( $biz_id ) {
+        global $wpdb;
+        $sub = self::get( (int) $biz_id );
+        if ( ! $sub || 'suspended' !== $sub->status ) {
+            return false;
+        }
+        $now       = time();
+        $trial_end = ! empty( $sub->trial_ends_at ) ? (int) strtotime( $sub->trial_ends_at . ' UTC' ) : 0;
+        $plan_end  = ! empty( $sub->plan_ends_at ) ? (int) strtotime( $sub->plan_ends_at . ' UTC' ) : 0;
+        $unlimited = empty( $sub->trial_ends_at ) && empty( $sub->plan_ends_at ) && ! empty( $sub->plan_started_at );
+        if ( $trial_end > $now ) {
+            $status = 'trial';
+        } elseif ( $plan_end > $now || $unlimited ) {
+            $status = 'active';
+        } else {
+            $status = 'expired';
+        }
+        $wpdb->update( self::table(), array(
+            'status'     => $status,
+            'updated_at' => current_time( 'mysql' ),
+        ), array( 'id' => (int) $sub->id ) );
+        return $status;
+    }
 }
 
 /** Días de prueba gratis (configurable desde wp-admin). */
