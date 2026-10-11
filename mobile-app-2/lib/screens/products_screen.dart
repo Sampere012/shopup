@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../main.dart';
 import '../theme/app_theme.dart';
 import '../services/auth_service.dart';
+import '../services/api_service.dart';
 import '../services/db_service.dart';
 import '../services/image_cache_service.dart';
 import '../services/sync_service.dart';
@@ -96,6 +97,11 @@ class _ProductsScreenState extends State<ProductsScreen> {
         },
       ),
     ));
+  }
+
+  Future<void> _deleteItem(Map<String, dynamic> p) async {
+    final done = await deleteProductFlow(context, p);
+    if (done && mounted) _reload();
   }
 
   Future<void> _edit(Map<String, dynamic>? item) async {
@@ -333,6 +339,25 @@ class _ProductsScreenState extends State<ProductsScreen> {
         if (!isCombo && gallery.isNotEmpty) {
           payload['gallery'] = gallery;
         }
+        // Categoría en ÁRBOL: resolver el id desde el texto seleccionado
+        // (nombre o ruta) para que el producto quede vinculado a la rama.
+        // Solo ids del servidor (>0): una categoría aún encolada en local
+        // tendría id negativo y el backend la rechazaría.
+        if (!isCombo) {
+          var catId = 0;
+          for (final c in catRows) {
+            final cid = num.tryParse('${c['id']}') ?? 0;
+            if (cid <= 0) continue;
+            final n = '${c['name'] ?? ''}'.trim();
+            final path = '${c['path'] ?? ''}'.trim();
+            if ((n.isNotEmpty && n == category.value.trim()) ||
+                (path.isNotEmpty && path == category.value.trim())) {
+              catId = cid.toInt();
+              break;
+            }
+          }
+          payload['category_id'] = catId;
+        }
         return U.handlePush(
           context,
           SyncService.I.push(
@@ -379,6 +404,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final canCreate = AuthService.I.has('products_create');
     final canEdit = AuthService.I.has('products_edit');
+    final canDelete = AuthService.I.has('products_delete');
     final cur = AuthService.I.currency;
 
     return Scaffold(
@@ -555,6 +581,14 @@ class _ProductsScreenState extends State<ProductsScreen> {
                                         onPressed: () => _edit(p),
                                         constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                                       ),
+                                    if (canDelete)
+                                      IconButton(
+                                        icon: const Icon(Icons.delete_outline,
+                                            size: 18, color: AppTheme.danger),
+                                        tooltip: 'Eliminar',
+                                        onPressed: () => _deleteItem(p),
+                                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                      ),
                                   ],),
                                 ),
                               ),
@@ -598,6 +632,106 @@ class _ProductsScreenState extends State<ProductsScreen> {
         ),
       ),
     );
+  }
+}
+
+/// Eliminación SEGURA de producto o combo:
+/// 1) online → consulta de referencias (stock/ventas/pedidos/movimientos);
+/// 2) diálogo de confirmación claro;
+/// 3) push ws_delete_product / ws_combo_delete (o encola si no hay red);
+/// 4) limpieza optimista del SQLite local y descarte de ediciones encoladas
+///    de ese mismo producto para que la cola no quede atascada.
+Future<bool> deleteProductFlow(BuildContext context, Map<String, dynamic> p) async {
+  final isCombo = '${p['is_combo']}' == '1' || '${p['is_combo']}' == 'true';
+  final id = (num.tryParse('${p['id']}') ?? 0).toInt();
+  final name = '${p['name'] ?? ''}'.trim();
+
+  // Descarta guardados encolados de ESTE producto: tras eliminarlo, un
+  // ws_save_product posterior sería rechazado por el servidor y dejaría la
+  // cola marcada como «pendiente para siempre».
+  Future<void> discardQueuedSaves() async {
+    final pend = await DbService.I.pending();
+    for (final op in pend) {
+      final act = '${op['action']}';
+      if (act != 'ws_save_product' && act != 'ws_combo_save') continue;
+      final d = (op['data'] is Map)
+          ? Map<String, dynamic>.from(op['data'] as Map)
+          : <String, dynamic>{};
+      final match = id > 0
+          ? '${d['id'] ?? 0}' == '$id'
+          : '${d['name'] ?? ''}' == name;
+      if (match) await SyncService.I.discardPending(op['id']);
+    }
+  }
+
+  if (id <= 0) {
+    // Creado offline y aún sin sincronizar: se borra de este dispositivo y
+    // de la cola para que nunca llegue al servidor.
+    final ok = await U.confirm(
+        context,
+        '¿Eliminar "$name"?\nAún no se ha sincronizado: se borrará solo de este dispositivo.',
+        action: 'Eliminar');
+    if (!ok) return false;
+    await discardQueuedSaves();
+    await _removeLocalProduct(id, isCombo);
+    return true;
+  }
+
+  if (!isCombo && SyncService.I.isOnline) {
+    try {
+      final res = await ApiService.I.req('ws_product_delete_check', {'id': id});
+      if (res is Map && res['can'] == false) {
+        final refs = ((res['refs'] as List?) ?? const [])
+            .map((e) => '$e')
+            .toList();
+        U.toast(context,
+            'No se puede eliminar: tiene ${refs.isEmpty ? 'referencias activas' : refs.join(', ')}.',
+            kind: 'err');
+        return false;
+      }
+    } on ApiException catch (e) {
+      if (e.response != null) {
+        U.toast(context, e.message, kind: 'err');
+        return false;
+      }
+      // Sin red a mitad de la consulta → continúa en modo offline.
+    } catch (_) {
+      // Respuesta inesperada: se continúa y el backend decide.
+    }
+  }
+
+  final ok = await U.confirm(
+      context,
+      '¿Eliminar "$name"?\nEsta acción no se puede deshacer.',
+      action: 'Eliminar');
+  if (!ok) return false;
+  await discardQueuedSaves();
+
+  return U.handlePush(
+    context,
+    SyncService.I.push(
+        isCombo ? 'ws_combo_delete' : 'ws_delete_product', {'id': id}),
+    'Eliminado',
+    onOk: () async {
+      await SyncService.I.pullStore('ws_cache_products', {}, 'products');
+      await _removeLocalProduct(id, isCombo);
+    },
+    onQueued: (_) async => _removeLocalProduct(id, isCombo),
+  );
+}
+
+/// Quita del espejo SQLite el producto (y su stock/combo asociados).
+Future<void> _removeLocalProduct(int id, bool isCombo) async {
+  final rows = await DbService.I.all('products');
+  rows.removeWhere((r) => '${r['id']}' == '$id');
+  await DbService.I.replaceAll('products', rows);
+  final st = await DbService.I.all('stock');
+  st.removeWhere((r) => '${r['product_id']}' == '$id');
+  await DbService.I.replaceAll('stock', st);
+  if (isCombo) {
+    final cb = await DbService.I.all('combos');
+    cb.removeWhere((r) => '${r['id']}' == '$id');
+    await DbService.I.replaceAll('combos', cb);
   }
 }
 
@@ -728,6 +862,18 @@ void _showDetail(BuildContext context, Map<String, dynamic> p) {
               },
             ),
             const SizedBox(height: 12),
+            if (AuthService.I.has('products_delete')) ...[
+              FilledButton.icon(
+                style: FilledButton.styleFrom(backgroundColor: AppTheme.danger),
+                icon: const Icon(Icons.delete_outline, size: 18),
+                label: const Text('Eliminar'),
+                onPressed: () async {
+                  final done = await deleteProductFlow(sheetCtx, p);
+                  if (done && sheetCtx.mounted) Navigator.pop(sheetCtx);
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
             FilledButton(
               onPressed: () => Navigator.pop(sheetCtx),
               child: const Text('Cerrar'),
@@ -945,7 +1091,6 @@ class _CategoriesTabState extends State<_CategoriesTab> {
       void Function() after,
       {int? parentId}) async {
     final name = TextEditingController(text: '${existing?['name'] ?? ''}');
-    final sort = TextEditingController(text: '${existing?['sort_order'] ?? 0}');
     final active = ValueNotifier<bool>(
         existing == null || ('${existing['active']}' != '0' && '${existing['active']}' != 'false'));
     final parentNotifier = ValueNotifier<int>(parentId ??
@@ -988,7 +1133,6 @@ class _CategoriesTabState extends State<_CategoriesTab> {
             onChanged: (v) => parentNotifier.value = v ?? 0,
           ),
         ),
-        fField('Orden', sort, type: TextInputType.number),
         ValueListenableBuilder<bool>(
           valueListenable: active,
           builder: (_, v, __) => SwitchListTile.adaptive(
@@ -1005,11 +1149,12 @@ class _CategoriesTabState extends State<_CategoriesTab> {
           U.toast(context, 'El nombre es obligatorio', kind: 'err');
           return false;
         }
+        // Sin campo «Orden»: el orden lo asigna el servidor automáticamente
+        // (la categoría nueva queda al final de sus hermanas).
         final payload = <String, dynamic>{
           'id': existing != null ? (num.tryParse('${existing['id']}') ?? 0) : 0,
           'name': name.text.trim(),
           'parent_id': parentNotifier.value,
-          'sort_order': num.tryParse(sort.text) ?? 0,
           'active': active.value ? 1 : 0,
         };
         return U.handlePush(
@@ -1021,29 +1166,63 @@ class _CategoriesTabState extends State<_CategoriesTab> {
             final rows = await DbService.I.all('categories');
             final id = payload['id'] ?? 0;
             if (id == 0) {
-              rows.add({
-                'id': -DateTime.now().millisecondsSinceEpoch,
+              // Orden local: al FINAL de las hijas de su padre (igual que el
+              // servidor) para que no aparezca justo debajo de la madre.
+              final pid = '${payload['parent_id']}';
+              var maxSort = 0;
+              for (final r in rows) {
+                if ('${r['parent_id'] ?? 0}' == pid) {
+                  final s = num.tryParse('${r['sort_order'] ?? 0}') ?? 0;
+                  if (s > maxSort) maxSort = s.toInt();
+                }
+              }
+              final newRow = <String, dynamic>{
+                'id': -DateTime.now().microsecondsSinceEpoch,
                 'parent_id': payload['parent_id'],
                 'name': payload['name'],
-                'sort_order': payload['sort_order'],
+                'sort_order': maxSort + 1,
                 'active': payload['active'],
                 'path': '',
                 'children': 0,
                 'products': 0,
                 'slug': '',
-              });
+              };
+              if (pid == '0') {
+                rows.add(newRow);
+              } else {
+                // Insertar al final del SUBÁRBOL del padre.
+                final ids = <String>{};
+                void collect(String root) {
+                  ids.add(root);
+                  for (final r in rows) {
+                    if ('${r['parent_id'] ?? 0}' == root) collect('${r['id']}');
+                  }
+                }
+                collect(pid);
+                var insertAt = -1;
+                for (var i = 0; i < rows.length; i++) {
+                  if (ids.contains('${rows[i]['id']}')) insertAt = i;
+                }
+                if (insertAt < 0) {
+                  rows.add(newRow);
+                } else {
+                  rows.insert(insertAt + 1, newRow);
+                }
+              }
             } else {
               for (final r in rows) {
                 if ('${r['id']}' == '$id') {
                   r['name'] = payload['name'];
                   r['parent_id'] = payload['parent_id'];
-                  r['sort_order'] = payload['sort_order'];
                   r['active'] = payload['active'];
                   break;
                 }
               }
             }
             await DbService.I.replaceAll('categories', rows);
+            // Asegurar visible: abrir el padre para que la subcategoría
+            // recién creada se muestre (al final de su grupo).
+            if (id == 0) _expanded.add('${payload['parent_id']}');
           },
         );
       },

@@ -42,7 +42,12 @@ class WS_Categories {
         return $out;
     }
 
-    /** Hijos directos de una categoría (parent_id = 0 → raíces). */
+    /**
+     * Hijos directos de una categoría (parent_id = 0 → raíces), en orden
+     * automático: `sort_order` ascendente y el nombre como desempate. Así
+     * una categoría nueva (que recibe el mayor sort_order de sus hermanos)
+     * se muestra AL FINAL del nivel y nunca justo debajo de su madre.
+     */
     public static function children( $parent_id = 0 ) {
         $out = array();
         foreach ( self::all() as $c ) {
@@ -50,6 +55,14 @@ class WS_Categories {
                 $out[] = $c;
             }
         }
+        usort( $out, static function ( $a, $b ) {
+            $sa = (int) $a->sort_order;
+            $sb = (int) $b->sort_order;
+            if ( $sa !== $sb ) {
+                return $sa <=> $sb;
+            }
+            return strcasecmp( (string) $a->name, (string) $b->name );
+        } );
         return $out;
     }
 
@@ -150,6 +163,22 @@ class WS_Categories {
         // si el padre ya está en el nivel 3 no se permiten más hijos.
         if ( $parent && count( self::path( $parent ) ) >= 3 ) {
             return new WP_Error( 'depth', __( 'Máximo 3 niveles de categorías.', 'workshop' ) );
+        }
+        // Orden automático: el campo ya NO se envía desde la app. Al CREAR,
+        // la categoría se coloca al FINAL de sus hermanas (mayor sort_order
+        // del nivel); al EDITAR sin enviar sort_order se conserva el valor
+        // actual (antes se pisaba a 0 en cada edición desde la app).
+        if ( ! $id ) {
+            $max = 0;
+            foreach ( self::children( $parent ) as $sib ) {
+                $max = max( $max, (int) $sib->sort_order );
+            }
+            $sort = empty( $data['sort_order'] ) ? $max + 1 : $sort;
+        } else {
+            $current = $wpdb->get_var( $wpdb->prepare( 'SELECT sort_order FROM ' . self::table() . ' WHERE id = %d', $id ) );
+            if ( ! isset( $data['sort_order'] ) && null !== $current ) {
+                $sort = (int) $current;
+            }
         }
         $fields = array(
             'parent_id'  => $parent,

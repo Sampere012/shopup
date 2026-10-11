@@ -98,6 +98,32 @@ void main() {
       expect(after.any((o) => o['id'] == ops.first['id']), isFalse);
     });
 
+    test('updatePending registra intentos y limpia errores al reintentar', () async {
+      await DbService.I.enqueue('x', {'a': 1});
+      final operation = (await DbService.I.pending()).single;
+
+      await DbService.I.updatePending(
+        operation['id'],
+        status: 'error',
+        error: 'Sin conexión',
+        incrementAttempts: true,
+      );
+      var updated = (await DbService.I.pending()).single;
+      expect(updated['status'], 'error');
+      expect(updated['error'], 'Sin conexión');
+      expect(updated['attempts'], 1);
+
+      await DbService.I.updatePending(
+        operation['id'],
+        status: 'sending',
+        incrementAttempts: true,
+      );
+      updated = (await DbService.I.pending()).single;
+      expect(updated['status'], 'sending');
+      expect(updated['error'], isNull);
+      expect(updated['attempts'], 2);
+    });
+
     test('cola vacía retorna []', () async {
       final ops = await DbService.I.pending();
       expect(ops, isEmpty);

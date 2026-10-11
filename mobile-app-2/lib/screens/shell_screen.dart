@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../main.dart';
+import '../config.dart';
 import '../theme/app_theme.dart';
 import '../services/auth_service.dart';
 import '../services/sync_service.dart';
@@ -26,6 +27,7 @@ class _ShellScreenState extends State<ShellScreen> with WidgetsBindingObserver {
   Timer? _sessionRefreshTimer;
   bool _hasUpdate = false;
   bool _busyUpdate = false;
+  bool _showingInstalledChangelog = false;
 
   static const _bottomNavKeys = ['dashboard', 'products', 'stock', 'pos', 'pos-sales'];
 
@@ -77,22 +79,55 @@ class _ShellScreenState extends State<ShellScreen> with WidgetsBindingObserver {
 
   Future<void> _checkUpdate() async {
     final has = await UpdateService.I.check(silent: true);
+    final info = UpdateService.I.updateInfo;
     if (mounted) {
       setState(() => _hasUpdate = has);
+      if (!has && info != null) {
+        await _showInstalledChangelogIfNeeded(info);
+      }
       // Show changelog dialog if there's an update and we haven't shown it yet
-      if (has && UpdateService.I.updateInfo != null && mounted) {
+      if (has && info != null && mounted) {
         final sp = await SharedPreferences.getInstance();
         final lastShown = sp.getString('_last_update_dialog');
-        final newVersion = '${UpdateService.I.updateInfo?['version'] ?? ''}';
+        final newVersion = '${info['version'] ?? ''}';
         if (lastShown != newVersion) {
           await sp.setString('_last_update_dialog', newVersion);
           // Delay to avoid showing during startup animation
           Future.delayed(const Duration(seconds: 3), () {
-            if (mounted) UpdateService.showUpdateDialog(context, UpdateService.I.updateInfo!);
+            if (mounted) UpdateService.showUpdateDialog(context, info);
           });
         }
       }
     }
+  }
+
+  Future<void> _showInstalledChangelogIfNeeded(
+      Map<String, dynamic> info) async {
+    if (_showingInstalledChangelog ||
+        UpdateService.compareVersions(
+                '${info['version'] ?? ''}', AppConfig.appVersion) !=
+            0) {
+      return;
+    }
+    final prefs = await SharedPreferences.getInstance();
+    const key = '_last_installed_changelog_version';
+    final previous = prefs.getString(key);
+    if (previous == null) {
+      await prefs.setString(key, AppConfig.appVersion);
+      return;
+    }
+    if (previous == AppConfig.appVersion) return;
+
+    _showingInstalledChangelog = true;
+    Future.delayed(const Duration(seconds: 3), () async {
+      if (!mounted) {
+        _showingInstalledChangelog = false;
+        return;
+      }
+      await UpdateService.showInstalledChangelog(context, info);
+      await prefs.setString(key, AppConfig.appVersion);
+      _showingInstalledChangelog = false;
+    });
   }
 
   /// Descarga el APK (vía Download Manager del sistema con notificación) e

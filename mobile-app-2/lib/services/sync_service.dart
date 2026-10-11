@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -34,8 +36,13 @@ class SyncService extends ChangeNotifier {
   int _autoSyncMinutes = AppConfig.autoSyncMinutes;
   final List<void Function()> _changeListeners = [];
   final List<void Function()> _bgListeners = [];
+  // Guardado online que superó los 5 s: expone la opción de "guardarlo en
+  // el dispositivo" para que el usuario decida en vez de esperar sin info.
+  Map<String, dynamic>? _slowOp;
 
   bool get isOnline => _online;
+  /// true mientras haya un guardado lento esperando la decisión del usuario.
+  bool get hasSlowPrompt => _slowOp != null;
   bool get isPulling => _pulling;
   bool get isBusy => _pulling || _flushing;
   int get autoSyncMinutes => _autoSyncMinutes;
@@ -376,7 +383,58 @@ class SyncService extends ChangeNotifier {
 
   // ---------------- PUSH / FLUSH ----------------
 
+  /// Encola [action]/[data] evitando duplicados: si YA existe la MISMA
+  /// acción con los MISMOS datos encolada en los últimos 30 s (doble toque
+  /// del botón mientras no hay conexión), se reutiliza ese registro.
+  /// Devuelve el id de la op en cola ('op_…') o null si se dedupeó.
+  Future<String?> _enqueueDedup(String action, Map<String, dynamic> data) async {
+    try {
+      final key = jsonEncode(data);
+      final nowUs = DateTime.now().microsecondsSinceEpoch;
+      final ops = await DbService.I.pending();
+      for (final op in ops) {
+        if (op['action'] != action) continue;
+        String opKey;
+        try {
+          opKey = jsonEncode(op['data']);
+        } catch (_) {
+          continue;
+        }
+        if (opKey != key) continue;
+        final created = (op['created_at'] is num)
+            ? (op['created_at'] as num).toInt()
+            : 0;
+        if (created > 0 && nowUs - created < 30 * 1000 * 1000) {
+          return '${op['id']}'; // ya está en cola: no duplicar
+        }
+      }
+    } catch (_) {
+      // Si la dedupe falla, se encola igual (nunca perder un guardado).
+    }
+    final n = await DbService.I.enqueue(action, data);
+    return 'op_$n';
+  }
+
+  /// Resuelve el guardado lento en curso encolándolo localmente (botón
+  /// "Guardar localmente" del diálogo de handlePush). Devuelve true si
+  /// había un guardado lento esperando decisión.
+  Future<bool> saveSlowLocalNow() async {
+    final op = _slowOp;
+    if (op == null) return false;
+    final fn = op['saveLocal'];
+    if (fn is Future<void> Function()) {
+      await fn();
+      return true;
+    }
+    return false;
+  }
+
   /// Encola una operación. Ver contrato en el encabezado de la clase.
+  /// Conexión ONLINE:
+  ///  - a los 5 s sin respuesta expone saveSlowLocalNow() (el usuario
+  ///    decide si guardar en el dispositivo en vez de esperar ciegas);
+  ///  - si el usuario guarda localmente y la petición termina BIEN después,
+  ///    la copia en cola se descarta para no duplicar el envío.
   Future<dynamic> push(String action, Map<String, dynamic> data) async {
     // Plan bloqueado: la operación se rechaza en vez de encolarse, para no
     // acumular escrituras que el servidor va a rechazar igualmente.
@@ -388,25 +446,92 @@ class SyncService extends ChangeNotifier {
           response: {'success': false, 'data': {'hasPlanLock': true}});
     }
     if (_online) {
-      try {
-        // Escritura interactiva: timeout corto para no dejar al usuario
-        // esperando si la red se cae a mitad del guardado.
-        final res = await ApiService.I.req(action, data, timeoutSec: 8);
-        // NO _emit() aquí: solo la pantalla que hizo la acción recarga
-        // con su propio _reload() después de handlePush.
-        return res;
-      } on ApiException catch (e) {
-        if (e.response != null) {
-          // Rechazo definitivo: avisar SIN encolar (píldora venenosa).
-          _emit();
-          rethrow;
-        }
-        await DbService.I.enqueue(action, data);
+      final done = Completer<dynamic>();
+      var localQueued = false;
+      var requestSucceeded = false;
+      Future<String?>? enqueueFuture;
+
+      Future<String?> enqueueNow() {
+        if (enqueueFuture != null) return enqueueFuture!;
+        localQueued = true;
+        _slowOp = null;
         _emit();
-        return {'queued': true, 'payload': data};
+        enqueueFuture = _enqueueDedup(action, data);
+        return enqueueFuture!;
       }
+
+      Future<void> removeQueuedAfterSuccess() async {
+        final future = enqueueFuture;
+        if (!requestSucceeded || future == null) return;
+        final id = await future;
+        if (id != null) await DbService.I.removePending(id);
+      }
+
+      Future<void> saveSlowOperationLocally() async {
+        try {
+          await enqueueNow();
+          await removeQueuedAfterSuccess();
+          if (!done.isCompleted) {
+            done.complete({'queued': true, 'payload': data});
+          }
+        } catch (e, st) {
+          if (!done.isCompleted) done.completeError(e, st);
+        }
+      }
+
+      // A los 5 s se registra la opción de guardar localmente.
+      final slowTimer = Timer(const Duration(seconds: 5), () {
+        if (localQueued || requestSucceeded || done.isCompleted) return;
+        _slowOp = {
+          'action': action,
+          'data': data,
+          'saveLocal': saveSlowOperationLocally,
+        };
+        _emit();
+      });
+
+      // Escritura interactiva: timeout corto para no dejar al usuario
+      // esperando si la red se cae a mitad del guardado.
+      ApiService.I.req(action, data, timeoutSec: 8).then((res) {
+        slowTimer.cancel();
+        requestSucceeded = true;
+        _slowOp = null;
+        _emit();
+        if (!done.isCompleted) {
+          done.complete(res);
+        }
+        // Esperar a que termine la inserción local antes de borrarla. Si la
+        // respuesta remota ganó la carrera contra SQLite, la copia se quita
+        // igualmente en cuanto exista.
+        removeQueuedAfterSuccess().catchError((_) {});
+      }).catchError((Object e) {
+        slowTimer.cancel();
+        _slowOp = null;
+        _emit();
+        if (localQueued) return; // el usuario ya eligió guardar localmente
+        // Solo la ApiException con respuesta del servidor es rechazo
+        // definitivo (sin encolar); el resto de errores de red se encola;
+        // errores inesperados se propagan como antes.
+        final definitive = e is ApiException && e.response != null;
+        final networkish = e is ApiException || e is SocketException || e is TimeoutException;
+        if (e is! ApiException && !networkish) {
+          if (!done.isCompleted) {
+            done.completeError(e, StackTrace.current);
+          }
+          return;
+        }
+        if (definitive) {
+          // Rechazo definitivo: avisar SIN encolar (píldora venenosa).
+          if (!done.isCompleted) {
+            done.completeError(e, StackTrace.current);
+          }
+          return;
+        }
+        saveSlowOperationLocally();
+      });
+      return done.future;
     }
-    await DbService.I.enqueue(action, data);
+    await _enqueueDedup(action, data);
     _emit();
     return {'queued': true, 'payload': data};
   }
@@ -428,18 +553,34 @@ class SyncService extends ChangeNotifier {
     try {
       for (final op in ops) {
         try {
+          await DbService.I.updatePending(
+            op['id'],
+            status: 'sending',
+            incrementAttempts: true,
+          );
           await ApiService.I.req('${op['action']}',
               Map<String, dynamic>.from(op['data'] as Map),
               timeoutSec: 12);
-          sent++;
+          await DbService.I.updatePending(op['id'], status: 'sent');
           await DbService.I.removePending(op['id']);
+          sent++;
         } on ApiException catch (e) {
+          await DbService.I.updatePending(
+            op['id'],
+            status: 'error',
+            error: e.message,
+          );
           if (e.response != null) {
             failures.add(e.message.replaceAll(RegExp(r'\s+'), ' ').trim());
             continue; // definitiva: sigue en cola, continúa con la siguiente
           }
           break; // de red: parar, resto queda en cola
-        } catch (_) {
+        } catch (e) {
+          await DbService.I.updatePending(
+            op['id'],
+            status: 'error',
+            error: '$e',
+          );
           break;
         }
       }

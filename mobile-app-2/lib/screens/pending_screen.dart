@@ -48,6 +48,7 @@ class PendingScreen extends StatelessWidget {
     'ws_settings_save': _ActionInfo('Configuración guardada', Icons.settings_outlined, AppTheme.primary),
     'ws_save_site_theme': _ActionInfo('Apariencia guardada', Icons.palette_outlined, AppTheme.primary),
     'ws_save_permissions': _ActionInfo('Permisos guardados', Icons.admin_panel_settings_outlined, AppTheme.primary),
+    'ws_support_submit': _ActionInfo('Solicitud de soporte', Icons.support_agent_outlined, AppTheme.primary),
   };
 
   String _describe(String action, Map<String, dynamic> data) {
@@ -66,6 +67,9 @@ class PendingScreen extends StatelessWidget {
         return '${data['concept'] ?? ''}${data['amount'] != null ? ' · ${data['amount']}' : ''}';
       case 'ws_customers_save':
         return '${data['name'] ?? ''}';
+      case 'ws_support_submit':
+        final message = '${data['message'] ?? ''}'.trim();
+        return message.length > 80 ? '${message.substring(0, 80)}…' : message;
       case 'ws_save_product':
       case 'ws_combo_save':
       case 'ws_save_location':
@@ -125,6 +129,7 @@ class PendingScreen extends StatelessWidget {
         final posCur = posSales.isNotEmpty
             ? '${((posSales.first['data'] is Map) ? posSales.first['data'] : {})['currency'] ?? ''}'
             : '';
+        final hasErrors = ops.any((op) => '${op['status'] ?? 'pending'}' == 'error');
 
         return Column(children: [
           // ── Summary banner ──
@@ -157,7 +162,7 @@ class PendingScreen extends StatelessWidget {
                   }
                 },
                 icon: const Icon(Icons.sync, size: 18),
-                label: const Text('Enviar'),
+                label: Text(hasErrors ? 'Reintentar' : 'Enviar'),
                 style: FilledButton.styleFrom(backgroundColor: AppTheme.amber),
               ),
             ]),
@@ -208,6 +213,19 @@ class PendingScreen extends StatelessWidget {
                 final icon = info?.icon ?? Icons.sync;
                 final color = info?.color ?? AppTheme.lightMuted;
                 final desc = _describe(action, data);
+                final status = '${op['status'] ?? 'pending'}';
+                final statusLabel = switch (status) {
+                  'sending' => 'Sincronizando',
+                  'error' => 'Error · toca Reintentar',
+                  'sent' => 'Enviado',
+                  _ => 'Pendiente',
+                };
+                final statusColor = switch (status) {
+                  'sending' => AppTheme.primary,
+                  'error' => AppTheme.danger,
+                  'sent' => AppTheme.success,
+                  _ => AppTheme.amber,
+                };
 
                 return Card(
                   child: ListTile(
@@ -217,10 +235,54 @@ class PendingScreen extends StatelessWidget {
                       child: Icon(icon, color: color, size: 20),
                     ),
                     title: Text(label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                    subtitle: desc.isNotEmpty
-                        ? Text(desc, maxLines: 1, overflow: TextOverflow.ellipsis,
-                            style: TextStyle(color: Colors.grey[600], fontSize: 11))
-                        : null,
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (desc.isNotEmpty)
+                          Text(desc,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  color: Colors.grey[600], fontSize: 11)),
+                        const SizedBox(height: 3),
+                        Row(children: [
+                          if (status == 'sending')
+                            const SizedBox(
+                              width: 11,
+                              height: 11,
+                              child: CircularProgressIndicator(strokeWidth: 1.5),
+                            )
+                          else
+                            Icon(
+                              status == 'error'
+                                  ? Icons.error_outline
+                                  : status == 'sent'
+                                      ? Icons.cloud_done_outlined
+                                      : Icons.schedule,
+                              size: 13,
+                              color: statusColor,
+                            ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(statusLabel,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    color: statusColor,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600)),
+                          ),
+                        ]),
+                        if (status == 'error' &&
+                            '${op['error'] ?? ''}'.isNotEmpty)
+                          Text('${op['error']}',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  color: AppTheme.danger, fontSize: 10)),
+                      ],
+                    ),
                     trailing: IconButton(
                       icon: const Icon(Icons.delete_outline, size: 20, color: AppTheme.danger),
                       onPressed: () async {

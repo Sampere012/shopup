@@ -234,6 +234,15 @@ class _PosScreenState extends State<PosScreen> {
                                   )),
                                 ]),
                               ),
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                                child: TextFormField(
+                                  initialValue: f.phone,
+                                  decoration: const InputDecoration(labelText: 'Teléfono', isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
+                                  style: const TextStyle(fontSize: 12),
+                                  onChanged: (v) { f.phone = v; PosLocalService.I.saveFrozen(); },
+                                ),
+                              ),
                               // Actions row
                               Padding(
                                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -369,6 +378,23 @@ class _PosScreenState extends State<PosScreen> {
   void _openCashModal() {
     final cash = PosLocalService.I.cashState;
     final openingCtrl = TextEditingController();
+    // Guarda el estado local de caja (online y offline: el resultado es el
+    // mismo, la cola se encarga de sincronizar).
+    void saveLocalCash(num amount) {
+      PosLocalService.I.cashState = CashState(
+        open: true,
+        openedAt: DateTime.now().toString(),
+        sellerName: '${AuthService.I.me?['name'] ?? ''}',
+        openingAmount: amount,
+      );
+      PosLocalService.I.saveCash();
+    }
+
+    // Botón ocupado: evita el doble toque (un SOLO registro por acción,
+    // también al guardar offline). Declarado FUERA del builder para que
+    // sobreviva a los rebuilds del StatefulBuilder.
+    var busy = false;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -388,13 +414,28 @@ class _PosScreenState extends State<PosScreen> {
               const SizedBox(height: 12),
               FilledButton(
                 style: FilledButton.styleFrom(backgroundColor: AppTheme.danger),
-                onPressed: () async {
-                  await SyncService.I.push('ws_pos_cash_close', {'location_id': _loc});
-                  PosLocalService.I.cashState = CashState();
-                  PosLocalService.I.saveCash();
-                  Navigator.pop(ctx);
-                  U.toast(context, 'Caja cerrada');
-                },
+                onPressed: busy
+                    ? null
+                    : () async {
+                        if (busy) return;
+                        setS(() => busy = true);
+                        final done = await U.handlePush(
+                          context,
+                          SyncService.I.push('ws_pos_cash_close', {'location_id': _loc}),
+                          'Caja cerrada',
+                          onOk: () async {
+                            PosLocalService.I.cashState = CashState();
+                            PosLocalService.I.saveCash();
+                          },
+                          onQueued: (_) async {
+                            PosLocalService.I.cashState = CashState();
+                            PosLocalService.I.saveCash();
+                          },
+                        );
+                        if (!mounted) return;
+                        if (done && ctx.mounted) Navigator.pop(ctx);
+                        setState(() {});
+                      },
                 child: const Text('Cerrar caja'),
               ),
             ] else ...[
@@ -405,23 +446,27 @@ class _PosScreenState extends State<PosScreen> {
               ),
               const SizedBox(height: 12),
               FilledButton(
-                onPressed: () async {
-                  final amount = num.tryParse(openingCtrl.text.trim()) ?? 0;
-                  await SyncService.I.push('ws_pos_cash_open', {
-                    'location_id': _loc,
-                    'opening_amount': amount,
-                    'note': '',
-                  });
-                  PosLocalService.I.cashState = CashState(
-                    open: true,
-                    openedAt: DateTime.now().toString(),
-                    sellerName: '${AuthService.I.me?['name'] ?? ''}',
-                    openingAmount: amount,
-                  );
-                  PosLocalService.I.saveCash();
-                  Navigator.pop(ctx);
-                  U.toast(context, 'Caja abierta');
-                },
+                onPressed: busy
+                    ? null
+                    : () async {
+                        if (busy) return;
+                        setS(() => busy = true);
+                        final amount = num.tryParse(openingCtrl.text.trim()) ?? 0;
+                        final done = await U.handlePush(
+                          context,
+                          SyncService.I.push('ws_pos_cash_open', {
+                            'location_id': _loc,
+                            'opening_amount': amount,
+                            'note': '',
+                          }),
+                          'Caja abierta',
+                          onOk: () async => saveLocalCash(amount),
+                          onQueued: (_) async => saveLocalCash(amount),
+                        );
+                        if (!mounted) return;
+                        if (done && ctx.mounted) Navigator.pop(ctx);
+                        setState(() {});
+                      },
                 child: const Text('Abrir caja'),
               ),
             ],
@@ -880,9 +925,12 @@ class _PosScreenState extends State<PosScreen> {
       'cash_amount': mode == 'cash' ? cashReceived.toStringAsFixed(2) : 0,
       'transfer_amount': mode == 'transfer' ? total.toStringAsFixed(2) : 0,
       'transfer_number': mode == 'transfer' ? pos.payState.tno : '',
-      'customer_name': mode == 'transfer' ? pos.payState.cname : '',
-      'customer_doc': mode == 'transfer' ? pos.payState.cdoc : '',
-      'customer_phone': mode == 'transfer' ? pos.payState.cphone : '',
+      // Datos del cliente SIEMPRE que existan (no solo en transferencia):
+      // así el nombre/carnet/teléfono editados llegan al backend, a la cola
+      // offline y aparecen en el historial de ventas.
+      'customer_name': pos.payState.cname.trim(),
+      'customer_doc': pos.payState.cdoc.trim(),
+      'customer_phone': pos.payState.cphone.trim(),
       'register_id': pos.cashState.open ? 1 : 0,
       'client_ref': 'app-${DateTime.now().millisecondsSinceEpoch}',
       'items': pos.cart.map((c) => {
@@ -906,7 +954,9 @@ class _PosScreenState extends State<PosScreen> {
       'cash_amount': mode == 'cash' ? cashReceived.toStringAsFixed(2) : '0',
       'transfer_amount': mode == 'transfer' ? total.toStringAsFixed(2) : '0',
       'transfer_number': mode == 'transfer' ? pos.payState.tno : '',
-      'customer_name': mode == 'transfer' ? pos.payState.cname : '',
+      'customer_name': pos.payState.cname.trim(),
+      'customer_doc': pos.payState.cdoc.trim(),
+      'customer_phone': pos.payState.cphone.trim(),
       'status': 'pending',
       'created_at': DateTime.now().toIso8601String(),
       'items': payload['items'],

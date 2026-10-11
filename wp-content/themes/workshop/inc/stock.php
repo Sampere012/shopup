@@ -447,23 +447,15 @@ class WS_Stock {
     /* ---------------- Stock compartido entre ubicaciones ---------------- */
 
     /**
-     * IDs de las ubicaciones que COMPARTEN STOCK con $location_id (sus
-     * SUPERIORES o centros), sin incluir la propia.
+     * IDs de las ubicaciones que COMPARTEN STOCK con $location_id, sin
+     * incluir la propia. La conexión se interpreta como un grafo no
+     * dirigido: todos los nodos del mismo componente conectado comparten
+     * inventario entre sí.
      *
-     * Las conexiones son DIRIGIDAS (jerarquía): la fila (location_a,
-     * location_b) significa "b es la SUPERIOR de a" (b abastece a a). Un
-     * movimiento en una ubicación se aplica solo a su línea de CENTROS: sus
-     * padres y los padres de sus padres, transitivamente hasta la raíz.
-     * Nunca a los hermanos ni a los hijos (un movimiento en el centro NO se
-     * arrastra hacia abajo).
-     *
-     *   - cadena n1->n2->n3 (n1 abastecido por n2, n2 por n3): lo que
-     *     entra/sale en n1 llega a n2 y n3; lo que entra/sale en n3 solo a n3.
-     *   - estrella n1->n3 y n2->n3 (ambos abastecidos por n3): lo que
-     *     entra/sale en n1 llega SOLO a n1 y n3 (nunca a n2); lo que entra/
-     *     sale en n3 queda solo en n3.
-     *   - un nodo con varios superiores (n4->n1 y n4->n2): el movimiento en
-     *     n4 llega a n1 y n2 (y a sus superiores).
+     * Ejemplos:
+     *   - cadena 10->20->30: 10, 20 y 30 forman un mismo componente.
+     *   - 40->50 y 40->60: 40, 50 y 60 comparten stock.
+     *   - estrella 70->90, 80->90: 70, 80 y 90 comparten stock.
      */
     public static function linked_location_ids( $location_id ) {
         static $cache = array();
@@ -478,8 +470,6 @@ class WS_Stock {
         $out   = array();
         $seen  = array( $location_id => true );
         $queue = array( $location_id );
-        // Recorrido DIRIGIDO: solo hacia los PADRES/superiores (b), de forma
-        // transitiva. Los hijos (a) y hermanos NO forman parte del recorrido.
         while ( $queue ) {
             $cur = array_shift( $queue );
             foreach ( (array) ( $tree['parents'][ $cur ] ?? array() ) as $p ) {
@@ -489,6 +479,14 @@ class WS_Stock {
                 $seen[ $p ] = true;
                 $out[]     = $p;
                 $queue[]   = $p;
+            }
+            foreach ( (array) ( $tree['children'][ $cur ] ?? array() ) as $c ) {
+                if ( isset( $seen[ $c ] ) ) {
+                    continue;
+                }
+                $seen[ $c ] = true;
+                $out[]     = $c;
+                $queue[]   = $c;
             }
         }
         $cache[ $location_id ] = $out;

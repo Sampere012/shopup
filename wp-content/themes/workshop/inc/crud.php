@@ -200,6 +200,9 @@ class WS_CRUD {
         // de categorías y se sincroniza el texto `category` con la RUTA de la
         // categoría («Padre / Hijo») para las búsquedas/filtros existentes y
         // la tienda. Si solo llega texto (importación CSV/legacy) se conserva.
+        // En EDICIÓN sin la clave category_id se conserva el vínculo actual
+        // (antes se reseteaba a 0 y el producto se despegaba del árbol).
+        $has_category_id = array_key_exists( 'category_id', $data );
         if ( $category_id ) {
             $cat_map = class_exists( 'WS_Categories' ) ? WS_Categories::map() : array();
             if ( ! isset( $cat_map[ $category_id ] ) ) {
@@ -207,7 +210,7 @@ class WS_CRUD {
             }
             $fields['category_id'] = $category_id;
             $fields['category']    = WS_Categories::path_text( $category_id );
-        } else {
+        } elseif ( $has_category_id || ! $id ) {
             $fields['category_id'] = 0;
         }
         // Fraccionamiento: el padre debe existir y no puede ser hijo de nadie.

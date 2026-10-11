@@ -38,11 +38,15 @@ class _CountsScreenState extends State<CountsScreen> {
   Future<void> _loadAll() async {
     final locs = await DbService.I.all('locations');
     if (locs.isNotEmpty) _locations = locs;
-    final counts = await DbService.I.all('stock_counts');
-    _history = counts;
     if (_locations.isNotEmpty && _locId.isEmpty) {
       _locId = '${_locations.first['id']}';
     }
+    final counts = await DbService.I.all('stock_counts');
+    // Solo el historial de la ubicación seleccionada (el resto vive en la
+    // tabla local y se recupera al cambiar de ubicación).
+    _history = counts
+        .where((r) => '${r['location_id']}' == _locId)
+        .toList();
     setState(() => _loading = false);
     _loadVirtual();
     _loadHistory();
@@ -123,11 +127,37 @@ class _CountsScreenState extends State<CountsScreen> {
       });
       final rows =
           List<Map<String, dynamic>>.from((d['data'] as List?) ?? []);
-      _history = rows;
       await DbService.I.cacheSet('ws_stock_counts_list:$_locId', rows);
-      await DbService.I.replaceAll('stock_counts', rows);
-      if (mounted) setState(() {});
-    } catch (_) {}
+      // MEZCLA (antes replaceAll): conservar los cuadres locales aún no
+      // sincronizados de ESTA ubicación y el historial ya guardado de las
+      // OTRAS ubicaciones, que antes se perdía en cada recarga.
+      final existing = await DbService.I.all('stock_counts');
+      final serverIds = rows.map((r) => '${r['id']}').toSet();
+      final localMine = existing
+          .where((r) =>
+              '${r['id']}'.startsWith('local-') &&
+              '${r['location_id']}' == _locId &&
+              !serverIds.contains('${r['id']}'))
+          .toList();
+      final others = existing
+          .where((r) =>
+              !serverIds.contains('${r['id']}') &&
+              '${r['location_id']}' != _locId)
+          .toList();
+      await DbService.I.replaceAll(
+          'stock_counts', [...rows, ...localMine, ...others]);
+      if (mounted) {
+        setState(() => _history = [...rows, ...localMine]);
+      }
+    } catch (_) {
+      // Sin red: usar el historial local de ESTA ubicación (y no mezclar
+      // los productos/cuadres de otra).
+      final existing = await DbService.I.all('stock_counts');
+      final mine = existing
+          .where((r) => '${r['location_id']}' == _locId)
+          .toList();
+      if (mounted) setState(() => _history = mine);
+    }
   }
 
   int _diff(Map<String, dynamic> item) {
@@ -167,7 +197,13 @@ class _CountsScreenState extends State<CountsScreen> {
                             style: const TextStyle(fontSize: 13))))
                     .toList(),
                 onChanged: (v) {
-                  setState(() => _locId = v ?? '');
+                  setState(() {
+                    _locId = v ?? '';
+                    // Al cambiar de ubicación se limpia la lista: NUNCA se
+                    // muestran productos ni conteos de otra ubicación.
+                    _items = [];
+                    _history = [];
+                  });
                   _phys.clear();
                   _loadVirtual();
                   _loadHistory();
@@ -244,6 +280,7 @@ class _CountsScreenState extends State<CountsScreen> {
 
     final noteCtrl = TextEditingController();
     bool adjust = false;
+    bool saving = false;
 
     return StatefulBuilder(
       builder: (ctx, setInner) => ListView(
@@ -365,9 +402,10 @@ class _CountsScreenState extends State<CountsScreen> {
           SizedBox(
             width: double.infinity,
             child: FilledButton(
-              onPressed: _items.isEmpty
+              onPressed: _items.isEmpty || saving
                   ? null
                   : () async {
+                      setInner(() => saving = true);
                       final itemsPayload = _items
                           .map((it) => {
                                 'product_id': it['product_id'],
@@ -380,33 +418,55 @@ class _CountsScreenState extends State<CountsScreen> {
                         'note': noteCtrl.text.trim(),
                         'items': itemsPayload,
                       };
-                      final ok = await U.handlePush(
-                          context,
-                          SyncService.I.push(
-                              'ws_stock_count_save', payload),
-                          adjust
-                              ? 'Cuadre guardado y stock ajustado'
-                              : 'Cuadre guardado');
-                      if (ok) {
-                        // Add to local history
-                        final local = <String, dynamic>{
-                          'id': 'local-${DateTime.now().millisecondsSinceEpoch}',
-                          'location_id': int.tryParse(_locId) ?? 0,
-                          'location_name': _locations
-                              .where((l) => '${l['id']}' == _locId)
-                              .map((l) => '${l['name'] ?? ''}')
-                              .firstOrNull ??
-                              '',
-                          'summary': adjust ? 'Ajustado' : 'Guardado',
-                          'note': noteCtrl.text.trim(),
-                          'created_at':
-                              DateTime.now().toIso8601String(),
-                        };
-                        _history.insert(0, local);
-                        setState(() => _tab = 'history');
+                      try {
+                        final ok = await U.handlePush(
+                            context,
+                            SyncService.I.push(
+                                'ws_stock_count_save', payload),
+                            adjust
+                                ? 'Cuadre guardado y stock ajustado'
+                                : 'Cuadre guardado');
+                        if (ok) {
+                          // Add to local history
+                          final local = <String, dynamic>{
+                            'id': 'local-${DateTime.now().millisecondsSinceEpoch}',
+                            'location_id': int.tryParse(_locId) ?? 0,
+                            'location_name': _locations
+                                .where((l) => '${l['id']}' == _locId)
+                                .map((l) => '${l['name'] ?? ''}')
+                                .firstOrNull ??
+                                '',
+                            'summary': adjust ? 'Ajustado' : 'Guardado',
+                            'note': noteCtrl.text.trim(),
+                            'created_at':
+                                DateTime.now().toIso8601String(),
+                          };
+                          _history.insert(0, local);
+                          // Persistir el cuadre local en SQLite: si se cambia
+                          // de pestaña/ubicación o se reinicia la app, el
+                          // historial encolado no se pierde.
+                          await DbService.I.putAll('stock_counts', [local]);
+                          setState(() => _tab = 'history');
+                        }
+                      } finally {
+                        if (ctx.mounted) setInner(() => saving = false);
                       }
                     },
-              child: const Text('Guardar cuadre'),
+              child: saving
+                  ? const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white)),
+                        SizedBox(width: 8),
+                        Text('Guardando…'),
+                      ],
+                    )
+                  : const Text('Guardar cuadre'),
             ),
           ),
         ],

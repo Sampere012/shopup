@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 import '../services/image_cache_service.dart';
+import '../services/sync_service.dart';
 
 /// Utilidades compartidas por todos los módulos, con soporte dark mode.
 class U {
@@ -49,12 +51,45 @@ class U {
   /// Cuando la operación queda encolada (offline), ejecuta [onQueued]
   /// para actualizar optimísticamente el SQLite local y que la UI
   /// refleje el cambio al momento, sin esperar a que se vacíe la cola.
+  ///
+  /// Si el guardado tarda >400 ms muestra un diálogo de progreso; a los 5 s
+  /// ofrece el botón «Guardar localmente» para que el usuario decida en vez
+  /// de esperar sin información (mismo criterio en todos los apartados).
   static Future<bool> handlePush(
       BuildContext context, Future<dynamic> future, String okMsg,
       {Future<void> Function()? onOk,
        Future<void> Function(Map<String, dynamic> payload)? onQueued}) async {
+    var finished = false;
+    BuildContext? dialogCtx;
+    Timer? showTimer;
+
+    void closeDialog() {
+      finished = true;
+      showTimer?.cancel();
+      final c = dialogCtx;
+      dialogCtx = null;
+      if (c != null && c.mounted) {
+        try {
+          Navigator.of(c).maybePop();
+        } catch (_) {}
+      }
+    }
+
+    showTimer = Timer(const Duration(milliseconds: 400), () {
+      if (finished || !context.mounted) return;
+      showDialog<void>(
+        context: context,
+        barrierDismissible: true,
+        builder: (ctx) {
+          dialogCtx = ctx;
+          return const _PushProgressDialog();
+        },
+      );
+    });
+
     try {
       final res = await future;
+      closeDialog();
       if (res is Map && res['queued'] == true) {
         if (context.mounted) {
           toast(context, 'Guardado sin conexión — se enviará al reconectar',
@@ -73,9 +108,11 @@ class U {
       }
       return true;
     } on ApiException catch (e) {
+      closeDialog();
       if (context.mounted) toast(context, e.message, kind: 'err');
       return false;
     } catch (_) {
+      closeDialog();
       if (context.mounted) toast(context, 'Error inesperado', kind: 'err');
       return false;
     }
@@ -187,6 +224,101 @@ class U {
       padding: padding ?? const EdgeInsets.all(16),
       decoration: AppTheme.glassCard(),
       child: child,
+    );
+  }
+}
+
+/// Diálogo de progreso para handlePush: spinner + «Guardando…»;
+/// a los 5 s ofrece decidir entre «Guardar localmente» (encola ya) y
+/// «Seguir esperando». No bloquea: el futuro subyacente sigue corriendo.
+class _PushProgressDialog extends StatefulWidget {
+  const _PushProgressDialog();
+
+  @override
+  State<_PushProgressDialog> createState() => _PushProgressDialogState();
+}
+
+class _PushProgressDialogState extends State<_PushProgressDialog> {
+  Timer? _timer;
+  bool _slow = false;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _arm(3);
+  }
+
+  void _arm(int seconds) {
+    _timer?.cancel();
+    _timer = Timer(Duration(seconds: seconds), () {
+      if (mounted) setState(() => _slow = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return AlertDialog(
+      backgroundColor: isDark ? AppTheme.darkCard : Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      content: Column(mainAxisSize: MainAxisSize.min, children: [
+        Row(children: [
+          const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              _slow ? 'La conexión está tardando…' : 'Guardando…',
+              style: const TextStyle(
+                  fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ]),
+        if (_slow) ...[
+          const SizedBox(height: 12),
+          Text(
+            'Lleva más de 3 segundos. Puedes guardarlo en este dispositivo '
+            'y se enviará solo cuando haya conexión.',
+            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+          ),
+          const SizedBox(height: 12),
+          if (_saving)
+            const LinearProgressIndicator()
+          else
+            Row(children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.save_alt_outlined, size: 16),
+                  label: const Text('Guardar aquí'),
+                  onPressed: () async {
+                    setState(() => _saving = true);
+                    await SyncService.I.saveSlowLocalNow();
+                    // El push se resuelve como encolado y handlePush
+                    // cierra este diálogo solo.
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              TextButton(
+                onPressed: () => setState(() {
+                  _slow = false;
+                  _arm(10); // volver a ofrecer la decisión en 10 s
+                }),
+                child: const Text('Esperar'),
+              ),
+            ]),
+        ],
+      ]),
     );
   }
 }

@@ -11,6 +11,7 @@ import '../services/sync_service.dart';
 import '../services/update_service.dart';
 import '../widgets/common.dart' show U;
 import 'onboarding_screen.dart';
+import 'support_screen.dart';
 
 /// Mi cuenta: datos del usuario, actualización de app y cambio de cuenta.
 class AccountScreen extends StatefulWidget {
@@ -41,6 +42,197 @@ class _AccountScreenState extends State<AccountScreen> {
     }
   }
 
+  Future<void> _editProfile() async {
+    final name = TextEditingController(
+      text: '${AuthService.I.me?['name'] ?? ''}',
+    );
+    final username = TextEditingController(
+      text:
+          '${AuthService.I.me?['username'] ?? AuthService.I.me?['user_login'] ?? ''}',
+    );
+    final email = TextEditingController(
+      text: '${AuthService.I.me?['email'] ?? ''}',
+    );
+    final current = TextEditingController();
+    final next = TextEditingController();
+    final confirm = TextEditingController();
+    var busy = false;
+    var error = '';
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('Editar perfil'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: name,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(
+                    labelText: 'Nombre visible *',
+                  ),
+                ),
+                TextField(
+                  controller: username,
+                  autocorrect: false,
+                  decoration: const InputDecoration(
+                    labelText: 'Usuario (login) *',
+                  ),
+                ),
+                TextField(
+                  controller: email,
+                  keyboardType: TextInputType.emailAddress,
+                  autocorrect: false,
+                  decoration: const InputDecoration(labelText: 'Email *'),
+                ),
+                TextField(
+                  controller: current,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Contraseña actual *',
+                    helperText: 'Confirma los cambios de tu cuenta',
+                  ),
+                ),
+                TextField(
+                  controller: next,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Nueva contraseña',
+                    helperText: 'Opcional; mínimo 8 caracteres',
+                  ),
+                ),
+                TextField(
+                  controller: confirm,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Confirmar nueva contraseña',
+                  ),
+                ),
+                if (error.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      error,
+                      style: const TextStyle(
+                        color: AppTheme.danger,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: busy ? null : () => Navigator.pop(dialogContext),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: busy
+                  ? null
+                  : () async {
+                      final newPassword = next.text;
+                      if (name.text.trim().isEmpty ||
+                          username.text.trim().isEmpty ||
+                          email.text.trim().isEmpty ||
+                          current.text.isEmpty) {
+                        setDialogState(() {
+                          error = 'Completa todos los campos obligatorios.';
+                        });
+                        return;
+                      }
+                      if (newPassword.isNotEmpty && newPassword.length < 8) {
+                        setDialogState(
+                          () => error =
+                              'La nueva contraseña debe tener al menos 8 caracteres.',
+                        );
+                        return;
+                      }
+                      if (newPassword != confirm.text) {
+                        setDialogState(
+                          () => error = 'Las nuevas contraseñas no coinciden.',
+                        );
+                        return;
+                      }
+                      setDialogState(() {
+                        busy = true;
+                        error = '';
+                      });
+                      try {
+                        final result = await ApiService.I
+                            .req('ws_mobile_update_profile', {
+                              'display_name': name.text.trim(),
+                              'username': username.text.trim(),
+                              'email': email.text.trim(),
+                              'current_password': current.text,
+                              'new_password': newPassword,
+                            });
+                        final token = result is Map ? result['token'] : null;
+                        final updatedMe = result is Map ? result['me'] : null;
+                        if (token is! String ||
+                            token.isEmpty ||
+                            updatedMe is! Map) {
+                          throw ApiException(
+                            'El servidor no confirmó la actualización del perfil.',
+                          );
+                        }
+                        await ApiService.I.setToken(token);
+                        final sessionDays = result['sessionDays'];
+                        await AuthService.I.store(
+                          Map<String, dynamic>.from(updatedMe),
+                          sessionDays is num ? sessionDays.toInt() : 30,
+                        );
+                        if (dialogContext.mounted) {
+                          Navigator.pop(dialogContext);
+                        }
+                        if (mounted) {
+                          U.toast(context, 'Perfil actualizado', kind: 'ok');
+                        }
+                      } on ApiException catch (e) {
+                        if (dialogContext.mounted) {
+                          setDialogState(() {
+                            busy = false;
+                            error = e.message;
+                          });
+                        }
+                      } catch (_) {
+                        if (dialogContext.mounted) {
+                          setDialogState(() {
+                            busy = false;
+                            error =
+                                'No se pudo actualizar el perfil. Inténtalo de nuevo.';
+                          });
+                        }
+                      }
+                    },
+              child: busy
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text('Guardar cambios'),
+            ),
+          ],
+        ),
+      ),
+    );
+    name.dispose();
+    username.dispose();
+    email.dispose();
+    current.dispose();
+    next.dispose();
+    confirm.dispose();
+  }
+
   Future<void> _switchTo(BuildContext context, SavedAccount acc) async {
     try {
       await AuthService.I.login(acc.user, acc.pass, server: acc.server);
@@ -48,7 +240,11 @@ class _AccountScreenState extends State<AccountScreen> {
       unawaited(SyncService.I.syncNow());
     } catch (_) {
       if (context.mounted) {
-        U.toast(context, 'No se pudo cambiar a ${acc.name}. Inicia sesión manualmente.', kind: 'err');
+        U.toast(
+          context,
+          'No se pudo cambiar a ${acc.name}. Inicia sesión manualmente.',
+          kind: 'err',
+        );
       }
     }
   }
@@ -60,211 +256,379 @@ class _AccountScreenState extends State<AccountScreen> {
     final savedAccounts = context.watch<SavedAccountsService>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return ListView(padding: const EdgeInsets.all(14), children: [
-      // Profile card
-      Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: isDark
-                ? [const Color(0xFF1E293B), const Color(0xFF334155)]
-                : [AppTheme.primary, AppTheme.primaryDark],
-            begin: Alignment.topLeft, end: Alignment.bottomRight,
-          ),
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: [BoxShadow(color: AppTheme.primary.withAlpha(50), blurRadius: 16, offset: const Offset(0, 6))],
-        ),
-        padding: const EdgeInsets.all(20),
-        child: Row(children: [
-          CircleAvatar(
-            radius: 28,
-            backgroundColor: Colors.white.withAlpha(40),
-            child: Text(
-              '${'${me['name'] ?? '?'}'.isNotEmpty ? '${me['name']}'[0].toUpperCase() : '?'}',
-              style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w700),
+    return ListView(
+      padding: const EdgeInsets.all(14),
+      children: [
+        // Profile card
+        Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: isDark
+                  ? [const Color(0xFF1E293B), const Color(0xFF334155)]
+                  : [AppTheme.primary, AppTheme.primaryDark],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
             ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('${me['name'] ?? ''}',
-                  style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
-              Text('${me['email'] ?? ''}',
-                  style: TextStyle(color: Colors.white.withAlpha(180), fontSize: 13)),
-            ]),
-          ),
-        ]),
-      ),
-      const SizedBox(height: 12),
-
-      // Info card
-      Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(children: [
-            _infoRow('Rol', '${me['roleLabel'] ?? me['role'] ?? ''}'),
-            _infoRow('Negocio', auth.businessName),
-            _infoRow('Servidor', ApiService.I.server),
-            _infoRow('Versión', 'v${AppConfig.appVersion}'),
-          ]),
-        ),
-      ),
-
-      // ── Bienvenida y tour ──
-      const SizedBox(height: 10),
-      Card(
-        child: ListTile(
-          leading: const Icon(Icons.tour_outlined, color: AppTheme.primary),
-          title: const Text('Bienvenida y tour de la app',
-              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-          subtitle: Text('Guía paso a paso por cada módulo',
-              style: TextStyle(color: Colors.grey[500], fontSize: 12)),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => OnboardingScreen.open(context),
-        ),
-      ),
-
-      // ── Actualización de app ──
-      const SizedBox(height: 10),
-      Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              Icon(
-                _hasUpdate ? Icons.system_update : Icons.check_circle_outline,
-                size: 20,
-                color: _hasUpdate ? AppTheme.amber : AppTheme.success,
-              ),
-              const SizedBox(width: 8),
-              Text('Actualización de la app',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
-            ]),
-            const SizedBox(height: 8),
-            if (_hasUpdate && _updateInfo != null) ...[
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppTheme.amber.withAlpha(15),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: AppTheme.amber.withAlpha(40)),
-                ),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Row(children: [
-                    const Icon(Icons.new_releases_outlined, size: 16, color: AppTheme.amber),
-                    const SizedBox(width: 6),
-                    Text('Nueva versión disponible: ${_updateInfo!['version'] ?? ''}',
-                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
-                  ]),
-                  if ('${_updateInfo!['changelog'] ?? ''}'.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Text('${_updateInfo!['changelog']}', style: TextStyle(fontSize: 12, height: 1.4, color: Colors.grey[700])),
-                  ],
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: () async {
-                        if (_updateInfo!['has_apk'] == true) {
-                          final ok =
-                              await UpdateService.launchDownload(_updateInfo!);
-                          if (!mounted) return;
-                          U.toast(
-                              context,
-                              ok
-                                  ? 'Descargando la actualización… busca la notificación al terminar'
-                                  : 'No se pudo abrir la descarga',
-                              kind: ok ? 'ok' : 'err');
-                        } else {
-                          UpdateService.showUpdateDialog(context, _updateInfo!);
-                        }
-                      },
-                      icon: const Icon(Icons.download, size: 18),
-                      label: const Text('Descargar actualización'),
-                    ),
-                  ),
-                ]),
-              ),
-            ] else ...[
-              Row(children: [
-                Icon(Icons.check_circle, size: 16, color: AppTheme.success),
-                const SizedBox(width: 6),
-                const Text('Tienes la última versión', style: TextStyle(fontSize: 13)),
-              ]),
-              const SizedBox(height: 4),
-              Text('Versión actual: v${AppConfig.appVersion}',
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600])),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: _checkingUpdate
-                    ? null
-                    : () async {
-                        setState(() => _checkingUpdate = true);
-                        await _checkUpdate();
-                        if (mounted) {
-                          setState(() => _checkingUpdate = false);
-                          if (!_hasUpdate) U.toast(context, 'Ya estás actualizado');
-                        }
-                      },
-                icon: _checkingUpdate
-                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.refresh, size: 16),
-                label: const Text('Buscar actualizaciones'),
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                color: AppTheme.primary.withAlpha(50),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
               ),
             ],
-          ]),
+          ),
+          padding: const EdgeInsets.all(20),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 28,
+                backgroundColor: Colors.white.withAlpha(40),
+                child: Text(
+                  '${'${me['name'] ?? '?'}'.isNotEmpty ? '${me['name']}'[0].toUpperCase() : '?'}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${me['name'] ?? ''}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    Text(
+                      '${me['email'] ?? ''}',
+                      style: TextStyle(
+                        color: Colors.white.withAlpha(180),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
+        const SizedBox(height: 12),
 
-      // ── Cambiar de cuenta ──
-      if (savedAccounts.accounts.any((a) => a.userId != auth.userId)) ...[
+        // Info card
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                _infoRow('Rol', '${me['roleLabel'] ?? me['role'] ?? ''}'),
+                _infoRow('Negocio', auth.businessName),
+                _infoRow('Servidor', ApiService.I.server),
+                _infoRow('Versión', 'v${AppConfig.appVersion}'),
+              ],
+            ),
+          ),
+        ),
+
+        if ('${me['role'] ?? ''}' == 'owner') ...[
+          Card(
+            child: ListTile(
+              leading: const Icon(
+                Icons.manage_accounts_outlined,
+                color: AppTheme.primary,
+              ),
+              title: const Text('Editar perfil y contraseña'),
+              subtitle: const Text(
+                'Nombre visible, usuario, email y contraseña',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: _editProfile,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Card(
+            child: ListTile(
+              leading: const Icon(
+                Icons.support_agent_outlined,
+                color: AppTheme.primary,
+              ),
+              title: const Text('Ayuda y soporte'),
+              subtitle: const Text('Contactos y solicitudes de soporte'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const SupportScreen()),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+        ],
+
+        // ── Bienvenida y tour ──
+        const SizedBox(height: 10),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.tour_outlined, color: AppTheme.primary),
+            title: const Text(
+              'Bienvenida y tour de la app',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+            ),
+            subtitle: Text(
+              'Guía paso a paso por cada módulo',
+              style: TextStyle(color: Colors.grey[500], fontSize: 12),
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => OnboardingScreen.open(context),
+          ),
+        ),
+
+        // ── Actualización de app ──
         const SizedBox(height: 10),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(16),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [
-                const Icon(Icons.swap_horiz, size: 20, color: AppTheme.primary),
-                const SizedBox(width: 8),
-                Text('Cambiar de cuenta',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
-              ]),
-              const SizedBox(height: 8),
-              ...savedAccounts.accounts
-                  .where((acc) => acc.userId != auth.userId)
-                  .map((acc) => ListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        leading: CircleAvatar(
-                          radius: 18,
-                          backgroundColor: AppTheme.primary.withAlpha(25),
-                          child: Text(acc.initials,
-                              style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w700, fontSize: 12)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      _hasUpdate
+                          ? Icons.system_update
+                          : Icons.check_circle_outline,
+                      size: 20,
+                      color: _hasUpdate ? AppTheme.amber : AppTheme.success,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Actualización de la app',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                if (_hasUpdate && _updateInfo != null) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppTheme.amber.withAlpha(15),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppTheme.amber.withAlpha(40)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.new_releases_outlined,
+                              size: 16,
+                              color: AppTheme.amber,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Nueva versión disponible: ${_updateInfo!['version'] ?? ''}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
                         ),
-                        title: Text(acc.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                        subtitle: Text(acc.businessName, style: TextStyle(color: Colors.grey[500], fontSize: 11)),
-                        trailing: Icon(
-                          acc.pass.isEmpty ? Icons.lock_outline : Icons.swap_horiz,
-                          size: 18,
-                          color: acc.pass.isEmpty ? Colors.grey[400] : AppTheme.primary,
+                        if ('${_updateInfo!['changelog'] ?? ''}'
+                            .isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            '${_updateInfo!['changelog']}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              height: 1.4,
+                              color: Colors.grey[700],
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed: () async {
+                              if (_updateInfo!['has_apk'] == true) {
+                                final ok = await UpdateService.launchDownload(
+                                  _updateInfo!,
+                                );
+                                if (!mounted) return;
+                                U.toast(
+                                  context,
+                                  ok
+                                      ? 'Descargando la actualización… busca la notificación al terminar'
+                                      : 'No se pudo abrir la descarga',
+                                  kind: ok ? 'ok' : 'err',
+                                );
+                              } else {
+                                UpdateService.showUpdateDialog(
+                                  context,
+                                  _updateInfo!,
+                                );
+                              }
+                            },
+                            icon: const Icon(Icons.download, size: 18),
+                            label: const Text('Descargar actualización'),
+                          ),
                         ),
-                        onTap: () {
-                          if (acc.pass.isNotEmpty) _switchTo(context, acc);
-                        },
-                      )),
-            ]),
+                      ],
+                    ),
+                  ),
+                ] else ...[
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.check_circle,
+                        size: 16,
+                        color: AppTheme.success,
+                      ),
+                      const SizedBox(width: 6),
+                      const Text(
+                        'Tienes la última versión',
+                        style: TextStyle(fontSize: 13),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Versión actual: v${AppConfig.appVersion}',
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: _checkingUpdate
+                        ? null
+                        : () async {
+                            setState(() => _checkingUpdate = true);
+                            await _checkUpdate();
+                            if (mounted) {
+                              setState(() => _checkingUpdate = false);
+                              if (!_hasUpdate)
+                                U.toast(context, 'Ya estás actualizado');
+                            }
+                          },
+                    icon: _checkingUpdate
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.refresh, size: 16),
+                    label: const Text('Buscar actualizaciones'),
+                  ),
+                ],
+              ],
+            ),
           ),
         ),
+
+        // ── Cambiar de cuenta ──
+        if (savedAccounts.accounts.any((a) => a.userId != auth.userId)) ...[
+          const SizedBox(height: 10),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.swap_horiz,
+                        size: 20,
+                        color: AppTheme.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Cambiar de cuenta',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  ...savedAccounts.accounts
+                      .where((acc) => acc.userId != auth.userId)
+                      .map(
+                        (acc) => ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: CircleAvatar(
+                            radius: 18,
+                            backgroundColor: AppTheme.primary.withAlpha(25),
+                            child: Text(
+                              acc.initials,
+                              style: const TextStyle(
+                                color: AppTheme.primary,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                          title: Text(
+                            acc.name,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                          ),
+                          subtitle: Text(
+                            acc.businessName,
+                            style: TextStyle(
+                              color: Colors.grey[500],
+                              fontSize: 11,
+                            ),
+                          ),
+                          trailing: Icon(
+                            acc.pass.isEmpty
+                                ? Icons.lock_outline
+                                : Icons.swap_horiz,
+                            size: 18,
+                            color: acc.pass.isEmpty
+                                ? Colors.grey[400]
+                                : AppTheme.primary,
+                          ),
+                          onTap: () {
+                            if (acc.pass.isNotEmpty) _switchTo(context, acc);
+                          },
+                        ),
+                      ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ],
-    ]);
+    );
   }
 
   Widget _infoRow(String k, String v) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 4),
-    child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-      Text(k, style: TextStyle(color: Colors.grey[600], fontSize: 13)),
-      Flexible(child: Text(v, textAlign: TextAlign.right,
-          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600))),
-    ]),
+    child: Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(k, style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+        Flexible(
+          child: Text(
+            v,
+            textAlign: TextAlign.right,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+        ),
+      ],
+    ),
   );
 }

@@ -158,4 +158,102 @@ class UpdateService extends ChangeNotifier {
       ),
     );
   }
+
+  /// Shows release notes once after the installed app version changes.
+  static Future<void> showInstalledChangelog(
+      BuildContext context, Map<String, dynamic> info) async {
+    final version = '${info['version'] ?? ''}';
+    final date = '${info['release_date'] ?? ''}'.trim();
+    final changelog = '${info['changelog'] ?? ''}'.trim();
+    final lines = changelog
+        .split(RegExp(r'\r?\n'))
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .toList();
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: const Color(0xFF0F172A),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              const Icon(Icons.terminal, color: Color(0xFF4ADE80), size: 20),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text('ShopUp · Registro de cambios',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontFamily: 'monospace')),
+              ),
+              IconButton(
+                tooltip: 'Cerrar',
+                onPressed: () => Navigator.pop(ctx),
+                icon: const Icon(Icons.close, color: Colors.white70, size: 18),
+              ),
+            ]),
+            const Divider(color: Color(0xFF334155)),
+            Text('v$version${date.isNotEmpty ? '  ·  $date' : ''}',
+                style: const TextStyle(
+                    color: Color(0xFF93C5FD),
+                    fontSize: 12,
+                    fontFamily: 'monospace')),
+            const SizedBox(height: 10),
+            const Text('NOVEDADES',
+                style: TextStyle(
+                    color: Color(0xFF4ADE80),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    fontFamily: 'monospace')),
+            const SizedBox(height: 8),
+            if (lines.isEmpty)
+              const Text('Esta versión incluye mejoras y correcciones.',
+                  style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 13,
+                      fontFamily: 'monospace'))
+            else
+              ...List.generate(lines.length, (index) => Padding(
+                    padding: const EdgeInsets.only(bottom: 5),
+                    child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(
+                            width: 24,
+                            child: Text('${index + 1}',
+                                style: const TextStyle(
+                                    color: Color(0xFF64748B),
+                                    fontSize: 12,
+                                    fontFamily: 'monospace')),
+                          ),
+                          const Text('› ',
+                              style: TextStyle(
+                                  color: Color(0xFF4ADE80),
+                                  fontFamily: 'monospace')),
+                          Expanded(
+                            child: Text(lines[index],
+                                style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 13,
+                                    height: 1.4,
+                                    fontFamily: 'monospace')),
+                          ),
+                        ]),
+                  )),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Entendido'),
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
 }

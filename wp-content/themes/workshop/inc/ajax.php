@@ -122,7 +122,7 @@ add_action( 'admin_init', function () {
  */
 function ws_app_caps() {
     return array(
-        'products_view', 'products_create', 'products_edit',
+        'products_view', 'products_create', 'products_edit', 'products_delete',
         'locations_view', 'locations_manage',
         'stock_view', 'stock_entry', 'stock_exit', 'stock_writeoff', 'stock_transfer',
         'stock_count_view',
@@ -213,6 +213,7 @@ function ws_mobile_me_payload() {
         'account_email_verified' => (int) ws_email_verified_at( $user_id ) > 0,
         'business_active'   => $biz ? (int) ( $biz->active ?? 1 ) : 1,
         'name'         => wp_get_current_user()->display_name,
+        'username'     => wp_get_current_user()->user_login,
         'email'        => wp_get_current_user()->user_email,
         'role'         => $role,
         'roleLabel'    => ws_role_label( $role ),
@@ -434,8 +435,13 @@ function ws_ajax_mobile_login() {
     if ( $need ) {
         $sent = ws_send_verification_code( $u->user_email );
         if ( is_wp_error( $sent ) ) {
+            if ( function_exists( 'ws_log_audit' ) ) {
+                ws_log_audit( 'mobile_login_challenge_email_failed', 'user', $u->ID, array(
+                    'error_code' => sanitize_key( $sent->get_error_code() ),
+                ) );
+            }
             // No revelar ni invalidar la contraseña: dejar reintentar.
-            wp_send_json_error( array( 'msg' => __( 'No se pudo enviar el código de verificación. Inténtalo de nuevo en unos minutos.', 'workshop' ) ) );
+            wp_send_json_error( array( 'msg' => $sent->get_error_message() ) );
         }
         ws_log_audit( 'mobile_login_challenge', 'user', $u->ID );
         // Modo «Siempre» con trabajador: avisa al DUEÑO del negocio con el
@@ -2750,6 +2756,7 @@ function ws_ajax_movements_list() {
                 'reference'       => $m->reference,
                 'note'            => (string) ( $m->note ?? '' ),
                 'user_name'       => $m->user_name,
+                'created_at'      => $m->created_at,
                 'date'            => mysql2date( 'd/m/Y H:i', $m->created_at ),
                 // Revertir: los movimientos de tipo conocido y no revertidos
                 // (los 'revert' y los ya revertidos no se pueden volver a

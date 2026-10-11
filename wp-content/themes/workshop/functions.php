@@ -39,6 +39,7 @@ require_once WS_PATH . 'inc/router.php';
 require_once WS_PATH . 'inc/login.php';
 require_once WS_PATH . 'inc/login-verify.php';
 require_once WS_PATH . 'inc/ajax.php';
+require_once WS_PATH . 'inc/mobile-account.php';
 require_once WS_PATH . 'inc/reports.php';
 require_once WS_PATH . 'inc/notifications.php';
 require_once WS_PATH . 'inc/announcements.php';
@@ -62,6 +63,7 @@ require_once WS_PATH . 'inc/admin.php';
 require_once WS_PATH . 'inc/admin-users.php';
 require_once WS_PATH . 'inc/admin-plans.php';
 require_once WS_PATH . 'inc/app.php';
+require_once WS_PATH . 'inc/support.php';
 
 // Flush rewrite rules on theme activation
 add_action( 'after_switch_theme', 'ws_flush_rewrite_rules' );

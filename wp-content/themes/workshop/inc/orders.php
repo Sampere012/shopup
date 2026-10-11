@@ -267,6 +267,13 @@ class WS_Orders {
         if ( ! $order ) {
             return new WP_Error( 'not_found', __( 'Pedido no encontrado.', 'workshop' ) );
         }
+        // Idempotencia: si el pedido YA fue aceptado (p.ej. la primera
+        // petición procesó el servidor pero la app encoló por timeout),
+        // devolvemos éxito sin descontar stock otra vez. Así la cola
+        // offline no queda bloqueada con "El pedido ya fue procesado".
+        if ( 'accepted' === $order->status ) {
+            return true;
+        }
         if ( 'pending' !== $order->status ) {
             return new WP_Error( 'status', __( 'El pedido ya fue procesado.', 'workshop' ) );
         }
@@ -304,7 +311,14 @@ class WS_Orders {
     public static function reject( $order_id ) {
         global $wpdb;
         $order = self::get( $order_id );
-        if ( ! $order || 'pending' !== $order->status ) {
+        if ( ! $order ) {
+            return new WP_Error( 'not_found', __( 'Pedido no encontrado.', 'workshop' ) );
+        }
+        // Idempotencia: rechazo repetido = éxito sin cambios.
+        if ( 'rejected' === $order->status ) {
+            return true;
+        }
+        if ( 'pending' !== $order->status ) {
             return new WP_Error( 'status', __( 'El pedido ya fue procesado.', 'workshop' ) );
         }
         $wpdb->update( self::table( 'orders' ), array( 'status' => 'rejected' ), array( 'id' => $order_id ) );
@@ -318,6 +332,10 @@ class WS_Orders {
         if ( ! $order ) {
             return new WP_Error( 'not_found', __( 'Pedido no encontrado.', 'workshop' ) );
         }
+        // Idempotencia: completado repetido = éxito sin cambios.
+        if ( 'completed' === $order->status ) {
+            return true;
+        }
         $wpdb->update( self::table( 'orders' ), array( 'status' => 'completed' ), array( 'id' => $order_id ) );
         ws_log_audit( 'order_complete', 'order', $order_id, array( 'number' => $order->number ) );
         return true;
@@ -328,6 +346,10 @@ class WS_Orders {
         $order = self::get( $order_id );
         if ( ! $order ) {
             return new WP_Error( 'not_found', __( 'Pedido no encontrado.', 'workshop' ) );
+        }
+        // Idempotencia: cancelación repetida = éxito sin cambios.
+        if ( 'cancelled' === $order->status ) {
+            return true;
         }
         $wpdb->update( self::table( 'orders' ), array( 'status' => 'cancelled' ), array( 'id' => $order_id ) );
         ws_log_audit( 'order_cancel', 'order', $order_id, array( 'number' => $order->number ) );

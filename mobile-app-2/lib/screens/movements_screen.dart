@@ -21,6 +21,10 @@ class _MovementsScreenState extends State<MovementsScreen> {
   String _q = '';
   String _typeFilter = 'all';
   String _locationFilter = 'all';
+  // Desplegable de fechas: 'all' = todas; si no, clave 'yyyy-MM-dd'.
+  String _dateFilter = 'all';
+  // Fechas abiertas en los acordeones del historial agrupado.
+  final Set<String> _openDates = {};
   bool _sortNewest = true;
   bool _busy = false;
   late Future<List<Map<String, dynamic>>> _future;
@@ -102,6 +106,13 @@ class _MovementsScreenState extends State<MovementsScreen> {
           }
           final sortedTypes = types.toList()..sort();
           final sortedLocations = locations.toList()..sort();
+          // Fechas distintas presentes (para el desplegable), sin duplicados.
+          final dates = <String>{};
+          for (final r in rows) {
+            final k = _dateKey(r);
+            if (k.isNotEmpty) dates.add(k);
+          }
+          final sortedDates = dates.toList()..sort((a, b) => b.compareTo(a));
 
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -146,6 +157,32 @@ class _MovementsScreenState extends State<MovementsScreen> {
                           _reload();
                         }),
                     ],
+                  ),
+                ),
+
+              // Desplegable de fechas (agrupación por día del historial)
+              if (dates.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 6, 14, 0),
+                  child: DropdownButtonFormField<String>(
+                    value: _dateFilter,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Fecha',
+                      isDense: true,
+                      prefixIcon: Icon(Icons.calendar_today, size: 16),
+                    ),
+                    items: [
+                      const DropdownMenuItem(
+                          value: 'all', child: Text('Todas las fechas')),
+                      for (final d in sortedDates)
+                        DropdownMenuItem(
+                            value: d, child: Text(_fmtDay(d))),
+                    ],
+                    onChanged: (v) {
+                      setState(() => _dateFilter = v ?? 'all');
+                      _reload();
+                    },
                   ),
                 ),
 
@@ -217,6 +254,9 @@ class _MovementsScreenState extends State<MovementsScreen> {
                     ref.contains(_q) || note.contains(_q) || user.contains(_q);
               }).toList();
             }
+            if (_dateFilter != 'all') {
+              rows = rows.where((r) => _dateKey(r) == _dateFilter).toList();
+            }
 
             // Sort
             rows.sort((a, b) {
@@ -237,7 +277,10 @@ class _MovementsScreenState extends State<MovementsScreen> {
                             : AppTheme.lightMuted),
                     const SizedBox(height: 8),
                     Text(
-                      _q.isNotEmpty || _typeFilter != 'all' || _locationFilter != 'all'
+                      _q.isNotEmpty ||
+                              _typeFilter != 'all' ||
+                              _locationFilter != 'all' ||
+                              _dateFilter != 'all'
                           ? 'Sin resultados para estos filtros'
                           : 'Sin movimientos.',
                       style: TextStyle(
@@ -247,6 +290,77 @@ class _MovementsScreenState extends State<MovementsScreen> {
                           fontSize: 14),
                     ),
                   ],
+                ),
+              );
+            }
+
+            if (_typeFilter == 'transferencia') {
+              final grouped = <String, List<Map<String, dynamic>>>{};
+              for (final row in rows) {
+                final day = _dateKey(row);
+                grouped.putIfAbsent(day.isEmpty ? 'sin-fecha' : day, () => [])
+                    .add(row);
+              }
+              final days = grouped.keys.toList()
+                ..sort((a, b) => _sortNewest
+                    ? b.compareTo(a)
+                    : a.compareTo(b));
+              return RefreshIndicator(
+                onRefresh: _refresh,
+                child: ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(14, 8, 14, 90),
+                  itemCount: days.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  itemBuilder: (context, index) {
+                    final day = days[index];
+                    final dayRows = grouped[day]!;
+                    return Card(
+                      clipBehavior: Clip.antiAlias,
+                      child: ExpansionTile(
+                        key: PageStorageKey<String>('transfer-$day'),
+                        initiallyExpanded: _openDates.contains(day),
+                        onExpansionChanged: (open) {
+                          setState(() {
+                            if (open) {
+                              _openDates.add(day);
+                            } else {
+                              _openDates.remove(day);
+                            }
+                          });
+                        },
+                        leading: const Icon(Icons.swap_horiz,
+                            color: AppTheme.primary),
+                        title: Text(
+                            day == 'sin-fecha' ? 'Fecha desconocida' : _fmtDay(day),
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w700)),
+                        subtitle: Text(
+                            '${dayRows.length} transferencia${dayRows.length == 1 ? '' : 's'}'),
+                        children: [
+                          for (final movement in dayRows)
+                            ListTile(
+                              leading: const Icon(Icons.inventory_2_outlined,
+                                  size: 18),
+                              title: Text(
+                                  '${movement['product_name'] ?? movement['combo_name'] ?? 'Movimiento'}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis),
+                              subtitle: Text(
+                                '${movement['location_name'] ?? '—'} → ${movement['dest_name'] ?? movement['to_name'] ?? '—'}' +
+                                    '${movement['created_at'] != null ? ' · ${U.fmtDate(movement['created_at'])}' : ''}',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              trailing: U.badge(
+                                  '${movement['qty'] ?? 0}',
+                                  color: AppTheme.primary,
+                                  small: true),
+                              onTap: () => _openDetail(movement),
+                            ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
               );
             }
@@ -511,5 +625,31 @@ class _MovementsScreenState extends State<MovementsScreen> {
     if (type.contains('transfer')) return Icons.swap_horiz;
     if (type.contains('baja')) return Icons.delete_outline;
     return Icons.receipt_long_outlined;
+  }
+
+  String _dateKey(Map<String, dynamic> row) {
+    final raw = '${row['created_at'] ?? row['date'] ?? ''}'.trim();
+    final parsed = DateTime.tryParse(raw);
+    if (parsed != null) {
+      return '${parsed.year.toString().padLeft(4, '0')}-'
+          '${parsed.month.toString().padLeft(2, '0')}-'
+          '${parsed.day.toString().padLeft(2, '0')}';
+    }
+    final match =
+        RegExp(r'^(\d{1,2})/(\d{1,2})/(\d{4})').firstMatch(raw);
+    if (match == null) return '';
+    final day = int.parse(match.group(1)!);
+    final month = int.parse(match.group(2)!);
+    final year = int.parse(match.group(3)!);
+    if (day < 1 || day > 31 || month < 1 || month > 12) return '';
+    return '${year.toString().padLeft(4, '0')}-'
+        '${month.toString().padLeft(2, '0')}-'
+        '${day.toString().padLeft(2, '0')}';
+  }
+
+  String _fmtDay(String key) {
+    final parts = key.split('-');
+    if (parts.length != 3) return key;
+    return '${parts[2]}/${parts[1]}/${parts[0]}';
   }
 }

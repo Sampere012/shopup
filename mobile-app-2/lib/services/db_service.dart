@@ -83,7 +83,14 @@ class DbService {
     final n = DateTime.now().microsecondsSinceEpoch;
     await d.insert('pending', {
       'id': 'op_$n',
-      'data': jsonEncode({'action': action, 'data': data, 'created_at': n}),
+      'data': jsonEncode({
+        'action': action,
+        'data': data,
+        'created_at': n,
+        'updated_at': n,
+        'status': 'pending',
+        'attempts': 0,
+      }),
     });
     return n;
   }
@@ -101,6 +108,36 @@ class DbService {
   Future<void> removePending(Object id) async {
     final d = await db;
     await d.delete('pending', where: 'id = ?', whereArgs: ['$id']);
+  }
+
+  Future<void> updatePending(
+    Object id, {
+    required String status,
+    String? error,
+    bool incrementAttempts = false,
+  }) async {
+    final d = await db;
+    final rows =
+        await d.query('pending', where: 'id = ?', whereArgs: ['$id'], limit: 1);
+    if (rows.isEmpty) return;
+    final operation =
+        jsonDecode(rows.first['data'] as String) as Map<String, dynamic>;
+    operation['status'] = status;
+    operation['updated_at'] = DateTime.now().microsecondsSinceEpoch;
+    if (incrementAttempts) {
+      operation['attempts'] = ((operation['attempts'] as num?) ?? 0) + 1;
+    }
+    if (error == null || error.isEmpty) {
+      operation.remove('error');
+    } else {
+      operation['error'] = error;
+    }
+    await d.update(
+      'pending',
+      {'data': jsonEncode(operation)},
+      where: 'id = ?',
+      whereArgs: ['$id'],
+    );
   }
 
   Future<int> pendingCount() async {

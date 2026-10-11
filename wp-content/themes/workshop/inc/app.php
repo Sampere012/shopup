@@ -18,7 +18,11 @@ defined( 'ABSPATH' ) || exit;
  * Versión del build móvil actual (la sube sync:web / se edita en wp-admin).
  * Es el valor por defecto del ajuste; el administrador lo cambia al publicar.
  */
-define( 'WS_APP_VERSION', '0.6.1' );
+define( 'WS_APP_VERSION', '0.6.2' );
+define( 'WS_APP_RELEASE_DATE', '2026-10-10' );
+define( 'WS_APP_CHANGELOG', 'Mejoras en la sincronización offline y los reintentos.
+Gestión de productos, categorías e inventario más fiable.
+Acceso a soporte y cambio de contraseña desde la app.' );
 
 /**
  * Descarga del APK desde el repo público de GitHub (raw).
@@ -37,6 +41,13 @@ function ws_app_settings_defaults() {
 		'apk_url'   => '',
 		'version'   => WS_APP_VERSION,
 		'changelog' => '',
+		'release_date' => '',
+		'support_links' => array(
+			'whatsapp' => '',
+			'telegram' => '',
+			'facebook' => '',
+			'other'    => '',
+		),
 	);
 }
 
@@ -46,7 +57,12 @@ function ws_app_settings() {
 	if ( ! is_array( $saved ) ) {
 		$saved = array();
 	}
-	return wp_parse_args( $saved, $def );
+	$settings = wp_parse_args( $saved, $def );
+	$settings['support_links'] = wp_parse_args(
+		is_array( $saved['support_links'] ?? null ) ? $saved['support_links'] : array(),
+		$def['support_links']
+	);
+	return $settings;
 }
 
 /**
@@ -93,11 +109,20 @@ function ws_app_version_info() {
 	$version      = ( '' === $savedVersion || version_compare( $savedVersion, WS_APP_VERSION, '<' ) )
 		? WS_APP_VERSION
 		: $savedVersion;
+	$theme_release = '' === $savedVersion || version_compare( $savedVersion, WS_APP_VERSION, '<' );
+	$changelog     = trim( (string) ( $s['changelog'] ?? '' ) );
+	$release_date  = trim( (string) ( $s['release_date'] ?? '' ) );
+	if ( $theme_release ) {
+		$changelog    = WS_APP_CHANGELOG;
+		$release_date = WS_APP_RELEASE_DATE;
+	}
 	return array(
 		'version'     => $version,
 		'apk_url'     => ws_app_apk_url(),
 		'release_url' => WS_APP_RELEASE_PAGE,
-		'changelog'   => trim( (string) ( $s['changelog'] ?? '' ) ),
+		'changelog'   => $changelog,
+		'release_date' => $release_date,
+		'support_links' => $s['support_links'],
 		'has_apk'     => ws_app_has_download(),
 		'pwa_version' => defined( 'WS_VERSION' ) ? WS_VERSION : '',
 	);
@@ -137,16 +162,32 @@ function ws_admin_page_app() {
 
 	$saved = false;
 	if ( isset( $_POST['ws_app_nonce'] ) && wp_verify_nonce( $_POST['ws_app_nonce'], 'ws_save_app' ) ) {
+		$previous = ws_app_settings();
 		$apk_url = esc_url_raw( (string) ( $_POST['apk_url'] ?? '' ) );
 		if ( '' === trim( $apk_url ) ) {
 			// Ruta por defecto: GitHub Releases (repo público del negocio).
 			$apk_url = WS_APP_RELEASE_URL;
 		}
+		$version = sanitize_text_field( (string) ( $_POST['version'] ?? WS_APP_VERSION ) );
+		$release_date = sanitize_text_field( (string) ( $_POST['release_date'] ?? '' ) );
+		if ( '' === $release_date ) {
+			$release_date = $version !== (string) $previous['version']
+				? current_time( 'Y-m-d' )
+				: (string) ( $previous['release_date'] ?? '' );
+		}
+		$support_links = array(
+			'whatsapp' => esc_url_raw( (string) ( $_POST['support_whatsapp'] ?? '' ) ),
+			'telegram' => esc_url_raw( (string) ( $_POST['support_telegram'] ?? '' ) ),
+			'facebook' => esc_url_raw( (string) ( $_POST['support_facebook'] ?? '' ) ),
+			'other'    => esc_url_raw( (string) ( $_POST['support_other'] ?? '' ) ),
+		);
 		update_option( 'ws_app_download', array(
 			'enabled'   => ! empty( $_POST['enabled'] ) ? 1 : 0,
 			'apk_url'   => $apk_url,
-			'version'   => sanitize_text_field( (string) ( $_POST['version'] ?? WS_APP_VERSION ) ),
+			'version'   => $version,
 			'changelog' => sanitize_textarea_field( (string) ( $_POST['changelog'] ?? '' ) ),
+			'release_date' => $release_date,
+			'support_links' => $support_links,
 		) );
 		if ( function_exists( 'ws_log_audit' ) ) {
 			ws_log_audit( 'app_settings_update', 'settings', 0, array( 'apk_url' => $apk_url ) );
@@ -159,7 +200,7 @@ function ws_admin_page_app() {
 	<div class="wrap">
 		<h1><span class="dashicons dashicons-smartphone" style="vertical-align:middle"></span> <?php esc_html_e( 'App móvil', 'workshop' ); ?></h1>
 		<p class="description">
-			<?php esc_html_e( 'La aplicación móvil del panel (ShopUp Panel) se compila con Cordova. Configura aquí la descarga del APK y la versión disponible: el botón del pie, el asistente y la propia app usan estos datos para saber si hay una actualización.', 'workshop' ); ?>
+			<?php esc_html_e( 'La aplicación móvil del panel (ShopUp Panel) está desarrollada con Flutter. Configura aquí la descarga, la versión, las novedades y los enlaces de soporte.', 'workshop' ); ?>
 		</p>
 
 		<?php if ( $saved ) : ?>
@@ -202,6 +243,13 @@ function ws_admin_page_app() {
 						</td>
 					</tr>
 					<tr>
+						<th scope="row"><label for="ws-app-release-date"><?php esc_html_e( 'Fecha de publicación', 'workshop' ); ?></label></th>
+						<td>
+							<input type="date" id="ws-app-release-date" name="release_date" value="<?php echo esc_attr( $s['release_date'] ); ?>">
+							<p class="description"><?php esc_html_e( 'Si cambias la versión y dejas la fecha vacía, se asignará la fecha de hoy.', 'workshop' ); ?></p>
+						</td>
+					</tr>
+					<tr>
 						<th scope="row"><label for="ws-app-changelog"><?php esc_html_e( 'Novedades (changelog)', 'workshop' ); ?></label></th>
 						<td>
 							<textarea id="ws-app-changelog" name="changelog" class="large-text" rows="4" placeholder="<?php esc_attr_e( 'Ej.: Nuevas imágenes por producto, botón de actualizaciones, caché de imágenes…', 'workshop' ); ?>"><?php echo esc_textarea( $s['changelog'] ); ?></textarea>
@@ -210,16 +258,31 @@ function ws_admin_page_app() {
 					</tr>
 				</table>
 			</div>
+			<div class="ws-mp-admin-group">
+				<h2><span class="dashicons dashicons-format-chat" style="margin-right:6px"></span><?php esc_html_e( 'Contactos de soporte', 'workshop' ); ?></h2>
+				<table class="form-table" role="presentation">
+					<?php foreach ( array(
+						'whatsapp' => __( 'WhatsApp', 'workshop' ),
+						'telegram' => __( 'Telegram', 'workshop' ),
+						'facebook' => __( 'Facebook', 'workshop' ),
+						'other'    => __( 'Otro enlace', 'workshop' ),
+					) as $key => $label ) : ?>
+						<tr>
+							<th scope="row"><label for="ws-support-<?php echo esc_attr( $key ); ?>"><?php echo esc_html( $label ); ?></label></th>
+							<td><input type="url" id="ws-support-<?php echo esc_attr( $key ); ?>" name="support_<?php echo esc_attr( $key ); ?>" class="regular-text" value="<?php echo esc_attr( $s['support_links'][ $key ] ); ?>" placeholder="https://"></td>
+						</tr>
+					<?php endforeach; ?>
+				</table>
+			</div>
 			<?php submit_button( __( 'Guardar app', 'workshop' ) ); ?>
 		</form>
 
 		<hr>
 		<p>
-			<strong><?php esc_html_e( 'Cómo se compila el APK:', 'workshop' ); ?></strong>
-			<code>cd mobile-app && npm install && npm run build:android</code>
+			<strong><?php esc_html_e( 'Cómo compilar el APK:', 'workshop' ); ?></strong>
+			<code>cd mobile-app-2 && flutter build apk --release</code>
 			<?php esc_html_e( 'El archivo queda en', 'workshop' ); ?>
-			<code>platforms/android/app/build/outputs/apk/</code>
-			<?php esc_html_e( 'y se copia a la carpeta /app/ del servidor.', 'workshop' ); ?>
+			<code>build/app/outputs/flutter-apk/app-release.apk</code>.
 		</p>
 	</div>
 	<style>

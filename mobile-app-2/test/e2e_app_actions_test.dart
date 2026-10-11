@@ -30,12 +30,15 @@ const _timeout = Duration(seconds: 45);
 
 String _sessionToken = '';
 
-String get _base => (Platform.environment['WS_E2E_BASE'] ?? 'http://localhost/workshop')
-    .replaceAll(RegExp(r'/+$'), '');
+String get _base =>
+    (Platform.environment['WS_E2E_BASE'] ?? 'http://localhost/workshop')
+        .replaceAll(RegExp(r'/+$'), '');
 String get _user => Platform.environment['WS_E2E_USER'] ?? 'ws_e2e_app';
 String get _pass => Platform.environment['WS_E2E_PASS'] ?? 'E2eApp!2026';
-String get _php => Platform.environment['WS_E2E_PHP'] ?? r'C:\xampp\php\php.exe';
-String get _workdir => Platform.environment['WS_E2E_WORKDIR'] ?? r'C:\xampp\htdocs\workshop';
+String get _php =>
+    Platform.environment['WS_E2E_PHP'] ?? r'C:\xampp\php\php.exe';
+String get _workdir =>
+    Platform.environment['WS_E2E_WORKDIR'] ?? r'C:\xampp\htdocs\workshop';
 
 Uri get _endpoint => Uri.parse('$_base/wp-admin/admin-ajax.php');
 
@@ -48,14 +51,20 @@ Map<String, String> _body(String action, Map<String, dynamic> data) {
   return b;
 }
 
-Future<http.Response> _http(String action, Map<String, dynamic> data,
-    {String? token, bool raw = false, Duration? timeout}) {
+Future<http.Response> _http(
+  String action,
+  Map<String, dynamic> data, {
+  String? token,
+  bool raw = false,
+  Duration? timeout,
+}) {
   final headers = {
     'X-WS-Token': token ?? _sessionToken,
     'X-Requested-With': 'XMLHttpRequest',
     'Accept': raw ? 'application/pdf' : 'application/json',
   };
-  return http.post(_endpoint, headers: headers, body: _body(action, data))
+  return http
+      .post(_endpoint, headers: headers, body: _body(action, data))
       .timeout(timeout ?? _timeout);
 }
 
@@ -69,11 +78,17 @@ Map<String, dynamic>? _tryJson(List<int> bytes) {
 }
 
 /// Respuesta completa de WordPress ya decodificada.
-Future<Map<String, dynamic>> _postRaw(String action, Map<String, dynamic> data,
-    {String? token}) async {
+Future<Map<String, dynamic>> _postRaw(
+  String action,
+  Map<String, dynamic> data, {
+  String? token,
+}) async {
   final res = await _http(action, data, token: token);
-  expect(res.statusCode, 200,
-      reason: '$action HTTP ${res.statusCode}: ${res.body}');
+  expect(
+    res.statusCode,
+    200,
+    reason: '$action HTTP ${res.statusCode}: ${res.body}',
+  );
   final d = _tryJson(res.bodyBytes);
   expect(d, isNotNull, reason: '$action devolvió JSON inválido: ${res.body}');
   return d!.cast<String, dynamic>();
@@ -82,8 +97,11 @@ Future<Map<String, dynamic>> _postRaw(String action, Map<String, dynamic> data,
 /// `success: true` con `data` obligatoriamente Map (shape de la mayoría).
 /// Algunos handlers devuelven data => { data => {...} } (doble wrap): se
 /// deshace si el Map exterior contiene una clave `data` que también es Map.
-Future<Map<String, dynamic>> _postOk(String action, Map<String, dynamic> data,
-    {String? token}) async {
+Future<Map<String, dynamic>> _postOk(
+  String action,
+  Map<String, dynamic> data, {
+  String? token,
+}) async {
   final r = await _postOkAny(action, data, token: token);
   final d = r['data'];
   expect(d, isA<Map<String, dynamic>>(), reason: '$action: data debe ser Map');
@@ -95,8 +113,11 @@ Future<Map<String, dynamic>> _postOk(String action, Map<String, dynamic> data,
 }
 
 /// `success: true`, devuelve el JSON completo (data puede ser cualquier cosa).
-Future<Map<String, dynamic>> _postOkAny(String action, Map<String, dynamic> data,
-    {String? token}) async {
+Future<Map<String, dynamic>> _postOkAny(
+  String action,
+  Map<String, dynamic> data, {
+  String? token,
+}) async {
   final r = await _postRaw(action, data, token: token);
   final ok = r['success'] == true || r['success'] == 1;
   if (!ok) {
@@ -106,15 +127,22 @@ Future<Map<String, dynamic>> _postOkAny(String action, Map<String, dynamic> data
 }
 
 /// `success: false` con mensaje; devuelve el mensaje exacto.
-Future<String> _postErrMsg(String action, Map<String, dynamic> data,
-    {String? token}) async {
+Future<String> _postErrMsg(
+  String action,
+  Map<String, dynamic> data, {
+  String? token,
+}) async {
   final r = await _postRaw(action, data, token: token);
   final ok = r['success'] == true || r['success'] == 1;
   if (ok) {
     fail('$action debió fallar, pero success=true: ${r['data']}');
   }
   final msg = r['data'];
-  expect(msg, isA<Map<String, dynamic>>(), reason: '$action: data de error debe ser Map');
+  expect(
+    msg,
+    isA<Map<String, dynamic>>(),
+    reason: '$action: data de error debe ser Map',
+  );
   final m = (msg as Map)['msg'];
   expect(m, isA<String>(), reason: '$action: error sin msg: $msg');
   return m as String;
@@ -126,9 +154,16 @@ List<Map<String, dynamic>> _asList(dynamic d) =>
 double _num(dynamic v) => (v as num).toDouble();
 
 Future<void> _phpCli(List<String> args) async {
-  final res = await Process.run(_php, args, workingDirectory: _workdir).timeout(_timeout);
-  expect(res.exitCode, 0,
-      reason: 'php ${args.join(' ')}: ${res.stdout} ${res.stderr}');
+  final res = await Process.run(
+    _php,
+    args,
+    workingDirectory: _workdir,
+  ).timeout(_timeout);
+  expect(
+    res.exitCode,
+    0,
+    reason: 'php ${args.join(' ')}: ${res.stdout} ${res.stderr}',
+  );
 }
 
 void main() {
@@ -152,7 +187,10 @@ void main() {
     // "unverified" para que los logins de la suite no pidan código.
     await _phpCli(['ws-test-seed.php', 'seed']);
     await _phpCli(['ws-test-seed.php', 'challenge-mode', 'unverified']);
-    final r = await _postRaw('ws_mobile_login', {'ws_user': _user, 'ws_pass': _pass});
+    final r = await _postRaw('ws_mobile_login', {
+      'ws_user': _user,
+      'ws_pass': _pass,
+    });
     expect(r['success'], isTrue, reason: 'login falló: ${r['data']}');
     final data = _asMap(r['data']);
     token = data['token'] as String;
@@ -198,50 +236,89 @@ void main() {
       expect((s['hash'] as String).length, 32);
     });
 
-    test('ws_plan_info expone estado del plan, planes activos y features', () async {
-      final d = await _postOk('ws_plan_info', {});
-      for (final k in
-          ['status', 'status_label', 'is_trial', 'is_active', 'usage', 'limits', 'plans', 'plan_features']) {
-        expect(d.containsKey(k), isTrue, reason: 'plan_info sin $k');
-      }
-      expect(d['plans'], isA<List>());
-      expect(d['plan_features'], isA<List>());
-
-      final plans = _asList(d['plans']);
-      expect(plans, isNotEmpty, reason: 'ws_plan_info no lista ningún plan');
-      for (final p in plans) {
-        for (final k in ['id', 'name', 'slug', 'price_text', 'duration_label', 'limits', 'features']) {
-          expect(p.containsKey(k), isTrue, reason: 'plan sin $k: $p');
+    test(
+      'ws_plan_info expone estado del plan, planes activos y features',
+      () async {
+        final d = await _postOk('ws_plan_info', {});
+        for (final k in [
+          'status',
+          'status_label',
+          'is_trial',
+          'is_active',
+          'usage',
+          'limits',
+          'plans',
+          'plan_features',
+        ]) {
+          expect(d.containsKey(k), isTrue, reason: 'plan_info sin $k');
         }
-        // El plan legacy interno NUNCA se muestra en la app (como la web).
-        expect(p['slug'], isNot('legacy'), reason: 'plan legacy expuesto en plan_info');
+        expect(d['plans'], isA<List>());
+        expect(d['plan_features'], isA<List>());
 
-        // Cada plan trae sus features: 5 límites (0 = ilimitado → ∞) + chatbot.
-        final feats = _asList(p['features']);
-        expect(feats.length, 6, reason: 'features de ${p['name']} != 6: $feats');
-        expect(feats.map((f) => f['key']).toList(),
-            containsAll(['products', 'users', 'pvs', 'warehouses', 'suppliers']));
-        expect(feats.last['key'], 'chatbot');
-        for (final f in feats) {
+        final plans = _asList(d['plans']);
+        expect(plans, isNotEmpty, reason: 'ws_plan_info no lista ningún plan');
+        for (final p in plans) {
+          for (final k in [
+            'id',
+            'name',
+            'slug',
+            'price_text',
+            'duration_label',
+            'limits',
+            'features',
+          ]) {
+            expect(p.containsKey(k), isTrue, reason: 'plan sin $k: $p');
+          }
+          // El plan legacy interno NUNCA se muestra en la app (como la web).
+          expect(
+            p['slug'],
+            isNot('legacy'),
+            reason: 'plan legacy expuesto en plan_info',
+          );
+
+          // Cada plan trae sus features: 5 límites (0 = ilimitado → ∞) + chatbot.
+          final feats = _asList(p['features']);
+          expect(
+            feats.length,
+            6,
+            reason: 'features de ${p['name']} != 6: $feats',
+          );
+          expect(
+            feats.map((f) => f['key']).toList(),
+            containsAll([
+              'products',
+              'users',
+              'pvs',
+              'warehouses',
+              'suppliers',
+            ]),
+          );
+          expect(feats.last['key'], 'chatbot');
+          for (final f in feats) {
+            for (final k in ['key', 'label', 'value', 'text']) {
+              expect(f.containsKey(k), isTrue, reason: 'feature sin $k: $f');
+            }
+            if (f['key'] != 'chatbot' && (f['value'] as num).toInt() == 0) {
+              expect(f['text'], '\u221e', reason: 'límite ilimitado sin ∞: $f');
+            }
+          }
+        }
+
+        // Features del plan ACTUAL, mismo formato que las de cada plan.
+        final cur = _asList(d['plan_features']);
+        expect(cur, isNotEmpty, reason: 'plan_info sin plan_features');
+        expect(cur.any((f) => f['key'] == 'chatbot'), isTrue);
+        for (final f in cur) {
           for (final k in ['key', 'label', 'value', 'text']) {
-            expect(f.containsKey(k), isTrue, reason: 'feature sin $k: $f');
-          }
-          if (f['key'] != 'chatbot' && (f['value'] as num).toInt() == 0) {
-            expect(f['text'], '\u221e', reason: 'límite ilimitado sin ∞: $f');
+            expect(
+              f.containsKey(k),
+              isTrue,
+              reason: 'plan_features sin $k: $f',
+            );
           }
         }
-      }
-
-      // Features del plan ACTUAL, mismo formato que las de cada plan.
-      final cur = _asList(d['plan_features']);
-      expect(cur, isNotEmpty, reason: 'plan_info sin plan_features');
-      expect(cur.any((f) => f['key'] == 'chatbot'), isTrue);
-      for (final f in cur) {
-        for (final k in ['key', 'label', 'value', 'text']) {
-          expect(f.containsKey(k), isTrue, reason: 'plan_features sin $k: $f');
-        }
-      }
-    });
+      },
+    );
 
     test('settings_get → save_settings idempotente → mismos valores', () async {
       final d = await _postOk('ws_settings_get', {});
@@ -251,7 +328,11 @@ void main() {
       final rates = _asMap(d['rates']);
       final methods = d['payment_methods'] as List;
       for (final m in methods) {
-        expect(m, isA<String>(), reason: 'payment_methods debe ser List<String>');
+        expect(
+          m,
+          isA<String>(),
+          reason: 'payment_methods debe ser List<String>',
+        );
       }
       await _postOkAny('ws_save_settings', {
         'currency': d['currency'],
@@ -267,23 +348,38 @@ void main() {
     });
 
     test('save_account idempotente (mismos datos) confirma guardado', () async {
-      final d = await _postOkAny('ws_save_account',
-          {'id': ownerId, 'display_name': me['name'], 'email': me['email']});
+      final d = await _postOkAny('ws_save_account', {
+        'id': ownerId,
+        'display_name': me['name'],
+        'email': me['email'],
+      });
       expect(_asMap(d['data'])['msg'], isNotEmpty);
     });
 
     test('change_password: rutas de error nunca cambian la clave', () async {
       final base = {'id': ownerId};
-      var msg = await _postErrMsg('ws_change_password',
-          {...base, 'current': 'clave-incorrecta', 'new': '12345678', 'confirm': '12345678'});
+      var msg = await _postErrMsg('ws_change_password', {
+        ...base,
+        'current': 'clave-incorrecta',
+        'new': '12345678',
+        'confirm': '12345678',
+      });
       expect(msg, 'La contraseña actual no es correcta.');
 
-      msg = await _postErrMsg('ws_change_password',
-          {...base, 'current': _pass, 'new': '123', 'confirm': '123'});
+      msg = await _postErrMsg('ws_change_password', {
+        ...base,
+        'current': _pass,
+        'new': '123',
+        'confirm': '123',
+      });
       expect(msg, 'La nueva contraseña debe tener al menos 8 caracteres.');
 
-      msg = await _postErrMsg('ws_change_password',
-          {...base, 'current': _pass, 'new': '12345678', 'confirm': '87654321'});
+      msg = await _postErrMsg('ws_change_password', {
+        ...base,
+        'current': _pass,
+        'new': '12345678',
+        'confirm': '87654321',
+      });
       expect(msg, 'Las contraseñas no coinciden.');
     });
 
@@ -320,13 +416,16 @@ void main() {
       expect(again['primary'], d['primary']);
     });
 
-    test('notificaciones: listar, marcar todas y borrar vacío (no-op)', () async {
-      final d = await _postOk('ws_notifications_list', {});
-      expect(d['items'], isA<List>());
-      expect(d['unread'], isA<num>());
-      await _postOkAny('ws_notifications_read', {'all': '1'});
-      await _postOkAny('ws_notifications_delete', {'ids': <int>[]});
-    });
+    test(
+      'notificaciones: listar, marcar todas y borrar vacío (no-op)',
+      () async {
+        final d = await _postOk('ws_notifications_list', {});
+        expect(d['items'], isA<List>());
+        expect(d['unread'], isA<num>());
+        await _postOkAny('ws_notifications_read', {'all': '1'});
+        await _postOkAny('ws_notifications_delete', {'ids': <int>[]});
+      },
+    );
 
     test('cachés: products, customers y locations', () async {
       final p = await _postOkAny('ws_cache_products', {'location_id': locA});
@@ -339,70 +438,98 @@ void main() {
   });
 
   group('Productos y combos (CRUD real)', () {
-    test('producto: crear → listar → toggle → editar (borrado al final)', () async {
-      tempProductName = 'E2E Producto $ts';
-      final created = await _postOk('ws_save_product', {
-        'name': tempProductName,
-        'sale_price': 10,
-        'cost_price': 5,
-        'currency': '€',
-        'active': 1,
-      });
-      tempProductId = (created['id'] as num).toInt();
-      expect(tempProductId, greaterThan(0));
+    test(
+      'producto: crear → listar → toggle → editar (borrado al final)',
+      () async {
+        tempProductName = 'E2E Producto $ts';
+        final created = await _postOk('ws_save_product', {
+          'name': tempProductName,
+          'sale_price': 10,
+          'cost_price': 5,
+          'currency': '€',
+          'active': 1,
+        });
+        tempProductId = (created['id'] as num).toInt();
+        expect(tempProductId, greaterThan(0));
 
-      final list = await _postOk('ws_products_list', {'search': tempProductName});
-      final found = _asList(list['products']).firstWhere((p) => (p['id'] as num).toInt() == tempProductId);
-      expect(found['name'], tempProductName);
+        final list = await _postOk('ws_products_list', {
+          'search': tempProductName,
+        });
+        final found = _asList(
+          list['products'],
+        ).firstWhere((p) => (p['id'] as num).toInt() == tempProductId);
+        expect(found['name'], tempProductName);
 
-      final toggled = await _postOk('ws_product_toggle', {'id': tempProductId, 'active': 0});
-      expect(toggled['active'], 0);
+        final toggled = await _postOk('ws_product_toggle', {
+          'id': tempProductId,
+          'active': 0,
+        });
+        expect(toggled['active'], 0);
 
-      final upd = await _postOk('ws_save_product', {
-        'id': tempProductId,
-        'name': '$tempProductName 2',
-        'sale_price': 12.5,
-        'cost_price': 5,
-        'currency': '€',
-        'active': 1,
-      });
-      expect((upd['id'] as num).toInt(), tempProductId);
+        final upd = await _postOk('ws_save_product', {
+          'id': tempProductId,
+          'name': '$tempProductName 2',
+          'sale_price': 12.5,
+          'cost_price': 5,
+          'currency': '€',
+          'active': 1,
+        });
+        expect((upd['id'] as num).toInt(), tempProductId);
 
-      final pget = await _postOk('ws_products_list', {'search': tempProductName});
-      final row = _asList(pget['products']).firstWhere((p) => (p['id'] as num).toInt() == tempProductId);
-      expect(row['name'], '$tempProductName 2');
-    });
+        final pget = await _postOk('ws_products_list', {
+          'search': tempProductName,
+        });
+        final row = _asList(
+          pget['products'],
+        ).firstWhere((p) => (p['id'] as num).toInt() == tempProductId);
+        expect(row['name'], '$tempProductName 2');
+      },
+    );
 
     test('producto: toggle de un id inexistente da error controlado', () async {
-      final msg = await _postErrMsg('ws_product_toggle', {'id': 999999, 'active': 1});
+      final msg = await _postErrMsg('ws_product_toggle', {
+        'id': 999999,
+        'active': 1,
+      });
       expect(msg, 'Producto no encontrado.');
     });
 
-    test('combo: crear con producto temporal → listar (borrado al final)', () async {
-      expect(tempProductId, isNotNull);
-      final created = await _postOk('ws_combo_save', {
-        'name': 'E2E Combo $ts',
-        'price_mode': 'manual',
-        'price': 15,
-        'currency': '€',
-        'active': 1,
-        'items': [
-          {'product_id': tempProductId, 'qty': 1},
-        ],
-      });
-      comboId = (created['id'] as num).toInt();
-      expect(comboId, greaterThan(0));
+    test(
+      'combo: crear con producto temporal → listar (borrado al final)',
+      () async {
+        expect(tempProductId, isNotNull);
+        final created = await _postOk('ws_combo_save', {
+          'name': 'E2E Combo $ts',
+          'price_mode': 'manual',
+          'price': 15,
+          'currency': '€',
+          'active': 1,
+          'items': [
+            {'product_id': tempProductId, 'qty': 1},
+          ],
+        });
+        comboId = (created['id'] as num).toInt();
+        expect(comboId, greaterThan(0));
 
-      final list = await _postOk('ws_combos_list', {'search': 'E2E Combo $ts'});
-      final found = _asList(list['combos']).firstWhere((c) => (c['id'] as num).toInt() == comboId);
-      expect(found['item_count'], greaterThanOrEqualTo(1));
-      expect(found['items'], isA<List>());
-    });
+        final list = await _postOk('ws_combos_list', {
+          'search': 'E2E Combo $ts',
+        });
+        final found = _asList(
+          list['combos'],
+        ).firstWhere((c) => (c['id'] as num).toInt() == comboId);
+        expect(found['item_count'], greaterThanOrEqualTo(1));
+        expect(found['items'], isA<List>());
+      },
+    );
   });
 
   group('Stock: movimientos, transferencias y cuadre real', () {
     test('stock_list: shape normal, low_only e include_combos', () async {
-      for (final opt in [<String, dynamic>{}, {'low_only': '1'}, {'include_combos': '1'}]) {
+      for (final opt in [
+        <String, dynamic>{},
+        {'low_only': '1'},
+        {'include_combos': '1'},
+      ]) {
         final d = await _postOk('ws_stock_list', {...opt, 'location_id': locA});
         expect(d['rows'], isA<List>());
         expect(d['total'], isA<num>());
@@ -418,20 +545,33 @@ void main() {
 
     test('entrada real de stock por producto', () async {
       expect(tempProductId, isNotNull);
-      final moved = await _postOk('ws_stock_move',
-          {'type': 'entrada', 'product_id': tempProductId, 'location_id': locA, 'qty': 5, 'reference': ref('entrada'), 'note': 'e2e'},
-          token: token);
+      final moved = await _postOk('ws_stock_move', {
+        'type': 'entrada',
+        'product_id': tempProductId,
+        'location_id': locA,
+        'qty': 5,
+        'reference': ref('entrada'),
+        'note': 'e2e',
+      }, token: token);
       expect(moved['qty'], 5);
 
-      final list = await _postOk('ws_stock_list', {'location_id': locA, 'search': tempProductName});
-      final row = _asList(list['rows']).firstWhere((r) => (r['product_id'] as num).toInt() == tempProductId);
+      final list = await _postOk('ws_stock_list', {
+        'location_id': locA,
+        'search': tempProductName,
+      });
+      final row = _asList(
+        list['rows'],
+      ).firstWhere((r) => (r['product_id'] as num).toInt() == tempProductId);
       expect(_num(row['qty']), greaterThanOrEqualTo(5));
 
       // products_get es el catálogo del POS: SOLO productos con stock.
       // Sus filas usan 'id' como clave del producto (no 'product_id').
-      final pg = await _postOkAny('ws_products_get', {'search': tempProductName});
-      final prow = _asList(_asMap(pg['data'])['data'])
-          .firstWhere((r) => (r['id'] as num).toInt() == tempProductId);
+      final pg = await _postOkAny('ws_products_get', {
+        'search': tempProductName,
+      });
+      final prow = _asList(
+        _asMap(pg['data'])['data'],
+      ).firstWhere((r) => (r['id'] as num).toInt() == tempProductId);
       expect(prow['name'], '$tempProductName 2');
     });
 
@@ -440,38 +580,64 @@ void main() {
       if (!hasLocB) {
         return; // Sin segunda ubicación no hay transferencia que probar.
       }
-      await _postOkAny('ws_stock_transfer',
-          {'product_id': tempProductId, 'from_location': locA, 'to_location': locB, 'qty': 2, 'note': ref('transferencia')});
+      await _postOkAny('ws_stock_transfer', {
+        'product_id': tempProductId,
+        'from_location': locA,
+        'to_location': locB,
+        'qty': 2,
+        'note': ref('transferencia'),
+      });
 
-      final inB = await _postOk('ws_stock_list', {'location_id': locB, 'search': tempProductName});
-      final rowB = _asList(inB['rows']).firstWhere((r) => (r['product_id'] as num).toInt() == tempProductId);
+      final inB = await _postOk('ws_stock_list', {
+        'location_id': locB,
+        'search': tempProductName,
+      });
+      final rowB = _asList(
+        inB['rows'],
+      ).firstWhere((r) => (r['product_id'] as num).toInt() == tempProductId);
       expect(_num(rowB['qty']), greaterThanOrEqualTo(2));
 
-      final inA = await _postOk('ws_stock_list', {'location_id': locA, 'search': tempProductName});
-      final rowA = _asList(inA['rows']).firstWhere((r) => (r['product_id'] as num).toInt() == tempProductId);
+      final inA = await _postOk('ws_stock_list', {
+        'location_id': locA,
+        'search': tempProductName,
+      });
+      final rowA = _asList(
+        inA['rows'],
+      ).firstWhere((r) => (r['product_id'] as num).toInt() == tempProductId);
       expect(_num(rowA['qty']), greaterThanOrEqualTo(3));
     });
 
     test('movement_add, batch_move y revert reales por reference', () async {
       expect(tempProductId, isNotNull);
       final addMarker = ref('manual');
-      final m = await _postOk('ws_movement_add',
-          {'direction': 'entrada', 'type': 'entrada', 'product_id': tempProductId, 'location_id': locA, 'qty': 1, 'reference': addMarker});
+      final m = await _postOk('ws_movement_add', {
+        'direction': 'entrada',
+        'type': 'entrada',
+        'product_id': tempProductId,
+        'location_id': locA,
+        'qty': 1,
+        'reference': addMarker,
+      });
       // ws_movement_add devuelve el STOCK resultante (no el qty del movimiento).
       expect(_num(m['qty']), greaterThanOrEqualTo(1));
 
       final batchMarker = ref('batch');
-      final b = await _postOk('ws_stock_batch_move',
-          {'type': 'entrada', 'direction': 'entrada', 'location_id': locA,
-           'items': [
-             {'product_id': tempProductId, 'qty': 1},
-           ],
-           'reference': batchMarker});
+      final b = await _postOk('ws_stock_batch_move', {
+        'type': 'entrada',
+        'direction': 'entrada',
+        'location_id': locA,
+        'items': [
+          {'product_id': tempProductId, 'qty': 1},
+        ],
+        'reference': batchMarker,
+      });
       expect(b['count'], greaterThanOrEqualTo(1));
 
       for (final marker in [addMarker, batchMarker]) {
         final list = await _postOk('ws_movements_list', {'search': marker});
-        final rows = _asList(list['movements']).where((mm) => (mm['reference'] ?? '') == marker).toList();
+        final rows = _asList(
+          list['movements'],
+        ).where((mm) => (mm['reference'] ?? '') == marker).toList();
         expect(rows, isNotEmpty, reason: 'movimiento con $marker no aparece');
         final mid = (rows.first['id'] as num).toInt();
         final rev = await _postOk('ws_movement_revert', {'id': mid});
@@ -479,14 +645,24 @@ void main() {
         // Tras revertir, el movimiento sigue visible pero marcado como
         // revertido y sin posibilidad de revertir otra vez.
         final after = await _postOk('ws_movements_list', {'search': marker});
-        final still = _asList(after['movements'])
-            .where((mm) => (mm['id'] as num).toInt() == mid)
-            .toList();
-        expect(still, isNotEmpty, reason: 'movimiento $mid debió seguir visible');
-        expect(still.first['reverted'], isTrue,
-            reason: 'movimiento $mid debió marcarse como revertido');
-        expect(still.first['revertable'], isFalse,
-            reason: 'movimiento $mid ya no debe ser revertible');
+        final still = _asList(
+          after['movements'],
+        ).where((mm) => (mm['id'] as num).toInt() == mid).toList();
+        expect(
+          still,
+          isNotEmpty,
+          reason: 'movimiento $mid debió seguir visible',
+        );
+        expect(
+          still.first['reverted'],
+          isTrue,
+          reason: 'movimiento $mid debió marcarse como revertido',
+        );
+        expect(
+          still.first['revertable'],
+          isFalse,
+          reason: 'movimiento $mid ya no debe ser revertible',
+        );
       }
     });
 
@@ -495,59 +671,104 @@ void main() {
       expect(msg, 'Movimiento no encontrado.');
     });
 
-    test('stock_count_virtual + stock_count_save real (cuadre + limpieza)', () async {
-      expect(tempProductId, isNotNull);
-      final virt = await _postOkAny('ws_stock_count_virtual', {'location_id': locA});
-      expect(_asList(_asMap(virt['data'])['data']), isNotEmpty);
+    test(
+      'stock_count_virtual + stock_count_save real (cuadre + limpieza)',
+      () async {
+        expect(tempProductId, isNotNull);
+        final virt = await _postOkAny('ws_stock_count_virtual', {
+          'location_id': locA,
+        });
+        expect(_asList(_asMap(virt['data'])['data']), isNotEmpty);
 
-      final saved = await _postOk('ws_stock_count_save',
-          {'location_id': locA, 'note': ref('cuadre'), 'items': [
-             {'product_id': tempProductId, 'physical': 4},
-           ]});
-      final countId = (saved['id'] as num).toInt();
-      expect(countId, greaterThan(0));
-      expect(saved.containsKey('summary'), isTrue,
-          reason: 'el cuadre debe exponer su resumen');
-      try {
-        final list = await _postOkAny('ws_stock_counts_list', {'location_id': locA, 'limit': 500});
-        final rows = _asList(_asMap(list['data'])['data']);
-        expect(rows.any((r) => (r['id'] as num).toInt() == countId), isTrue);
-      } finally {
-        await _phpCli(['ws-e2e-helper.php', 'cleanup-count', '$countId']);
-      }
-    });
+        final saved = await _postOk('ws_stock_count_save', {
+          'location_id': locA,
+          'note': ref('cuadre'),
+          'items': [
+            {'product_id': tempProductId, 'physical': 4},
+          ],
+        });
+        final countId = (saved['id'] as num).toInt();
+        expect(countId, greaterThan(0));
+        expect(
+          saved.containsKey('summary'),
+          isTrue,
+          reason: 'el cuadre debe exponer su resumen',
+        );
+        try {
+          final list = await _postOkAny('ws_stock_counts_list', {
+            'location_id': locA,
+            'limit': 500,
+          });
+          final rows = _asList(_asMap(list['data'])['data']);
+          expect(rows.any((r) => (r['id'] as num).toInt() == countId), isTrue);
+        } finally {
+          await _phpCli(['ws-e2e-helper.php', 'cleanup-count', '$countId']);
+        }
+      },
+    );
 
     test('stock_count_save: sin items → error controlado', () async {
-      final msg = await _postErrMsg('ws_stock_count_save', {'location_id': locA, 'items': <dynamic>[]});
+      final msg = await _postErrMsg('ws_stock_count_save', {
+        'location_id': locA,
+        'items': <dynamic>[],
+      });
       expect(msg, 'No hay productos para cuadrar.');
     });
 
-    test('stock_catalog_pdf devuelve binario PDF y rechaza ubicación inválida', () async {
-      // La generación del PDF tarda ~12s en frío y más bajo carga de la matriz.
-      const pdfTimeout = Duration(seconds: 120);
-      final ok = await _http('ws_stock_catalog_pdf', {'location_id': locA},
-          token: token, raw: true, timeout: pdfTimeout);
-      expect(ok.statusCode, 200);
-      expect(ok.headers['content-type'], contains('application/pdf'));
-      expect(ok.bodyBytes.length, greaterThan(100), reason: 'catálogo demasiado corto');
-      expect(ok.bodyBytes.take(1).first, isNot('{'.codeUnitAt(0)), reason: 'respuesta JSON en vez de PDF');
+    test(
+      'stock_catalog_pdf devuelve binario PDF y rechaza ubicación inválida',
+      () async {
+        // La generación del PDF tarda ~12s en frío y más bajo carga de la matriz.
+        const pdfTimeout = Duration(seconds: 120);
+        final ok = await _http(
+          'ws_stock_catalog_pdf',
+          {'location_id': locA},
+          token: token,
+          raw: true,
+          timeout: pdfTimeout,
+        );
+        expect(ok.statusCode, 200);
+        expect(ok.headers['content-type'], contains('application/pdf'));
+        expect(
+          ok.bodyBytes.length,
+          greaterThan(100),
+          reason: 'catálogo demasiado corto',
+        );
+        expect(
+          ok.bodyBytes.take(1).first,
+          isNot('{'.codeUnitAt(0)),
+          reason: 'respuesta JSON en vez de PDF',
+        );
 
-      final bad = await _http('ws_stock_catalog_pdf', {'location_id': 999999}, token: token, raw: true);
-      final jsonBad = _tryJson(bad.bodyBytes);
-      if (jsonBad != null) {
-        expect(jsonBad['success'], isFalse);
-        final data = _asMap(jsonBad['data']);
-        expect((data['msg'] as String), isNotEmpty);
-      } else {
-        expect(bad.statusCode, 500, reason: 'ubicación inválida dio PDF: ${bad.bodyBytes}');
-      }
-    });
+        final bad = await _http(
+          'ws_stock_catalog_pdf',
+          {'location_id': 999999},
+          token: token,
+          raw: true,
+        );
+        final jsonBad = _tryJson(bad.bodyBytes);
+        if (jsonBad != null) {
+          expect(jsonBad['success'], isFalse);
+          final data = _asMap(jsonBad['data']);
+          expect((data['msg'] as String), isNotEmpty);
+        } else {
+          expect(
+            bad.statusCode,
+            500,
+            reason: 'ubicación inválida dio PDF: ${bad.bodyBytes}',
+          );
+        }
+      },
+    );
   });
 
   group('Pedidos (flujo real + errores)', () {
     test('order_list mantiene shape paginado e incluye los ítems', () async {
-      final d = await _postOk('ws_order_list',
-          {'date_from': '2000-01-01', 'date_to': '2099-12-31', 'pageSize': 200});
+      final d = await _postOk('ws_order_list', {
+        'date_from': '2000-01-01',
+        'date_to': '2099-12-31',
+        'pageSize': 200,
+      });
       expect(d['orders'], isA<List>());
       expect(d['total'], isA<num>());
       expect(d.containsKey('page'), isTrue);
@@ -559,8 +780,11 @@ void main() {
           expect(o.containsKey(k), isTrue, reason: 'order_list sin $k: $o');
         }
         expect(o['items'], isA<List>());
-        expect((o['items_count'] as num).toInt(),
-            (o['items'] as List).length, reason: 'items_count != items.length');
+        expect(
+          (o['items_count'] as num).toInt(),
+          (o['items'] as List).length,
+          reason: 'items_count != items.length',
+        );
         expect(o['items_text'], isA<String>());
         for (final it in (o['items'] as List)) {
           final m = _asMap(it);
@@ -594,15 +818,23 @@ void main() {
 
         // El MISMO pedido aparece en el listado con sus ítems resueltos.
         final today = DateTime.now();
-        final ymd = '${today.year}-'
+        final ymd =
+            '${today.year}-'
             '${today.month.toString().padLeft(2, '0')}-'
             '${today.day.toString().padLeft(2, '0')}';
-        final lst = await _postOk(
-            'ws_order_list', {'date_from': ymd, 'date_to': ymd, 'pageSize': 200});
-        final rows = _asList(lst['orders'])
-            .where((o) => (o['id'] as num).toInt() == id)
-            .toList();
-        expect(rows, isNotEmpty, reason: 'el pedido nuevo no está en order_list');
+        final lst = await _postOk('ws_order_list', {
+          'date_from': ymd,
+          'date_to': ymd,
+          'pageSize': 200,
+        });
+        final rows = _asList(
+          lst['orders'],
+        ).where((o) => (o['id'] as num).toInt() == id).toList();
+        expect(
+          rows,
+          isNotEmpty,
+          reason: 'el pedido nuevo no está en order_list',
+        );
         final r0 = rows.first;
         expect((r0['items_count'] as num).toInt(), 1);
         expect((r0['items'] as List), isNotEmpty);
@@ -679,16 +911,27 @@ void main() {
 
     test('cliente: crear → buscar → borrar; nombre obligatorio', () async {
       final name = 'E2E Cliente CRM $ts';
-      final saved = await _postOk('ws_customers_save', {'name': name, 'phone': '+34444444444', 'doc': 'E2E-DOC-$ts'});
+      final saved = await _postOk('ws_customers_save', {
+        'name': name,
+        'phone': '+34444444444',
+        'doc': 'E2E-DOC-$ts',
+      });
       final id = (saved['id'] as num).toInt();
       expect(id, greaterThan(0));
       try {
         final list = await _postOkAny('ws_customers_get', {'search': name});
-        final matches = _asList(_asMap(list['data'])['data']).where((c) => (c['id'] as num).toInt() == id).toList();
+        final matches = _asList(
+          _asMap(list['data'])['data'],
+        ).where((c) => (c['id'] as num).toInt() == id).toList();
         expect(matches, isNotEmpty);
         await _postOkAny('ws_customers_delete', {'id': id});
         final after = await _postOkAny('ws_customers_get', {'search': name});
-        expect(_asList(_asMap(after['data'])['data']).where((c) => (c['id'] as num).toInt() == id), isEmpty);
+        expect(
+          _asList(
+            _asMap(after['data'])['data'],
+          ).where((c) => (c['id'] as num).toInt() == id),
+          isEmpty,
+        );
       } finally {
         await _postOkAny('ws_customers_delete', {'id': id});
       }
@@ -698,117 +941,180 @@ void main() {
 
     test('gastos: lista → crear → borrar (crud real)', () async {
       final now = DateTime.now();
-      final list = await _postOk('ws_expenses_list',
-          {'year': now.year, 'month': now.month});
+      final list = await _postOk('ws_expenses_list', {
+        'year': now.year,
+        'month': now.month,
+      });
       expect(list['expenses'], isA<List>());
       expect(list['summary'], isA<Map<String, dynamic>>());
 
-      final created = await _postOk('ws_expense_save',
-          {'concept': 'E2E Gasto $ts', 'amount': 9.99, 'category': 'Test', 'note': 'e2e'});
+      final created = await _postOk('ws_expense_save', {
+        'concept': 'E2E Gasto $ts',
+        'amount': 9.99,
+        'category': 'Test',
+        'note': 'e2e',
+      });
       final id = (created['id'] as num).toInt();
       expect(id, greaterThan(0));
       try {
-        final list2 = await _postOk('ws_expenses_list',
-            {'year': now.year, 'month': now.month});
-        expect(_asList(list2['expenses']).any((e) => (e['id'] as num).toInt() == id), isTrue);
+        final list2 = await _postOk('ws_expenses_list', {
+          'year': now.year,
+          'month': now.month,
+        });
+        expect(
+          _asList(list2['expenses']).any((e) => (e['id'] as num).toInt() == id),
+          isTrue,
+        );
         final msg = await _postErrMsg('ws_expense_save', {});
         expect(msg, 'El concepto del gasto es obligatorio.');
       } finally {
         await _postOkAny('ws_expense_delete', {'id': id});
       }
-      final after = await _postOk('ws_expenses_list', {'year': now.year, 'month': now.month});
-      expect(_asList(after['expenses']).any((e) => (e['id'] as num).toInt() == id), isFalse);
-    });
-
-    test('gastos: la FECHA decide el mes, ubicación y edición (como la web)', () async {
-      final concept = 'E2E Gasto Mes $ts';
-      final y = DateTime.now().year;
-      const d1 = '-03-15', d2 = '-06-10';
-      final date1 = '$y$d1';
-      final date2 = '$y$d2';
-
-      final created = await _postOk('ws_expense_save', {
-        'concept': concept,
-        'amount': 12.5,
-        'category': 'Test',
-        'note': 'e2e mes',
-        'expense_date': date1,
-        'location_id': locA,
+      final after = await _postOk('ws_expenses_list', {
+        'year': now.year,
+        'month': now.month,
       });
-      final id = (created['id'] as num).toInt();
-      expect(id, greaterThan(0));
-      try {
-        // Vive SOLO en el mes de su fecha (marzo)…
-        final inM1 = await _postOk('ws_expenses_list', {'year': y, 'month': 3});
-        final row = _asList(inM1['expenses'])
-            .where((e) => (e['id'] as num).toInt() == id)
-            .toList();
-        expect(row, isNotEmpty, reason: 'el gasto no aparece en el mes de su fecha');
-        expect(row.first['date_raw'], date1);
-        expect((row.first['location_id'] as num).toInt(), locA);
-        expect('${row.first['category']}', 'Test');
-        expect('${row.first['note']}', 'e2e mes');
-
-        // …nunca en otro mes…
-        final inOther = await _postOk('ws_expenses_list', {'year': y, 'month': 6});
-        expect(
-            _asList(inOther['expenses']).any((e) => (e['id'] as num).toInt() == id),
-            isFalse,
-            reason: 'no debe aparecer en un mes distinto al de su fecha');
-
-        // …pero sí en el listado COMPLETO que usa la app para la caché.
-        final all = await _postOk('ws_expenses_list', {'year': 0, 'month': 0});
-        expect(_asList(all['expenses']).any((e) => (e['id'] as num).toInt() == id),
-            isTrue,
-            reason: 'year=0 / month=0 debe devolver todos los gastos');
-
-        // Editar con otra fecha → el gasto se MUEVE de mes.
-        final edited = await _postOk('ws_expense_save', {
-          'id': id,
-          'concept': concept,
-          'amount': 25.5,
-          'category': 'Test',
-          'note': 'editado',
-          'expense_date': date2,
-          'location_id': 0,
-        });
-        expect((edited['id'] as num).toInt(), id);
-
-        final m1After = await _postOk('ws_expenses_list', {'year': y, 'month': 3});
-        expect(
-            _asList(m1After['expenses']).any((e) => (e['id'] as num).toInt() == id),
-            isFalse,
-            reason: 'al cambiar la fecha debe salirse del mes anterior');
-
-        final m2After = await _postOk('ws_expenses_list', {'year': y, 'month': 6});
-        final moved = _asList(m2After['expenses'])
-            .firstWhere((e) => (e['id'] as num).toInt() == id);
-        expect(moved['date_raw'], date2);
-        expect(_num(moved['amount']), 25.5);
-        expect((moved['location_id'] as num).toInt(), 0, reason: 'General = 0');
-        expect('${moved['note']}', 'editado');
-
-        // Validaciones que la app aplica igual (mensajes del backend).
-        final noAmount =
-            await _postErrMsg('ws_expense_save', {'concept': 'x', 'amount': 0});
-        expect(noAmount, 'El monto del gasto debe ser mayor que 0.');
-        final badDate = await _postErrMsg('ws_expense_save',
-            {'concept': 'x', 'amount': 1, 'expense_date': 'no-es-fecha'});
-        expect(badDate, 'La fecha del gasto no es válida.');
-        final badLoc = await _postErrMsg('ws_expense_save', {
-          'concept': 'x',
-          'amount': 1,
-          'expense_date': date2,
-          'location_id': 999999,
-        });
-        expect(badLoc, 'La ubicación elegida no es válida.');
-      } finally {
-        await _postOkAny('ws_expense_delete', {'id': id});
-      }
-      final after = await _postOk('ws_expenses_list', {'year': 0, 'month': 0});
-      expect(_asList(after['expenses']).any((e) => (e['id'] as num).toInt() == id),
-          isFalse, reason: 'el gasto no se eliminó');
+      expect(
+        _asList(after['expenses']).any((e) => (e['id'] as num).toInt() == id),
+        isFalse,
+      );
     });
+
+    test(
+      'gastos: la FECHA decide el mes, ubicación y edición (como la web)',
+      () async {
+        final concept = 'E2E Gasto Mes $ts';
+        final y = DateTime.now().year;
+        const d1 = '-03-15', d2 = '-06-10';
+        final date1 = '$y$d1';
+        final date2 = '$y$d2';
+
+        final created = await _postOk('ws_expense_save', {
+          'concept': concept,
+          'amount': 12.5,
+          'category': 'Test',
+          'note': 'e2e mes',
+          'expense_date': date1,
+          'location_id': locA,
+        });
+        final id = (created['id'] as num).toInt();
+        expect(id, greaterThan(0));
+        try {
+          // Vive SOLO en el mes de su fecha (marzo)…
+          final inM1 = await _postOk('ws_expenses_list', {
+            'year': y,
+            'month': 3,
+          });
+          final row = _asList(
+            inM1['expenses'],
+          ).where((e) => (e['id'] as num).toInt() == id).toList();
+          expect(
+            row,
+            isNotEmpty,
+            reason: 'el gasto no aparece en el mes de su fecha',
+          );
+          expect(row.first['date_raw'], date1);
+          expect((row.first['location_id'] as num).toInt(), locA);
+          expect('${row.first['category']}', 'Test');
+          expect('${row.first['note']}', 'e2e mes');
+
+          // …nunca en otro mes…
+          final inOther = await _postOk('ws_expenses_list', {
+            'year': y,
+            'month': 6,
+          });
+          expect(
+            _asList(
+              inOther['expenses'],
+            ).any((e) => (e['id'] as num).toInt() == id),
+            isFalse,
+            reason: 'no debe aparecer en un mes distinto al de su fecha',
+          );
+
+          // …pero sí en el listado COMPLETO que usa la app para la caché.
+          final all = await _postOk('ws_expenses_list', {
+            'year': 0,
+            'month': 0,
+          });
+          expect(
+            _asList(all['expenses']).any((e) => (e['id'] as num).toInt() == id),
+            isTrue,
+            reason: 'year=0 / month=0 debe devolver todos los gastos',
+          );
+
+          // Editar con otra fecha → el gasto se MUEVE de mes.
+          final edited = await _postOk('ws_expense_save', {
+            'id': id,
+            'concept': concept,
+            'amount': 25.5,
+            'category': 'Test',
+            'note': 'editado',
+            'expense_date': date2,
+            'location_id': 0,
+          });
+          expect((edited['id'] as num).toInt(), id);
+
+          final m1After = await _postOk('ws_expenses_list', {
+            'year': y,
+            'month': 3,
+          });
+          expect(
+            _asList(
+              m1After['expenses'],
+            ).any((e) => (e['id'] as num).toInt() == id),
+            isFalse,
+            reason: 'al cambiar la fecha debe salirse del mes anterior',
+          );
+
+          final m2After = await _postOk('ws_expenses_list', {
+            'year': y,
+            'month': 6,
+          });
+          final moved = _asList(
+            m2After['expenses'],
+          ).firstWhere((e) => (e['id'] as num).toInt() == id);
+          expect(moved['date_raw'], date2);
+          expect(_num(moved['amount']), 25.5);
+          expect(
+            (moved['location_id'] as num).toInt(),
+            0,
+            reason: 'General = 0',
+          );
+          expect('${moved['note']}', 'editado');
+
+          // Validaciones que la app aplica igual (mensajes del backend).
+          final noAmount = await _postErrMsg('ws_expense_save', {
+            'concept': 'x',
+            'amount': 0,
+          });
+          expect(noAmount, 'El monto del gasto debe ser mayor que 0.');
+          final badDate = await _postErrMsg('ws_expense_save', {
+            'concept': 'x',
+            'amount': 1,
+            'expense_date': 'no-es-fecha',
+          });
+          expect(badDate, 'La fecha del gasto no es válida.');
+          final badLoc = await _postErrMsg('ws_expense_save', {
+            'concept': 'x',
+            'amount': 1,
+            'expense_date': date2,
+            'location_id': 999999,
+          });
+          expect(badLoc, 'La ubicación elegida no es válida.');
+        } finally {
+          await _postOkAny('ws_expense_delete', {'id': id});
+        }
+        final after = await _postOk('ws_expenses_list', {
+          'year': 0,
+          'month': 0,
+        });
+        expect(
+          _asList(after['expenses']).any((e) => (e['id'] as num).toInt() == id),
+          isFalse,
+          reason: 'el gasto no se eliminó',
+        );
+      },
+    );
 
     test('fidelización: rama según cap de negocio', () async {
       final loyaltyOn = me['caps'] is Map<String, dynamic>
@@ -825,7 +1131,11 @@ void main() {
       } else {
         for (final a in ['ws_loyalty_customers', 'ws_loyalty_stats']) {
           final r = await _postRaw(a, {});
-          expect(r['success'], isFalse, reason: '$a sin cap loyalty_manage debió rechazarse');
+          expect(
+            r['success'],
+            isFalse,
+            reason: '$a sin cap loyalty_manage debió rechazarse',
+          );
         }
       }
     });
@@ -853,19 +1163,27 @@ void main() {
       var cash = st['cash'];
       if (cash is Map && cash['id'] is num) {
         final openId = (cash['id'] as num).toInt();
-        await _postOkAny('ws_pos_cash_close',
-            {'location_id': locA, 'closing_amount': 0, 'note': 'e2e reset'});
+        await _postOkAny('ws_pos_cash_close', {
+          'location_id': locA,
+          'closing_amount': 0,
+          'note': 'e2e reset',
+        });
         cash = null;
         expect(openId, greaterThan(0));
       }
 
-      final opened = await _postOk('ws_pos_cash_open',
-          {'location_id': locA, 'opening_amount': 100, 'note': ref('caja')});
+      final opened = await _postOk('ws_pos_cash_open', {
+        'location_id': locA,
+        'opening_amount': 100,
+        'note': ref('caja'),
+      });
       final registerId = (opened['id'] as num).toInt();
       expect(registerId, greaterThan(0));
       expect(opened['opening_amount'], 100);
 
-      final afterOpen = await _postOk('ws_pos_cash_status', {'location_id': locA});
+      final afterOpen = await _postOk('ws_pos_cash_status', {
+        'location_id': locA,
+      });
       expect(afterOpen['open'], isTrue);
       expect(_asMap(afterOpen['cash'])['id'], registerId);
 
@@ -881,19 +1199,31 @@ void main() {
       expect(_asMap(cdata['cuadre'])['count'], greaterThanOrEqualTo(1));
       closedRegisterId = registerId;
 
-      final afterClose = await _postOk('ws_pos_cash_status', {'location_id': locA});
+      final afterClose = await _postOk('ws_pos_cash_status', {
+        'location_id': locA,
+      });
       expect(afterClose['open'], isFalse);
     });
 
     test('historial de caja y cuadre del cierre reciente', () async {
       expect(closedRegisterId, isNotNull);
-      final hist = await _postOkAny('ws_pos_cash_history', {'location_id': locA});
+      final hist = await _postOkAny('ws_pos_cash_history', {
+        'location_id': locA,
+      });
       final rows = _asList(_asMap(hist['data'])['data']);
-      final mine = rows.where((r) => (r['id'] as num).toInt() == closedRegisterId).toList();
-      expect(mine, isNotEmpty, reason: 'el cierre E2E no aparece en el historial');
+      final mine = rows
+          .where((r) => (r['id'] as num).toInt() == closedRegisterId)
+          .toList();
+      expect(
+        mine,
+        isNotEmpty,
+        reason: 'el cierre E2E no aparece en el historial',
+      );
       expect(mine.first['status'], 'closed');
 
-      final counts = await _postOk('ws_pos_cash_counts_get', {'register_id': closedRegisterId});
+      final counts = await _postOk('ws_pos_cash_counts_get', {
+        'register_id': closedRegisterId,
+      });
       expect(counts['register_id'], closedRegisterId);
       final items = counts['items'];
       expect(items, isA<List<Object?>>());
@@ -908,8 +1238,11 @@ void main() {
       // el caso (independiente del orden de los tests de caja).
       final st = await _postOk('ws_pos_cash_status', {'location_id': locA});
       if (st['open'] == true || st['open'] == 1) {
-        await _postOkAny('ws_pos_cash_close',
-            {'location_id': locA, 'closing_amount': 0, 'note': 'e2e pre-sale'});
+        await _postOkAny('ws_pos_cash_close', {
+          'location_id': locA,
+          'closing_amount': 0,
+          'note': 'e2e pre-sale',
+        });
       }
       final r = await _postRaw('ws_pos_sale_save', {
         'location_id': locA,
@@ -920,7 +1253,11 @@ void main() {
         'total': 0,
         'payment_method': 'cash',
       });
-      expect(r['success'], isFalse, reason: 'venta sin caja no debe completarse');
+      expect(
+        r['success'],
+        isFalse,
+        reason: 'venta sin caja no debe completarse',
+      );
       final data = _asMap(r['data']);
       expect((data['msg'] as String), isNotEmpty);
     });
@@ -951,44 +1288,63 @@ void main() {
     test('workers_list shape y update_worker round-trip del nombre', () async {
       final d = await _postOk('ws_workers_list', {'search': 'e2e'});
       expect(d['workers'], isA<List>());
-      final orig = _asList(d['workers'])
-          .firstWhere((w) => '${w['user_email']}'.contains('e2e.seller'));
+      final orig = _asList(
+        d['workers'],
+      ).firstWhere((w) => '${w['user_email']}'.contains('e2e.seller'));
       final sellerId = (orig['id'] as num).toInt();
       final origName = orig['display_name'] as String;
-      await _postOkAny('ws_update_worker',
-          {'user_id': sellerId, 'role': 'ws_seller', 'display_name': '$origName 2'});
+      await _postOkAny('ws_update_worker', {
+        'user_id': sellerId,
+        'role': 'ws_seller',
+        'display_name': '$origName 2',
+      });
       try {
         final again = await _postOk('ws_workers_list', {'search': 'e2e'});
-        final updated = _asList(again['workers'])
-            .firstWhere((w) => (w['id'] as num).toInt() == sellerId);
+        final updated = _asList(
+          again['workers'],
+        ).firstWhere((w) => (w['id'] as num).toInt() == sellerId);
         expect(updated['display_name'], '$origName 2');
       } finally {
-        await _postOkAny('ws_update_worker',
-            {'user_id': sellerId, 'role': 'ws_seller', 'display_name': origName});
+        await _postOkAny('ws_update_worker', {
+          'user_id': sellerId,
+          'role': 'ws_seller',
+          'display_name': origName,
+        });
       }
     });
 
     test('worker_set_disabled on/off del vendedor y session_close', () async {
       final d = await _postOk('ws_workers_list', {'search': 'e2e'});
-      final seller = _asList(d['workers'])
-          .firstWhere((w) => '${w['user_email']}'.contains('e2e.seller'));
+      final seller = _asList(
+        d['workers'],
+      ).firstWhere((w) => '${w['user_email']}'.contains('e2e.seller'));
       final sellerId = (seller['id'] as num).toInt();
       // La app envía 0/1 (el body NO convierte booleanos); PHP evalúa
-        // !empty('0') = false y !empty('1') = true.
-        await _postOkAny('ws_worker_set_disabled', {'user_id': sellerId, 'disabled': 1});
-        try {
-          final again = await _postOk('ws_workers_list', {'search': 'e2e'});
-          final disabled = _asList(again['workers'])
-              .firstWhere((w) => (w['id'] as num).toInt() == sellerId);
-          final isDisabled = disabled['is_disabled'] == true || disabled['is_disabled'] == 1;
-          expect(isDisabled, isTrue);
-        } finally {
-          await _postOkAny('ws_worker_set_disabled', {'user_id': sellerId, 'disabled': 0});
-        }
+      // !empty('0') = false y !empty('1') = true.
+      await _postOkAny('ws_worker_set_disabled', {
+        'user_id': sellerId,
+        'disabled': 1,
+      });
+      try {
+        final again = await _postOk('ws_workers_list', {'search': 'e2e'});
+        final disabled = _asList(
+          again['workers'],
+        ).firstWhere((w) => (w['id'] as num).toInt() == sellerId);
+        final isDisabled =
+            disabled['is_disabled'] == true || disabled['is_disabled'] == 1;
+        expect(isDisabled, isTrue);
+      } finally {
+        await _postOkAny('ws_worker_set_disabled', {
+          'user_id': sellerId,
+          'disabled': 0,
+        });
+      }
       final after = await _postOk('ws_workers_list', {'search': 'e2e'});
-      final enabled = _asList(after['workers'])
-          .firstWhere((w) => (w['id'] as num).toInt() == sellerId);
-      final isEnabled = enabled['is_disabled'] == false || enabled['is_disabled'] == 0;
+      final enabled = _asList(
+        after['workers'],
+      ).firstWhere((w) => (w['id'] as num).toInt() == sellerId);
+      final isEnabled =
+          enabled['is_disabled'] == false || enabled['is_disabled'] == 0;
       expect(isEnabled, isTrue);
 
       var msg = await _postErrMsg('ws_session_close', {'session_id': 0});
@@ -1015,11 +1371,18 @@ void main() {
       final newId = (created['id'] as num).toInt();
       expect(newId, greaterThan(0));
       final d = await _postOk('ws_workers_list', {'search': uname});
-      final found = _asList(d['workers']).where((w) => (w['id'] as num).toInt() == newId).toList();
+      final found = _asList(
+        d['workers'],
+      ).where((w) => (w['id'] as num).toInt() == newId).toList();
       expect(found, isNotEmpty);
       await _postOkAny('ws_delete_worker', {'user_id': newId});
       final after = await _postOk('ws_workers_list', {'search': uname});
-      expect(_asList(after['workers']).where((w) => (w['id'] as num).toInt() == newId), isEmpty);
+      expect(
+        _asList(
+          after['workers'],
+        ).where((w) => (w['id'] as num).toInt() == newId),
+        isEmpty,
+      );
     });
   });
 
@@ -1031,15 +1394,24 @@ void main() {
 
     test('anuncio: crear → toggle → borrar; título obligatorio', () async {
       final title = 'E2E Anuncio $ts';
-      final created = await _postOk('ws_announcement_save',
-          {'title': title, 'message': 'mensaje e2e', 'type': 'info', 'scope': 'business'});
+      final created = await _postOk('ws_announcement_save', {
+        'title': title,
+        'message': 'mensaje e2e',
+        'type': 'info',
+        'scope': 'business',
+      });
       expect(created['msg'], isNotEmpty);
       final list1 = _asList(created['list']);
       final ann = list1.firstWhere((a) => (a['title'] as String) == title);
       final id = (ann['id'] as num).toInt();
       await _postOk('ws_announcement_toggle', {'id': id, 'active': 0});
-      final list2 = _asList((await _postOk('ws_announcements_list', {}))['list']);
-      expect(list2.firstWhere((a) => (a['id'] as num).toInt() == id)['active'], 0);
+      final list2 = _asList(
+        (await _postOk('ws_announcements_list', {}))['list'],
+      );
+      expect(
+        list2.firstWhere((a) => (a['id'] as num).toInt() == id)['active'],
+        0,
+      );
       final del = await _postOk('ws_announcement_delete', {'id': id});
       final list3 = _asList(del['list']);
       expect(list3.where((a) => (a['id'] as num).toInt() == id), isEmpty);
@@ -1049,39 +1421,75 @@ void main() {
   });
 
   group('Cierre de sesión (último)', () {
-    test('ws_mobile_logout invalida el token y permite volver a entrar', () async {
-      final loggedOut = await _postOkAny('ws_mobile_logout', {});
-      expect(_asMap(loggedOut['data'])['loginUrl'], isNotEmpty);
+    test(
+      'ws_mobile_logout invalida el token y permite volver a entrar',
+      () async {
+        final loggedOut = await _postOkAny('ws_mobile_logout', {});
+        expect(_asMap(loggedOut['data'])['loginUrl'], isNotEmpty);
 
-      final meOld = await _postOkAny('ws_mobile_me', {}, token: token);
-      expect(_asMap(meOld['data'])['loggedIn'], isFalse,
-          reason: 'el token viejo no debe seguir válido');
+        final meOld = await _postOkAny('ws_mobile_me', {}, token: token);
+        expect(
+          _asMap(meOld['data'])['loggedIn'],
+          isFalse,
+          reason: 'el token viejo no debe seguir válido',
+        );
 
-      final relogin = await _postRaw('ws_mobile_login', {'ws_user': _user, 'ws_pass': _pass});
-      expect(relogin['success'], isTrue, reason: 're-login tras logout falló: ${relogin['data']}');
-      final newToken = (_asMap(relogin['data'])['token'] as String);
-      _sessionToken = newToken;
-      final meNew = await _postOkAny('ws_mobile_me', {}, token: newToken);
-      expect(_asMap(meNew['data'])['loggedIn'], isTrue);
-    });
+        final relogin = await _postRaw('ws_mobile_login', {
+          'ws_user': _user,
+          'ws_pass': _pass,
+        });
+        expect(
+          relogin['success'],
+          isTrue,
+          reason: 're-login tras logout falló: ${relogin['data']}',
+        );
+        final newToken = (_asMap(relogin['data'])['token'] as String);
+        _sessionToken = newToken;
+        final meNew = await _postOkAny('ws_mobile_me', {}, token: newToken);
+        expect(_asMap(meNew['data'])['loggedIn'], isTrue);
+      },
+    );
   });
 
   group('Limpieza final de datos E2E', () {
     test('borrar combo y producto temporales; verificar ausencia', () async {
       if (comboId != null) {
         await _postOkAny('ws_combo_delete', {'id': comboId});
-        final combos = await _postOk('ws_combos_list', {'search': 'E2E Combo $ts'});
-        expect(_asList(combos['combos']).where((c) => (c['id'] as num).toInt() == comboId), isEmpty);
+        final combos = await _postOk('ws_combos_list', {
+          'search': 'E2E Combo $ts',
+        });
+        expect(
+          _asList(
+            combos['combos'],
+          ).where((c) => (c['id'] as num).toInt() == comboId),
+          isEmpty,
+        );
       }
       if (tempProductId != null) {
         // El borrado AJAX bloquea productos con stock/movimientos/historial:
         // limpio por SQL (solo productos creados por los tests e2e).
-        await _phpCli([r'ws-e2e-helper.php', 'cleanup-product', '$tempProductId']);
-        final ps = await _postOk('ws_products_list', {'search': tempProductName});
-        expect(_asList(ps['products']).where((p) => (p['id'] as num).toInt() == tempProductId), isEmpty);
+        await _phpCli([
+          r'ws-e2e-helper.php',
+          'cleanup-product',
+          '$tempProductId',
+        ]);
+        final ps = await _postOk('ws_products_list', {
+          'search': tempProductName,
+        });
+        expect(
+          _asList(
+            ps['products'],
+          ).where((p) => (p['id'] as num).toInt() == tempProductId),
+          isEmpty,
+        );
         final ss = await _postOk('ws_stock_list', {'search': tempProductName});
-        expect(_asList(ss['rows']).where((r) => (r['product_id'] as num).toInt() == tempProductId), isEmpty,
-            reason: 'tras borrar el producto no deben quedar filas de stock');
+        expect(
+          _asList(
+            ss['rows'],
+          ).where((r) => (r['product_id'] as num).toInt() == tempProductId),
+          isEmpty,
+          reason: 'tras borrar el producto no deben quedar filas de stock',
+        );
       }
     });
   });
