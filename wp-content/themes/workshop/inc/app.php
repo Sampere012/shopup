@@ -18,11 +18,11 @@ defined( 'ABSPATH' ) || exit;
  * Versión del build móvil actual (la sube sync:web / se edita en wp-admin).
  * Es el valor por defecto del ajuste; el administrador lo cambia al publicar.
  */
-define( 'WS_APP_VERSION', '0.6.2' );
-define( 'WS_APP_RELEASE_DATE', '2026-10-10' );
-define( 'WS_APP_CHANGELOG', 'Mejoras en la sincronización offline y los reintentos.
-Gestión de productos, categorías e inventario más fiable.
-Acceso a soporte y cambio de contraseña desde la app.' );
+define( 'WS_APP_VERSION', '0.6.3' );
+define( 'WS_APP_RELEASE_DATE', '2026-10-11' );
+define( 'WS_APP_CHANGELOG', 'Búsqueda de vistas desde el navbar.
+Soporte accesible desde el menú lateral.
+Mejoras en Mi cuenta y estabilidad general.' );
 
 /**
  * Descarga del APK desde el repo público de GitHub (raw).
