@@ -212,6 +212,37 @@ function ws_admin_page_users() {
     ) );
 
     $biz_id = (int) ( $_GET['biz_id'] ?? 0 );
+    $search = sanitize_text_field( (string) ( $_GET['s'] ?? '' ) );
+
+    if ( '' !== $search ) {
+        $needle = mb_strtolower( $search );
+        $users  = array_values( array_filter( $users, function ( $u ) use ( $needle, $roles ) {
+            $user_biz_id = (int) get_user_meta( $u->ID, 'ws_business_id', true );
+            $user_biz    = $user_biz_id ? WS_Business::get( $user_biz_id ) : WS_Business::default_business();
+            $user_role   = '';
+            foreach ( array_keys( $roles ) as $r ) {
+                if ( in_array( $r, (array) $u->roles, true ) ) {
+                    $user_role = $r;
+                    break;
+                }
+            }
+            $haystacks = array(
+                $u->display_name,
+                $u->user_login,
+                $u->user_email,
+                $roles[ $user_role ] ?? '',
+                $user_biz ? $user_biz->name : '',
+                $user_biz ? (string) ( $user_biz->slug ?? '' ) : '',
+                ws_users_access_url( $user_role, $user_biz ),
+            );
+            foreach ( $haystacks as $h ) {
+                if ( '' !== (string) $h && false !== mb_stripos( (string) $h, $needle ) ) {
+                    return true;
+                }
+            }
+            return false;
+        } ) );
+    }
     ?>
     <div class="wrap">
         <h1><span class="dashicons dashicons-admin-users" style="vertical-align:middle"></span> <?php esc_html_e( 'Accesos de los negocios', 'workshop' ); ?></h1>
@@ -220,6 +251,18 @@ function ws_admin_page_users() {
         <?php if ( $notice ) : ?>
             <div class="notice notice-<?php echo esc_attr( $notice[0] ); ?> is-dismissible"><p><?php echo esc_html( $notice[1] ); ?></p></div>
         <?php endif; ?>
+
+        <form method="get" action="" style="margin:14px 0; background:#fff; border:1px solid #c3c4c7; padding:10px 14px">
+            <input type="hidden" name="page" value="ws-users">
+            <?php if ( $biz_id ) : ?>
+                <input type="hidden" name="biz_id" value="<?php echo (int) $biz_id; ?>">
+            <?php endif; ?>
+            <input type="search" name="s" value="<?php echo esc_attr( $search ); ?>" placeholder="<?php esc_attr_e( 'Buscar por usuario, rol, negocio o URL…', 'workshop' ); ?>" style="width:280px">
+            <button class="button"><?php esc_html_e( 'Buscar', 'workshop' ); ?></button>
+            <?php if ( '' !== $search ) : ?>
+                <a class="button button-link-delete" href="<?php echo esc_url( remove_query_arg( 's' ) ); ?>"><?php esc_html_e( 'Limpiar', 'workshop' ); ?></a>
+            <?php endif; ?>
+        </form>
 
         <table class="widefat striped">
             <thead>
@@ -233,7 +276,7 @@ function ws_admin_page_users() {
             </thead>
             <tbody>
                 <?php if ( empty( $users ) ) : ?>
-                    <tr><td colspan="5"><?php esc_html_e( 'Aún no hay usuarios con rol de negocio.', 'workshop' ); ?></td></tr>
+                    <tr><td colspan="5"><?php echo '' !== $search ? esc_html__( 'No se encontraron usuarios que coincidan con la búsqueda.', 'workshop' ) : esc_html__( 'Aún no hay usuarios con rol de negocio.', 'workshop' ); ?></td></tr>
                 <?php endif; ?>
                 <?php foreach ( $users as $u ) : ?>
                     <?php

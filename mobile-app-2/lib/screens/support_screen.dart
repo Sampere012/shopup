@@ -194,15 +194,15 @@ class _SupportScreenState extends State<SupportScreen> {
         child: Text('Esta sección está disponible para el dueño del negocio.'),
       );
     }
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _load,
-              child: ListView(
-                padding: const EdgeInsets.all(14),
-                children: [
+    // Se incrusta en el ShellScreen (sin Scaffold propio): así mantiene el
+    // navbar común, el título "Ayuda y soporte" y el estilo del resto.
+    return _loading
+        ? const Center(child: CircularProgressIndicator())
+        : RefreshIndicator(
+            onRefresh: _load,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
+              children: [
                   if (_error.isNotEmpty)
                     Card(
                       child: ListTile(
@@ -233,7 +233,7 @@ class _SupportScreenState extends State<SupportScreen> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            'Contacta directamente con el equipo de soporte.',
+                            'Escríbenos por el canal que prefieras; respondemos en horario de atención.',
                             style: TextStyle(
                               color: Colors.grey[600],
                               fontSize: 13,
@@ -283,7 +283,7 @@ class _SupportScreenState extends State<SupportScreen> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            'Tu solicitud se guardará en el historial pendiente si no tienes conexión.',
+                            'Cuéntanos tu inquietud y te responderemos por email. Si estás sin conexión, la solicitud se guardará en el dispositivo y se enviará al reconectarse.',
                             style: TextStyle(
                               color: Colors.grey[600],
                               fontSize: 13,
@@ -304,7 +304,6 @@ class _SupportScreenState extends State<SupportScreen> {
                   ),
                 ],
               ),
-            ),
     );
   }
 }

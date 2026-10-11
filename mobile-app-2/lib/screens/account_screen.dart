@@ -11,7 +11,6 @@ import '../services/sync_service.dart';
 import '../services/update_service.dart';
 import '../widgets/common.dart' show U;
 import 'onboarding_screen.dart';
-import 'support_screen.dart';
 
 /// Mi cuenta: datos del usuario, actualización de app y cambio de cuenta.
 class AccountScreen extends StatefulWidget {
@@ -43,6 +42,14 @@ class _AccountScreenState extends State<AccountScreen> {
   }
 
   Future<void> _editProfile() async {
+    // Refresca el perfil contra el servidor para tener datos actuales
+    // (usuario, nombre y email): la sesión cacheada puede ser antigua y no
+    // traer el username. Si falla (sin conexión) se usa la copia local.
+    if (await AuthService.online()) {
+      try {
+        await AuthService.I.refresh();
+      } catch (_) {}
+    }
     final name = TextEditingController(
       text: '${AuthService.I.me?['name'] ?? ''}',
     );
@@ -75,6 +82,7 @@ class _AccountScreenState extends State<AccountScreen> {
                     labelText: 'Nombre visible *',
                   ),
                 ),
+                const SizedBox(height: 12),
                 TextField(
                   controller: username,
                   autocorrect: false,
@@ -82,12 +90,14 @@ class _AccountScreenState extends State<AccountScreen> {
                     labelText: 'Usuario (login) *',
                   ),
                 ),
+                const SizedBox(height: 12),
                 TextField(
                   controller: email,
                   keyboardType: TextInputType.emailAddress,
                   autocorrect: false,
                   decoration: const InputDecoration(labelText: 'Email *'),
                 ),
+                const SizedBox(height: 12),
                 TextField(
                   controller: current,
                   obscureText: true,
@@ -96,6 +106,7 @@ class _AccountScreenState extends State<AccountScreen> {
                     helperText: 'Confirma los cambios de tu cuenta',
                   ),
                 ),
+                const SizedBox(height: 12),
                 TextField(
                   controller: next,
                   obscureText: true,
@@ -104,6 +115,7 @@ class _AccountScreenState extends State<AccountScreen> {
                     helperText: 'Opcional; mínimo 8 caracteres',
                   ),
                 ),
+                const SizedBox(height: 12),
                 TextField(
                   controller: confirm,
                   obscureText: true,
@@ -337,6 +349,7 @@ class _AccountScreenState extends State<AccountScreen> {
         ),
 
         if ('${me['role'] ?? ''}' == 'owner') ...[
+          const SizedBox(height: 10),
           Card(
             child: ListTile(
               leading: const Icon(
@@ -351,22 +364,6 @@ class _AccountScreenState extends State<AccountScreen> {
               onTap: _editProfile,
             ),
           ),
-          const SizedBox(height: 10),
-          Card(
-            child: ListTile(
-              leading: const Icon(
-                Icons.support_agent_outlined,
-                color: AppTheme.primary,
-              ),
-              title: const Text('Ayuda y soporte'),
-              subtitle: const Text('Contactos y solicitudes de soporte'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(builder: (_) => const SupportScreen()),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
         ],
 
         // ── Bienvenida y tour ──

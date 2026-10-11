@@ -23,6 +23,7 @@ import 'settings_screen.dart';
 import 'account_screen.dart';
 import 'notifications_screen.dart';
 import 'pending_screen.dart';
+import 'support_screen.dart';
 
 /// Mapa de rutas = claves del menú que envía el servidor (ws_mobile_me).
 Widget routeScreens(String route) {
@@ -48,6 +49,7 @@ Widget routeScreens(String route) {
     case 'appearance': return const AppearanceScreen();
     case 'settings': return const SettingsScreen();
     case 'account': return const AccountScreen();
+    case 'support': return const SupportScreen();
     case 'notificaciones':
     case 'notifications': return const NotificationsScreen();
     case 'pending': return const PendingScreen();

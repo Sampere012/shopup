@@ -29,6 +29,12 @@ class _ShellScreenState extends State<ShellScreen> with WidgetsBindingObserver {
   bool _busyUpdate = false;
   bool _showingInstalledChangelog = false;
 
+  // Búsqueda global de vistas (icono del navbar).
+  bool _searchMode = false;
+  final _searchCtrl = TextEditingController();
+  List<_SearchTarget> _searchMatches = [];
+  Timer? _searchDebounce;
+
   static const _bottomNavKeys = ['dashboard', 'products', 'stock', 'pos', 'pos-sales'];
 
   @override
@@ -49,6 +55,8 @@ class _ShellScreenState extends State<ShellScreen> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _sessionRefreshTimer?.cancel();
+    _searchDebounce?.cancel();
+    _searchCtrl.dispose();
     super.dispose();
   }
 
@@ -171,6 +179,129 @@ class _ShellScreenState extends State<ShellScreen> with WidgetsBindingObserver {
     Navigator.of(context).pop();
   }
 
+  /// Cierra el modo búsqueda y limpia el estado.
+  void _closeSearch({bool clearQuery = true}) {
+    _searchDebounce?.cancel();
+    if (clearQuery) _searchCtrl.clear();
+    _searchMatches = [];
+    if (mounted) setState(() => _searchMode = false);
+  }
+
+  /// Navega a una vista desde la búsqueda y cierra el modo búsqueda.
+  void _goSearch(String route) {
+    _closeSearch();
+    NavBus.clear();
+    setState(() => _route = route);
+  }
+
+  /// Quita acentos y pasa a minúsculas para comparar sin importar tildes.
+  static String _norm(String s) => s
+      .toLowerCase()
+      .replaceAll(RegExp(r'[áàäâ]'), 'a')
+      .replaceAll(RegExp(r'[éèëê]'), 'e')
+      .replaceAll(RegExp(r'[íìïî]'), 'i')
+      .replaceAll(RegExp(r'[óòöô]'), 'o')
+      .replaceAll(RegExp(r'[úùüû]'), 'u')
+      .replaceAll(RegExp(r'ñ'), 'n');
+
+  /// Catálogo de vistas buscables: las claves del menú del servidor (ya
+  /// filtradas por rol) + las vistas fijas de la app con sus alias en
+  /// español. La búsqueda sólo navega a vistas a las que el usuario
+  /// realmente puede entrar.
+  List<_SearchTarget> _buildCatalog(List<Map<String, dynamic>> menu) {
+    const aliases = <String, List<String>>{
+      'dashboard': ['inicio', 'panel', 'resumen'],
+      'products': ['productos', 'producto', 'catalogo'],
+      'locations': ['ubicaciones', 'ubicacion', 'sucursales', 'almacenes'],
+      'stock': ['stock', 'inventario', 'almacen'],
+      'counts': ['cuadres', 'cuadre', 'conteo'],
+      'movements': ['movimientos', 'transferencias', 'transferencia'],
+      'orders': ['pedidos', 'pedido', 'encargos'],
+      'shifts': ['turnos', 'turno', 'caja', 'arqueo'],
+      'workers': ['trabajadores', 'trabajador', 'equipo', 'empleados'],
+      'customers': ['clientes', 'cliente'],
+      'pos': ['ventas', 'venta', 'pos', 'punto de venta'],
+      'pos-sales': ['historial de ventas', 'ventas realizadas'],
+      'reviews': ['resenas', 'opiniones', 'estrellas'],
+      'loyalty': ['lealtad', 'fidelidad', 'puntos', 'recompensas'],
+      'expenses': ['gastos', 'gasto'],
+      'anuncios': ['anuncios', 'anuncio'],
+      'plan': ['plan', 'suscripcion'],
+      'permissions': ['permisos', 'permiso', 'modulos'],
+      'reports': ['reportes', 'reporte', 'estadisticas', 'graficas'],
+      'appearance': ['apariencia', 'tema', 'colores'],
+      'settings': ['ajustes', 'configuracion', 'preferencias'],
+    };
+    final byRoute = <String, _SearchTarget>{};
+    // Vistas fijas que no dependen del menú del servidor.
+    void addFixed(String route, String label, List<String> extra) {
+      byRoute[route] = _SearchTarget(
+        route: route,
+        label: label,
+        aliases: [...?aliases[route], ...extra],
+      );
+    }
+
+    addFixed('notificaciones', 'Notificaciones',
+        const ['notificaciones', 'avisos', 'alertas']);
+    addFixed('account', 'Mi cuenta', const ['cuenta', 'perfil', 'mi cuenta']);
+    addFixed('pending', 'Pendientes', const ['pendientes', 'cola']);
+    if ('${AuthService.I.me?['role'] ?? ''}' == 'owner') {
+      addFixed('support', 'Ayuda y soporte',
+          const ['soporte', 'ayuda', 'contacto', 'inquietud']);
+    }
+    // Menú del servidor (respeta los permisos del rol).
+    for (final m in menu) {
+      final route = '${m['key']}';
+      if (route.isEmpty || byRoute.containsKey(route)) continue;
+      byRoute[route] = _SearchTarget(
+        route: route,
+        label: '${m['label']}',
+        aliases: aliases[route] ?? const [],
+      );
+    }
+    return byRoute.values.toList();
+  }
+
+  /// Coincidencias del catálogo para la consulta (exacta > prefijo >
+  /// contiene), normalizando acentos.
+  List<_SearchTarget> _searchIn(String query, List<_SearchTarget> catalog) {
+    final q = _norm(query.trim());
+    if (q.isEmpty) return const [];
+    final scored = <MapEntry<int, _SearchTarget>>[];
+    for (final t in catalog) {
+      final label = _norm(t.label);
+      final aliases = t.aliases.map(_norm).toList();
+      int score = -1;
+      if (label == q || aliases.contains(q)) {
+        score = 0;
+      } else if (label.startsWith(q) || aliases.any((a) => a.startsWith(q))) {
+        score = 1;
+      } else if (label.contains(q) || aliases.any((a) => a.contains(q))) {
+        score = 2;
+      } else if (_norm(t.route).contains(q)) {
+        score = 3;
+      }
+      if (score >= 0) scored.add(MapEntry(score, t));
+    }
+    scored.sort((a, b) => a.key.compareTo(b.key));
+    return scored.map((e) => e.value).toList();
+  }
+
+  /// Al teclear: refresca las sugerencias (con debounce) y si queda una
+  /// única coincidencia navega sola a esa vista.
+  void _onSearchChanged(String raw, List<_SearchTarget> catalog) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 400), () {
+      if (!mounted || !_searchMode) return;
+      final matches = _searchIn(raw, catalog);
+      setState(() => _searchMatches = matches.take(5).toList());
+      if (raw.trim().isNotEmpty && matches.length == 1) {
+        _goSearch(matches.first.route);
+      }
+    });
+  }
+
   Future<void> _manualSync() async {
     final sync = SyncService.I;
     if (sync.isBusy) return;
@@ -225,12 +356,16 @@ class _ShellScreenState extends State<ShellScreen> with WidgetsBindingObserver {
       'plan': Icons.workspace_premium_outlined, 'permissions': Icons.admin_panel_settings_outlined,
       'reports': Icons.pie_chart_outline, 'appearance': Icons.palette_outlined,
       'settings': Icons.settings_outlined, 'account': Icons.person_outline,
-      'notificaciones': Icons.notifications_none, 'more': Icons.menu,
+      'notificaciones': Icons.notifications_none, 'support': Icons.support_agent_outlined,
+      'more': Icons.menu,
     };
     return byKey[routeKey ?? ''] ?? Icons.widgets_outlined;
   }
 
   String _titleFor(String route) {
+    // Títulos fijos para vistas que no vienen en el menú del servidor.
+    const fixed = {'support': 'Ayuda y soporte'};
+    if (fixed.containsKey(route)) return fixed[route]!;
     final me = AuthService.I.me ?? {};
     for (final m in ((me['menu'] as List?) ?? [])) {
       if (m is Map && '${m['key']}' == route) return '${m['label']}';
@@ -249,6 +384,7 @@ class _ShellScreenState extends State<ShellScreen> with WidgetsBindingObserver {
     final isTablet = MediaQuery.of(context).size.width > 600;
 
     final bottomItems = <_NavEntry>[];
+    final searchCatalog = _buildCatalog(menu);
     for (final key in _bottomNavKeys) {
       final m = menu.firstWhere((m) => '${m['key']}' == key, orElse: () => {});
       if (m.isNotEmpty) {
@@ -280,16 +416,54 @@ class _ShellScreenState extends State<ShellScreen> with WidgetsBindingObserver {
 
     return Scaffold(
       appBar: AppBar(
-        title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(_titleFor(_route), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-          if (auth.businessName.isNotEmpty)
-            Text(auth.businessName, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w400)),
-        ]),
+        title: _searchMode
+            ? TextField(
+                controller: _searchCtrl,
+                autofocus: true,
+                style: const TextStyle(color: Colors.white, fontSize: 16),
+                decoration: InputDecoration(
+                  hintText: 'Buscar vista…',
+                  hintStyle: TextStyle(color: Colors.white.withAlpha(150), fontSize: 16),
+                  border: InputBorder.none,
+                  isDense: true,
+                ),
+                onChanged: (v) => _onSearchChanged(v, searchCatalog),
+                onSubmitted: (v) {
+                  final m = _searchIn(v, searchCatalog);
+                  if (m.isNotEmpty) _goSearch(m.first.route);
+                },
+              )
+            : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(_titleFor(_route), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+                if (auth.businessName.isNotEmpty)
+                  Text(auth.businessName, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w400)),
+              ]),
         actions: [
+          if (_searchMode)
+            IconButton(
+              tooltip: 'Cerrar búsqueda',
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              visualDensity: VisualDensity.compact,
+              onPressed: () => _closeSearch(),
+              icon: const Icon(Icons.close),
+            )
+          else
+            IconButton(
+              tooltip: 'Buscar vista',
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              visualDensity: VisualDensity.compact,
+              onPressed: () => setState(() {
+                _searchMode = true;
+                _searchMatches = [];
+              }),
+              icon: const Icon(Icons.search),
+            ),
           if (_hasUpdate)
             Stack(clipBehavior: Clip.none, children: [
               IconButton(
                 tooltip: 'Nueva versión: actualizar ahora',
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                visualDensity: VisualDensity.compact,
                 onPressed: _updateNow,
                 icon: const Icon(Icons.system_update_outlined),
               ),
@@ -300,11 +474,15 @@ class _ShellScreenState extends State<ShellScreen> with WidgetsBindingObserver {
             ]),
           IconButton(
             tooltip: isDark ? 'Modo claro' : 'Modo oscuro',
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            visualDensity: VisualDensity.compact,
             onPressed: () => ThemeService.I.toggleDark(),
             icon: Icon(isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined, color: Colors.white70),
           ),
           IconButton(
             tooltip: 'Sincronizar',
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            visualDensity: VisualDensity.compact,
             onPressed: sync.isBusy ? null : _manualSync,
             icon: sync.isBusy
                 ? const Padding(padding: EdgeInsets.all(10), child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)))
@@ -313,6 +491,8 @@ class _ShellScreenState extends State<ShellScreen> with WidgetsBindingObserver {
           Stack(clipBehavior: Clip.none, children: [
             IconButton(
               tooltip: 'Notificaciones',
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              visualDensity: VisualDensity.compact,
               onPressed: () => setState(() => _route = 'notificaciones'),
               icon: const Icon(Icons.notifications_none),
             ),
@@ -327,12 +507,40 @@ class _ShellScreenState extends State<ShellScreen> with WidgetsBindingObserver {
               )),
           ]),
         ],
-        bottom: !sync.isOnline
-            ? PreferredSize(preferredSize: const Size.fromHeight(22), child: Container(
-                width: double.infinity, color: const Color(0xFFD97706), padding: const EdgeInsets.symmetric(vertical: 4),
-                child: const Text('Sin conexión — los cambios se guardan en el dispositivo', textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w500))))
-            : null,
+        bottom: _searchMode
+            ? PreferredSize(
+                preferredSize: const Size.fromHeight(46),
+                child: Container(
+                  width: double.infinity,
+                  color: isDark ? const Color(0xFF0F172A) : Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  child: _searchMatches.isEmpty
+                      ? Text(
+                          _searchCtrl.text.trim().isEmpty
+                              ? 'Escribe para buscar entre las vistas'
+                              : 'Sin resultados para «${_searchCtrl.text.trim()}»',
+                          style: TextStyle(fontSize: 12, color: isDark ? Colors.white54 : Colors.grey[600]),
+                        )
+                      : Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          children: _searchMatches
+                              .map((t) => ActionChip(
+                                    avatar: Icon(_iconFor(null, t.route), size: 15, color: AppTheme.primary),
+                                    label: Text(t.label, style: const TextStyle(fontSize: 12)),
+                                    onPressed: () => _goSearch(t.route),
+                                    visualDensity: VisualDensity.compact,
+                                  ))
+                              .toList(),
+                        ),
+                ),
+              )
+            : !sync.isOnline
+                ? PreferredSize(preferredSize: const Size.fromHeight(22), child: Container(
+                    width: double.infinity, color: const Color(0xFFD97706), padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: const Text('Sin conexión — los cambios se guardan en el dispositivo', textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w500))))
+                : null,
       ),
       drawer: _buildDrawer(context, auth, menu, isDark),
       // Sin pull-to-refresh: la sync manual vive SOLO en el botón de la
@@ -453,6 +661,23 @@ class _ShellScreenState extends State<ShellScreen> with WidgetsBindingObserver {
                       color: _route == '${m['key']}' ? AppTheme.primaryLight : Colors.white)),
               onTap: () => _go('${m['key']}'),
             ),
+          // Ayuda y soporte: sólo para el dueño del negocio.
+          if ('${auth.me?['role'] ?? ''}' == 'owner')
+            ListTile(
+              dense: true,
+              selected: _route == 'support',
+              selectedColor: AppTheme.primaryLight,
+              iconColor: Colors.white70,
+              textColor: Colors.white,
+              leading: Icon(Icons.support_agent_outlined,
+                  color: _route == 'support' ? AppTheme.primaryLight : Colors.white70),
+              title: Text('Ayuda y soporte',
+                  style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: _route == 'support' ? FontWeight.w700 : FontWeight.w400,
+                      color: _route == 'support' ? AppTheme.primaryLight : Colors.white)),
+              onTap: () => _go('support'),
+            ),
         ])),
         ListTile(
           leading: const Icon(Icons.logout, color: Colors.redAccent),
@@ -473,6 +698,15 @@ class _NavEntry {
   final String label;
   final IconData icon;
   const _NavEntry({required this.key, required this.label, required this.icon});
+}
+
+/// Entrada del catálogo de búsqueda global de vistas.
+class _SearchTarget {
+  final String route;
+  final String label;
+  final List<String> aliases;
+  const _SearchTarget(
+      {required this.route, required this.label, required this.aliases});
 }
 
 class RouteView extends StatelessWidget {
