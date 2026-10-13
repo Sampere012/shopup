@@ -82,13 +82,14 @@ class _WorkersScreenState extends State<WorkersScreen> {
             builder: (_, v, __) => DropdownButtonFormField<String>(
               initialValue: v,
               decoration: const InputDecoration(labelText: 'Rol *'),
+              // El rol de dueño NO se asigna desde la app: el dueño se da de
+              // alta en el panel WordPress (solo un administrador puede
+              // crear/asignar `ws_owner`, igual que en templates/panel/workers.php).
               items: const [
                 DropdownMenuItem(
                     value: 'ws_seller', child: Text('Vendedor')),
                 DropdownMenuItem(
                     value: 'ws_storekeeper', child: Text('Almacenero')),
-                DropdownMenuItem(
-                    value: 'ws_owner', child: Text('Dueño')),
               ],
               onChanged: (val) {
                 if (val != null) role.value = val;
@@ -329,6 +330,7 @@ class _WorkersScreenState extends State<WorkersScreen> {
                     final displayName =
                         '${w['display_name'] ?? w['name'] ?? ''}';
                     final roleKey = '${w['role'] ?? ''}';
+                    final isOwnerRow = roleKey == 'ws_owner';
                     final isDisabled = '${w['is_disabled']}' == '1';
                     // Handle locations as List<Map> or List<int>
                     // Simpler: just show location count
@@ -361,15 +363,21 @@ class _WorkersScreenState extends State<WorkersScreen> {
                                       fontWeight: FontWeight.w600,
                                       fontSize: 14),
                                   overflow: TextOverflow.ellipsis)),
+                          if (isOwnerRow)
+                            U.badge('Dueño', color: AppTheme.amber, small: true),
                           if (isDisabled)
                             U.badge('Pausado',
                                 color: AppTheme.danger, small: true),
                         ]),
                         subtitle: Text(
-                            '${roleLabels[roleKey] ?? roleKey}${locText.isNotEmpty ? ' · $locText' : ''}',
+                            isOwnerRow
+                                ? locText
+                                : '${roleLabels[roleKey] ?? roleKey}${locText.isNotEmpty ? ' · $locText' : ''}',
                             style: TextStyle(
                                 color: Colors.grey[600], fontSize: 12)),
-                        trailing: canManage
+                        // El dueño se gestiona desde el panel WordPress: aquí no
+                        // se edita, pausa ni elimina su fila.
+                        trailing: (canManage && !isOwnerRow)
                             ? Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [

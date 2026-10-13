@@ -32,6 +32,14 @@ class _LocationsScreenState extends State<LocationsScreen> {
     if (mounted) { _reload(); setState(() {}); }
   }
 
+  @override
+  void dispose() {
+    // Sin esto el listener quedaba colgado: cada sync volvía a notificar a
+    // una pantalla ya destruida (trabajo inútil y errores de setState).
+    SyncService.I.removeOnChange(_onSync);
+    super.dispose();
+  }
+
   void _reload() {
     _future = DbService.I.all('locations');
   }
@@ -143,6 +151,55 @@ class _LocationsScreenState extends State<LocationsScreen> {
     if (ok == true && mounted) { _reload(); setState(() {}); }
   }
 
+  /// Elimina una ubicación. El backend (`ws_delete_location`) se lleva por
+  /// delante su stock, sus movimientos, sus conexiones y las asignaciones de
+  /// trabajadores, igual que en el panel web.
+  Future<void> _delete(Map<String, dynamic> l) async {
+    final id = int.tryParse('${l['id']}') ?? 0;
+    if (id <= 0) return;
+    final name = '${l['name'] ?? ''}';
+    final ok = await U.confirm(
+      context,
+      '¿Eliminar "$name"?\n'
+      'Se borrará su stock, sus movimientos, sus conexiones de stock '
+      'compartido y las asignaciones de los trabajadores.\n'
+      'Esta acción no se puede deshacer.',
+      action: 'Eliminar',
+    );
+    if (!ok) return;
+    await U.handlePush(
+      context,
+      SyncService.I.push('ws_delete_location', {'id': id}),
+      'Ubicación eliminada',
+      onOk: () async {
+        await SyncService.I.pullStore('ws_cache_locations', {}, 'locations',
+            cacheKey: 'ws_locations_list');
+        await _removeLocalLocation(id);
+      },
+      onQueued: (_) async => _removeLocalLocation(id),
+    );
+    if (mounted) { _reload(); setState(() {}); }
+  }
+
+  /// Quita del espejo SQLite la ubicación y todo lo suyo (stock y
+  /// movimientos) para que no queden fantasmas en Stock, Historial ni POS.
+  Future<void> _removeLocalLocation(int id) async {
+    final rows = await DbService.I.all('locations');
+    rows.removeWhere((r) => '${r['id']}' == '$id');
+    await DbService.I.replaceAll('locations', rows);
+
+    final st = await DbService.I.all('stock');
+    st.removeWhere((r) => '${r['location_id']}' == '$id');
+    await DbService.I.replaceAll('stock', st);
+
+    final mv = await DbService.I.all('movements');
+    mv.removeWhere((r) =>
+        '${r['location_id']}' == '$id' ||
+        '${r['to_location_id']}' == '$id' ||
+        '${r['dest_location_id']}' == '$id');
+    await DbService.I.replaceAll('movements', mv);
+  }
+
   @override
   Widget build(BuildContext context) {
     context.watch<SyncNotifier>();
@@ -238,9 +295,26 @@ class _LocationsScreenState extends State<LocationsScreen> {
                           ],
                         ]),
                         trailing: canManage
-                            ? IconButton(
-                                icon: const Icon(Icons.edit_outlined, size: 20),
-                                onPressed: () => _edit(l),
+                            ? Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.edit_outlined,
+                                        size: 20),
+                                    tooltip: 'Editar',
+                                    constraints: const BoxConstraints(
+                                        minWidth: 32, minHeight: 32),
+                                    onPressed: () => _edit(l),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete_outline,
+                                        size: 20, color: AppTheme.danger),
+                                    tooltip: 'Eliminar',
+                                    constraints: const BoxConstraints(
+                                        minWidth: 32, minHeight: 32),
+                                    onPressed: () => _delete(l),
+                                  ),
+                                ],
                               )
                             : null,
                       ),

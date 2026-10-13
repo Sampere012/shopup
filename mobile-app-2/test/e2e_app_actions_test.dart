@@ -166,6 +166,21 @@ Future<void> _phpCli(List<String> args) async {
   );
 }
 
+/// Igual que _phpCli pero devuelve la salida estándar (para leer valores).
+Future<String> _phpOut(List<String> args) async {
+  final res = await Process.run(
+    _php,
+    args,
+    workingDirectory: _workdir,
+  ).timeout(_timeout);
+  expect(
+    res.exitCode,
+    0,
+    reason: 'php ${args.join(' ')}: ${res.stdout} ${res.stderr}',
+  );
+  return '${res.stdout}';
+}
+
 void main() {
   late String token;
   late Map<String, dynamic> me;
@@ -385,7 +400,7 @@ void main() {
 
     test('permissions_get → save_permissions round-trip sin cambios', () async {
       final d = await _postOk('ws_permissions_get', {});
-      for (final k in ['caps', 'matrix', 'roles']) {
+      for (final k in ['caps', 'matrix', 'roles', 'readonly']) {
         expect(d.containsKey(k), isTrue, reason: 'permissions_get sin $k');
       }
       final matrix = _asMap(d['matrix']);
@@ -396,6 +411,55 @@ void main() {
       await _postOkAny('ws_save_permissions', {'matrix': matrix});
       final again = await _postOk('ws_permissions_get', {});
       expect(_asMap(again['matrix'])['owner'], ownerCaps);
+    });
+
+    test('permisos solo lectura: el dueño no los cambia en ninguna fila',
+        () async {
+      // Estado previo de la opción (se restaura al final).
+      final out = await _phpOut(['ws-e2e-helper.php', 'readonly-caps', 'get']);
+      final prev = out.contains('readonly:')
+          ? out.split('readonly:')[1].trim()
+          : '';
+      const target = 'loyalty_manage'; // cap de la app, editable por defecto
+      const ctrl = 'reviews_moderate'; // cap de control, NO readonly
+      await _phpCli(['ws-e2e-helper.php', 'readonly-caps', 'save', target]);
+      try {
+        final g1 = await _postOk('ws_permissions_get', {});
+        final ro = (g1['readonly'] as List).map((e) => '$e').toList();
+        expect(ro, contains(target), reason: 'falta readonly en permissions_get');
+        final m1 = _asMap(g1['matrix']);
+        final beforeSk = _asMap(m1['storekeeper'])[target] == true;
+        final beforeSeller = _asMap(m1['seller'])[target] == true;
+
+        // El dueño (no admin) intenta cambiar la cap en Almacenero y Vendedor.
+        final next = <String, dynamic>{};
+        for (final r in ['owner', 'storekeeper', 'seller']) {
+          next[r] = Map<String, dynamic>.from(_asMap(m1[r]));
+        }
+        _asMap(next['storekeeper'])[target] = !beforeSk;
+        _asMap(next['seller'])[target] = !beforeSeller;
+        await _postOkAny('ws_save_permissions', {'matrix': next});
+
+        final g2 = await _postOk('ws_permissions_get', {});
+        final m2 = _asMap(g2['matrix']);
+        expect(_asMap(m2['storekeeper'])[target], beforeSk,
+            reason: 'readonly: la fila almacenero no debe cambiar');
+        expect(_asMap(m2['seller'])[target], beforeSeller,
+            reason: 'readonly: la fila vendedor no debe cambiar');
+
+        // Control: una cap NO readonly sí se guarda.
+        final ctrlBefore = _asMap(m1['storekeeper'])[ctrl] == true;
+        _asMap(next['storekeeper'])[ctrl] = !ctrlBefore;
+        await _postOkAny('ws_save_permissions', {'matrix': next});
+        final g3 = await _postOk('ws_permissions_get', {});
+        expect(_asMap(_asMap(g3['matrix'])['storekeeper'])[ctrl], !ctrlBefore,
+            reason: 'una cap normal sí debe guardarse');
+        // Restaurar el valor del control.
+        _asMap(next['storekeeper'])[ctrl] = ctrlBefore;
+        await _postOkAny('ws_save_permissions', {'matrix': next});
+      } finally {
+        await _phpCli(['ws-e2e-helper.php', 'readonly-caps', 'save', prev]);
+      }
     });
 
     test('apariencia: appearance_get → save_site_theme idempotente', () async {
@@ -605,6 +669,64 @@ void main() {
         inA['rows'],
       ).firstWhere((r) => (r['product_id'] as num).toInt() == tempProductId);
       expect(_num(rowA['qty']), greaterThanOrEqualTo(3));
+    });
+
+    test(
+        'transferencia por lotes con el payload EXACTO de la app '
+        '(ws_stock_batch_transfer)', () async {
+      // Reproduce `_MovementSheet._submit` de stock_screen.dart: el payload
+      // lleva `items[]` y NO `product_id`/`qty`. Antes se enviaba a
+      // `ws_stock_transfer`, que fallaba con "Datos de transferencia
+      // inválidos." → regresión del bug #1 de 0.6.5.
+      expect(tempProductId, isNotNull);
+      if (!hasLocB) {
+        return; // Sin segunda ubicación no hay transferencia que probar.
+      }
+      // Garantiza stock de origen aunque cambie el orden de los tests.
+      await _postOk('ws_stock_move', {
+        'type': 'entrada',
+        'product_id': tempProductId,
+        'location_id': locA,
+        'qty': 3,
+        'reference': ref('entrada-batch-transfer'),
+        'note': 'e2e',
+      }, token: token);
+
+      final marker = ref('batch-transfer');
+      final res = await _postOk('ws_stock_batch_transfer', {
+        'type': 'transferencia',
+        'location_id': locA,
+        'items': [
+          {'product_id': tempProductId, 'name': tempProductName, 'qty': 1},
+        ],
+        'note': marker,
+        'from_location': locA,
+        'to_location': locB,
+      });
+      expect(_num(res['count']), greaterThanOrEqualTo(1),
+          reason: 'ws_stock_batch_transfer debió mover el lote');
+
+      final inB = await _postOk('ws_stock_list', {
+        'location_id': locB,
+        'search': tempProductName,
+      });
+      final rowB = _asList(
+        inB['rows'],
+      ).firstWhere((r) => (r['product_id'] as num).toInt() == tempProductId);
+      expect(_num(rowB['qty']), greaterThanOrEqualTo(1),
+          reason: 'el destino no recibió el lote transferido');
+
+      // El movimiento quedó registrado (busca por producto: el buscador de
+      // ws_movements_list cubre nombre/referencia, no la nota).
+      final mv = await _postOk('ws_movements_list', {
+        'search': tempProductName,
+        'type': 'transferencia',
+      });
+      final rows = _asList(
+        mv['movements'],
+      ).where((m) => (m['note'] ?? '') == marker).toList();
+      expect(rows, isNotEmpty,
+          reason: 'la transferencia por lotes no dejó movimiento');
     });
 
     test('movement_add, batch_move y revert reales por reference', () async {
@@ -1382,6 +1504,120 @@ void main() {
           after['workers'],
         ).where((w) => (w['id'] as num).toInt() == newId),
         isEmpty,
+      );
+    });
+
+    test('trabajador creado con calendario puede ACCEDER a la app', () async {
+      // Flujo real: alta de trabajador → turno (calendario) → login con sus
+      // propias credenciales → menú/permisos de su rol → ve SU turno.
+      final uname = 'e2ec$ts';
+      final pass = 'E2eCalendario!2026';
+      final email = '$uname@example.com';
+      final day = DateTime.now()
+          .add(const Duration(days: 1))
+          .toIso8601String()
+          .substring(0, 10);
+
+      final created = await _postOk('ws_save_worker_user', {
+        'username': uname,
+        'email': email,
+        'password': pass,
+        'role': 'ws_seller',
+        'display_name': 'E2E Calendario $ts',
+        'locations': [locA],
+      });
+      final workerId = (created['id'] as num).toInt();
+      expect(workerId, greaterThan(0));
+
+      int? shiftId;
+      try {
+        // ── Calendario: se le asigna un turno en su ubicación ──
+        final sh = await _postOk('ws_save_shift', {
+          'user_id': workerId,
+          'location_id': locA,
+          'shift_date': day,
+          'time_start': '09:00',
+          'time_end': '18:00',
+          'note': 'e2e calendario',
+        });
+        shiftId = (sh['id'] as num).toInt();
+        expect(shiftId, greaterThan(0), reason: 'no se creó el turno');
+
+        // ── Acceso: login con sus propias credenciales ──
+        // Una cuenta recién creada dispara el reto de correo; se marca
+        // verificada por la misma vía que el seed y se reintenta.
+        var login = await _postRaw(
+            'ws_mobile_login', {'ws_user': uname, 'ws_pass': pass});
+        if (login['success'] != true ||
+            _asMap(login['data'])['needVerify'] == true) {
+          await _phpCli(['ws-test-seed.php', 'verify', uname]);
+          login = await _postRaw(
+              'ws_mobile_login', {'ws_user': uname, 'ws_pass': pass});
+        }
+        expect(login['success'], isTrue,
+            reason: 'el trabajador no pudo entrar: ${login['data']}');
+        final ldata = _asMap(login['data']);
+        expect(ldata['token'], isA<String>(),
+            reason: 'login sin token: ${login['data']}');
+        final workerToken = ldata['token'] as String;
+        expect(workerToken, isNotEmpty);
+
+        final me = _asMap(ldata['me']);
+        expect(me['userId'], workerId, reason: 'token de otro usuario');
+        expect(me['role'], 'seller', reason: 'slug de rol inesperado');
+        expect(me['account_email_verified'], anyOf(true, 1));
+
+        final caps = _asMap(me['caps']);
+        expect(caps['shifts_view'], anyOf(true, 1),
+            reason: 'el vendedor debe poder ver su calendario');
+        expect(caps['workers_manage'], anyOf(false, null, 0),
+            reason: 'el vendedor NO debe gestionar trabajadores');
+
+        final menuKeys = _asList(me['menu']).map((m) => '${m['key']}').toList();
+        expect(menuKeys, contains('shifts'),
+            reason: 'el menú del trabajador debe incluir Turnos');
+        expect(menuKeys, isNot(contains('workers')),
+            reason: 'el menú del trabajador no debe incluir Trabajadores');
+
+        // ── Con su token ve SU calendario ──
+        final shifts = await _postOk('ws_shifts_list',
+            {'start': day, 'end': day}, token: workerToken);
+        final mine = _asList(shifts['shifts'])
+            .where((s) => (s['user_id'] as num).toInt() == workerId)
+            .toList();
+        expect(mine, isNotEmpty,
+            reason: 'el trabajador no ve el turno de su calendario');
+        expect(mine.first['shift_date'], day);
+        // MySQL guarda TIME como HH:MM:SS; la app recorta a HH:MM.
+        expect('${mine.first['time_start']}', startsWith('09:00'));
+        expect('${mine.first['time_end']}', startsWith('18:00'));
+
+        final meR = await _postOkAny('ws_mobile_me', {}, token: workerToken);
+        expect(_asMap(meR['data'])['loggedIn'], anyOf(true, 1));
+      } finally {
+        if (shiftId != null) {
+          await _postOkAny('ws_delete_shift', {'id': shiftId});
+        }
+        await _postOkAny('ws_delete_worker', {'user_id': workerId});
+        await _phpCli(['ws-test-seed.php', 'clear-fails', uname]);
+      }
+
+      // Limpieza verificada: ni trabajador ni su turno siguen en el sistema.
+      final gone = await _postOk('ws_workers_list', {'search': uname});
+      expect(
+        _asList(
+          gone['workers'],
+        ).where((w) => (w['id'] as num).toInt() == workerId),
+        isEmpty,
+        reason: 'el trabajador de prueba no se borró',
+      );
+      final dayAfter = await _postOk('ws_shifts_list', {'start': day, 'end': day});
+      expect(
+        _asList(
+          dayAfter['shifts'],
+        ).where((s) => (s['user_id'] as num).toInt() == workerId),
+        isEmpty,
+        reason: 'el turno de prueba no se borró',
       );
     });
   });

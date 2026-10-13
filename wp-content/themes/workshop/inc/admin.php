@@ -40,12 +40,24 @@ function ws_admin_page_permissions() {
         $saved = true;
     }
 
+    // Capacidades marcadas como solo lectura (este apartado).
+    $ro_saved = false;
+    if ( isset( $_POST['ws_readonly_nonce'] ) && wp_verify_nonce( $_POST['ws_readonly_nonce'], 'ws_save_readonly_admin' ) ) {
+        $ro_post = isset( $_POST['readonly_caps'] ) && is_array( $_POST['readonly_caps'] ) ? wp_unslash( $_POST['readonly_caps'] ) : array();
+        WS_Capabilities::save_readonly_caps( $ro_post, $biz_id );
+        if ( function_exists( 'ws_log_audit' ) ) {
+            ws_log_audit( 'permissions_readonly_update', 'settings', $biz_id );
+        }
+        $ro_saved = true;
+    }
+
     $businesses = class_exists( 'WS_Business' ) ? WS_Business::all() : array();
     if ( ! $biz_id ) {
         $biz_id = ws_current_business_id();
     }
-    $matrix = WS_Capabilities::matrix( $biz_id );
-    $caps   = WS_Capabilities::all_caps();
+    $matrix  = WS_Capabilities::matrix( $biz_id );
+    $caps    = WS_Capabilities::all_caps();
+    $readonly = WS_Capabilities::readonly_caps( $biz_id );
     $roles  = array(
         'owner'       => __( 'Dueño', 'workshop' ),
         'storekeeper' => __( 'Almacenero', 'workshop' ),
@@ -58,6 +70,10 @@ function ws_admin_page_permissions() {
 
         <?php if ( $saved ) : ?>
             <div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Permisos guardados.', 'workshop' ); ?></p></div>
+        <?php endif; ?>
+
+        <?php if ( $ro_saved ) : ?>
+            <div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Permisos de solo lectura guardados.', 'workshop' ); ?></p></div>
         <?php endif; ?>
 
         <?php if ( count( $businesses ) > 1 ) : ?>
@@ -88,7 +104,13 @@ function ws_admin_page_permissions() {
                 <tbody>
                     <?php foreach ( $caps as $cap => $label ) : ?>
                         <tr>
-                            <td><strong><?php echo esc_html( $label ); ?></strong><br><code><?php echo esc_html( $cap ); ?></code></td>
+                            <td>
+                                <strong><?php echo esc_html( $label ); ?></strong>
+                                <?php if ( in_array( $cap, $readonly, true ) ) : ?>
+                                    <span class="dashicons dashicons-lock" title="<?php esc_attr_e( 'Solo lectura en el panel del negocio y en la app', 'workshop' ); ?>" style="vertical-align:middle"></span>
+                                <?php endif; ?>
+                                <br><code><?php echo esc_html( $cap ); ?></code>
+                            </td>
                             <?php foreach ( array_keys( $roles ) as $rkey ) : ?>
                                 <td style="text-align:center">
                                     <?php
@@ -109,6 +131,35 @@ function ws_admin_page_permissions() {
                 </tbody>
             </table>
             <?php submit_button( __( 'Guardar permisos', 'workshop' ) ); ?>
+        </form>
+
+        <hr />
+        <h2><?php esc_html_e( 'Permisos de solo lectura', 'workshop' ); ?></h2>
+        <p class="description">
+            <?php esc_html_e( 'Marca los permisos que NO podrá editar nadie desde el panel del negocio ni desde la app móvil: ni el dueño (en su propia fila), ni el dueño sobre las filas de Almacenero y Vendedor. Aplican a las tres filas; el único que los cambia es el administrador del sitio, desde esta pantalla.', 'workshop' ); ?>
+        </p>
+        <form method="post" action="">
+            <?php wp_nonce_field( 'ws_save_readonly_admin', 'ws_readonly_nonce' ); ?>
+            <input type="hidden" name="biz_id" value="<?php echo (int) $biz_id; ?>">
+            <table class="widefat striped" style="max-width:760px">
+                <thead>
+                    <tr>
+                        <th><?php esc_html_e( 'Permiso', 'workshop' ); ?></th>
+                        <th style="width:140px;text-align:center"><?php esc_html_e( 'Solo lectura', 'workshop' ); ?></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ( $caps as $cap => $label ) : ?>
+                        <tr>
+                            <td><strong><?php echo esc_html( $label ); ?></strong><br><code><?php echo esc_html( $cap ); ?></code></td>
+                            <td style="text-align:center">
+                                <input type="checkbox" name="readonly_caps[]" value="<?php echo esc_attr( $cap ); ?>" <?php checked( in_array( $cap, $readonly, true ) ); ?>>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+            <?php submit_button( __( 'Guardar solo lectura', 'workshop' ), 'secondary', 'submit_readonly' ); ?>
         </form>
     </div>
     <?php

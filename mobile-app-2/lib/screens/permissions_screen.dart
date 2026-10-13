@@ -19,6 +19,8 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
   Map<String, dynamic> _caps = {};
   Map<String, dynamic> _matrix = {};
   List<String> _roles = [];
+  // Caps marcadas como solo lectura en wp-admin: bloqueadas en TODAS las filas.
+  List<String> _readonly = [];
   String _currentRole = '';
   final Map<String, bool> _dirty = {}; // "role:cap" => true/false
   bool _saving = false;
@@ -28,10 +30,7 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
   String get _myRole => '${AuthService.I.me?['role'] ?? ''}';
 
   // El dueño NO se edita a sí mismo: solo el administrador del sitio lo hace.
-  // El dueño SÍ puede editar su propia fila (p. ej. ocultar Valoraciones o
-  // Fidelización); el servidor conserva igualmente permissions_manage y
-  // expenses_manage para no dejarse sin salida.
-  bool get _canEditOwner => true;
+  bool get _canEditOwner => _myRole != 'owner';
 
   @override
   void initState() {
@@ -53,6 +52,7 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
         _caps = Map<String, dynamic>.from(data['caps'] ?? {});
         _matrix = Map<String, dynamic>.from(data['matrix'] ?? {});
         _roles = (data['roles'] as Map?)?.keys.map((e) => '$e').toList() ?? [];
+        _readonly = (data['readonly'] as List?)?.map((e) => '$e').toList() ?? [];
         _currentRole = _roles.isNotEmpty ? _roles.first : 'owner';
         _loading = false;
       });
@@ -68,6 +68,7 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
           _caps = Map<String, dynamic>.from(data['caps'] ?? {});
           _matrix = Map<String, dynamic>.from(data['matrix'] ?? {});
           _roles = (data['roles'] as Map?)?.keys.map((e) => '$e').toList() ?? [];
+          _readonly = (data['readonly'] as List?)?.map((e) => '$e').toList() ?? [];
           if (_currentRole.isEmpty || !_roles.contains(_currentRole)) {
             _currentRole = _roles.isNotEmpty ? _roles.first : 'owner';
           }
@@ -91,9 +92,13 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
   }
 
   Future<void> _save() async {
-    // El dueño no puede modificar su propia fila (solo el admin del sitio la edita).
+    // El dueño no puede modificar su propia fila (solo el admin del sitio la
+    // edita) y las capacidades de solo lectura no se tocan en ninguna fila.
     final editable = _dirty.entries.where((e) {
-      final r = e.key.split(':').first;
+      final parts = e.key.split(':');
+      final r = parts.first;
+      final cap = parts.sublist(1).join(':');
+      if (_readonly.contains(cap)) return false;
       return _canEditOwner || r != 'owner';
     }).toList();
     final pending = Map<String, bool>.fromEntries(editable);
@@ -121,7 +126,13 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
       'Permisos guardados',
       onOk: () => SyncService.I.pullCache('ws_permissions_get', {}, 'ws_permissions_get'),
       onQueued: (qp) async {
-        await DbService.I.cacheSet('ws_permissions_get', {'matrix': next});
+        // Solo se actualiza la matriz: se conservan caps/roles/readonly.
+        final prev = await DbService.I.cacheGet('ws_permissions_get');
+        final map = prev is Map
+            ? Map<String, dynamic>.from(prev)
+            : <String, dynamic>{};
+        map['matrix'] = next;
+        await DbService.I.cacheSet('ws_permissions_get', map);
       },
     );
     if (ok) {
@@ -174,6 +185,23 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
           ]),
         ),
 
+      // Caps de solo lectura: bloqueadas en todas las filas.
+      if (_readonly.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 6, 14, 0),
+          child: Row(children: [
+            Icon(Icons.lock_outline, size: 14, color: Colors.grey[500]),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                'Solo lectura (los define el administrador del sitio): '
+                '${_readonly.map((c) => '${_caps[c] ?? c}').join(' · ')}',
+                style: TextStyle(color: Colors.grey[500], fontSize: 11),
+              ),
+            ),
+          ]),
+        ),
+
       // Role tabs
       SizedBox(
         height: 44,
@@ -218,8 +246,10 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
             final cap = capKeys[i];
             final label = _caps[cap] ?? cap;
             final on = _valueFor(_currentRole, cap);
-            // Solo lectura para el dueño en su propia fila (la edita el admin del sitio).
-            final locked = _currentRole == 'owner' && !_canEditOwner;
+            // Solo lectura: fila del dueño (la edita el admin del sitio) o
+            // cap marcada como solo lectura en wp-admin (en cualquier fila).
+            final locked =
+                (_currentRole == 'owner' && !_canEditOwner) || _readonly.contains(cap);
             return Card(
               child: SwitchListTile.adaptive(
                 title: Text('$label', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),

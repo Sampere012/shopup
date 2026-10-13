@@ -220,6 +220,50 @@ class WS_Capabilities {
     }
 
     /**
+     * Capacidades marcadas como "solo lectura": nadie las edita desde el
+     * panel del negocio ni desde la app móvil (ni siquiera el dueño, en
+     * ninguna fila); solo el administrador del sitio desde wp-admin.
+     */
+    public static function readonly_caps( $biz_id = 0 ) {
+        $biz_id = $biz_id ? (int) $biz_id : ws_current_business_id();
+        $stored = ws_biz_option_for( 'ws_readonly_caps', array(), $biz_id );
+        if ( is_string( $stored ) ) {
+            $stored = array_filter( array_map( 'trim', explode( ',', $stored ) ) );
+        }
+        $all = array_keys( self::all_caps() );
+        $out = array();
+        foreach ( (array) $stored as $cap ) {
+            $cap = sanitize_key( (string) $cap );
+            if ( in_array( $cap, $all, true ) ) {
+                $out[] = $cap;
+            }
+        }
+        return array_values( array_unique( $out ) );
+    }
+
+    public static function is_readonly( $cap, $biz_id = 0 ) {
+        return in_array( (string) $cap, self::readonly_caps( $biz_id ), true );
+    }
+
+    /**
+     * Persiste la lista de capacidades de solo lectura.
+     */
+    public static function save_readonly_caps( $caps, $biz_id = 0 ) {
+        $biz_id = $biz_id ? (int) $biz_id : ws_current_business_id();
+        $all    = array_keys( self::all_caps() );
+        $clean  = array();
+        foreach ( (array) $caps as $cap ) {
+            $cap = sanitize_key( (string) $cap );
+            if ( in_array( $cap, $all, true ) ) {
+                $clean[] = $cap;
+            }
+        }
+        $clean = array_values( array_unique( $clean ) );
+        ws_save_biz_option_for( 'ws_readonly_caps', $clean, $biz_id );
+        return $clean;
+    }
+
+    /**
      * Persiste la matriz de permisos.
      */
     public static function save_matrix( $matrix, $biz_id = 0 ) {

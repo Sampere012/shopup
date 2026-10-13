@@ -3542,10 +3542,12 @@ function ws_ajax_save_permissions() {
     $raw = isset( $_POST['matrix'] ) ? $_POST['matrix'] : array();
     $all  = array_keys( WS_Capabilities::all_caps() );
     $roles = array( 'owner', 'storekeeper', 'seller' );
-    // El dueño SÍ puede ajustar su propia fila (así puede ocultar módulos
-    // como Valoraciones/Fidelización); matrix() fuerza en el servidor las
-    // capacidades críticas (permissions_manage/expenses_manage) para que nadie
-    // se quede sin salida. El administrador del sitio mantiene acceso total.
+    // El dueño del negocio no puede modificar sus propios permisos: la fila
+    // 'owner' solo la edita el administrador del sitio (manage_options).
+    // Además, las capacidades marcadas como "solo lectura" en wp-admin no
+    // las cambia nadie desde el panel ni desde la app (en ninguna fila).
+    $can_edit_owner = current_user_can( 'manage_options' );
+    $readonly       = $can_edit_owner ? array() : WS_Capabilities::readonly_caps();
     $existing_all = WS_Capabilities::matrix();
     if ( is_string( $raw ) ) {
         // Formato app (JSON): la app manda solo los módulos que tiene. Se
@@ -3554,7 +3556,17 @@ function ws_ajax_save_permissions() {
         $merged = array();
         foreach ( $roles as $role ) {
             $merged[ $role ] = array();
+            if ( ! $can_edit_owner && 'owner' === $role ) {
+                // Conservar tal cual los permisos del dueño.
+                $merged[ $role ] = isset( $existing_all[ $role ] ) ? $existing_all[ $role ] : array();
+                continue;
+            }
             foreach ( $all as $cap ) {
+                if ( in_array( $cap, $readonly, true ) ) {
+                    // Solo lectura: conservar el valor guardado en esta fila.
+                    $merged[ $role ][ $cap ] = ! empty( $existing_all[ $role ][ $cap ] );
+                    continue;
+                }
                 $merged[ $role ][ $cap ] = isset( $posted[ $role ][ $cap ] )
                     ? ! empty( $posted[ $role ][ $cap ] )
                     : ! empty( $existing_all[ $role ][ $cap ] );
@@ -3564,6 +3576,19 @@ function ws_ajax_save_permissions() {
     } else {
         // Formato web (form): matriz completa, autoritativa.
         $matrix = (array) $raw;
+        if ( ! $can_edit_owner ) {
+            // Forzar la fila 'owner' a los permisos existentes: el panel del
+            // dueño solo edita almacenero y vendedor.
+            $matrix['owner'] = isset( $existing_all['owner'] ) ? $existing_all['owner'] : array();
+            // Capacidades de solo lectura: se mantienen en todas las filas.
+            foreach ( $roles as $role ) {
+                $cur = isset( $matrix[ $role ] ) && is_array( $matrix[ $role ] ) ? $matrix[ $role ] : array();
+                foreach ( $readonly as $cap ) {
+                    $cur[ $cap ] = ! empty( $existing_all[ $role ][ $cap ] );
+                }
+                $matrix[ $role ] = $cur;
+            }
+        }
     }
     WS_Capabilities::save_matrix( $matrix );
     ws_log_audit( 'permissions_update', 'settings', 0 );
@@ -5458,11 +5483,15 @@ function ws_ajax_permissions_get() {
         'storekeeper'  => ws_role_label( 'ws_storekeeper' ),
         'seller'       => ws_role_label( 'ws_seller' ),
     );
+    // Capacidades marcadas como solo lectura en wp-admin: la app las bloquea
+    // en todas las filas (solo el administrador del sitio las cambia).
+    $readonly = array_values( array_intersect( WS_Capabilities::readonly_caps(), ws_app_caps() ) );
     wp_send_json_success( array(
         'data' => array(
-            'caps'   => $caps,
-            'matrix' => $matrix,
-            'roles'  => $roles,
+            'caps'     => $caps,
+            'matrix'   => $matrix,
+            'roles'    => $roles,
+            'readonly' => $readonly,
         ),
     ) );
 }

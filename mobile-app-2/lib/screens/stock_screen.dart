@@ -165,14 +165,26 @@ class _StockScreenState extends State<StockScreen> {
             .where((r) => workerLocs.contains(int.tryParse('${r['location_id']}') ?? 0))
             .toList();
       }
-      _rows = serverRows;
       _combos = serverCombos;
-      await DbService.I.cacheSet('ws_stock_list', _rows);
+      await DbService.I.cacheSet('ws_stock_list', serverRows);
       await DbService.I.cacheSet('ws_stock_list_combos', _combos);
       // Persist to SQLite (merge/upsert) so data survives app restart
-      await DbService.I.putAll('stock', _rows);
+      await DbService.I.putAll('stock', serverRows);
       await _repairStockDuplicates(await DbService.I.all('stock'));
       await DbService.I.putAll('combos', _combos);
+      // El servidor todavía NO tiene los movimientos que siguen en cola:
+      // si nos quedáramos con su respuesta, este refresh "deshacería" lo que
+      // el usuario registró offline. Se reaplica encima y la vista se lee
+      // de SQLite (servidor + cola), no del payload crudo.
+      await SyncService.I.reapplyPendingStockDeltas();
+      var merged = await DbService.I.all('stock');
+      if (workerLocs.isNotEmpty) {
+        merged = merged
+            .where((r) =>
+                workerLocs.contains(int.tryParse('${r['location_id']}') ?? 0))
+            .toList();
+      }
+      _rows = merged;
       // Además actualizar las ubicaciones
       final locData = await ApiService.I.req('ws_locations_list', {});
       final serverLocs =
@@ -599,63 +611,83 @@ class _StockScreenState extends State<StockScreen> {
                     final endpoint = type == 'transferencia'
                         ? 'ws_stock_transfer'
                         : 'ws_stock_move';
-                    final pushed = SyncService.I.push(endpoint, payload);
+                    // Id del movimiento local: se comparte con la op en cola
+                    // (`localId`) para poder retirarla del Historial en cuanto
+                    // el servidor la tenga, sin duplicarla.
+                    final localMid = 'local_${DateTime.now().microsecondsSinceEpoch}';
+                    final pushed =
+                        SyncService.I.push(endpoint, payload, localId: localMid);
                     await U.handlePush(
                         context, pushed,
                         'Movimiento registrado',
                         onOk: () async {
-                          _loadAll();
-                          await _refreshMovementsCache(type, row, qty, locId, destId, noteCtrl.text.trim());
+                          // El servidor ya lo registró: se refleja en local
+                          // para que el Historial no espere al próximo pull.
+                          await _saveLocalMovement(
+                              type,
+                              [
+                                {
+                                  'product_id': row['product_id'],
+                                  'qty': qty,
+                                  'name': row['name'] ?? '',
+                                }
+                              ],
+                              locId,
+                              destId,
+                              noteCtrl.text.trim(),
+                              id: localMid);
+                          try {
+                            _loadAll();
+                          } catch (e) {
+                            wsLog('! stock _loadAll tras guardar: $e');
+                          }
                         },
                         onQueued: (_) async {
-                          // Ajustar stock local INMEDIATAMENTE (sin esperar sync)
-                          // para que la interfaz refleje el cambio aunque esté offline.
-                          final delta = type == 'entrada'
-                              ? qty
-                              : (type == 'salida' || type == 'baja'
-                                  ? -qty
-                                  : 0);
-                          if (delta != 0) {
-                            SyncService.I.adjustLocalStock(
-                                locId, row['product_id'], delta, notify: false);
-                          }
+                          // 1) PERSISTIR PRIMERO. Antes se refrescaba la UI
+                          //    (_loadAll) ANTES de guardar el movimiento y
+                          //    handlePush se traga cualquier excepción: si el
+                          //    refresco fallaba, el movimiento quedaba SOLO en
+                          //    la cola y la pantalla con datos viejos.
                           if (type == 'transferencia') {
-                            SyncService.I.adjustLocalStock(
+                            await SyncService.I.adjustLocalStock(
                                 locId, row['product_id'], -qty, notify: false);
-                            SyncService.I.adjustLocalStock(
+                            await SyncService.I.adjustLocalStock(
                                 destId, row['product_id'], qty, notify: false);
+                          } else {
+                            final delta = type == 'entrada'
+                                ? qty
+                                : (type == 'salida' || type == 'baja'
+                                    ? -qty
+                                    : 0);
+                            if (delta != 0) {
+                              await SyncService.I.adjustLocalStock(
+                                  locId, row['product_id'], delta,
+                                  notify: false);
+                            }
                           }
-                          // Recargar stock inmediatamente para reflejar cambios offline
-                          _loadAll();
-                          // Guardar movimiento en historial local con qty negativo
-                          // para salida/baja/transferencia (como en la web)
-                          final now = DateTime.now().toIso8601String();
-                          final workerName = AuthService.I.me?['name'] ?? '';
-                          final signedQty = (type == 'salida' || type == 'baja' || type == 'transferencia') ? -qty : qty;
-                          final movement = <String, dynamic>{
-                            'id': 'local_${DateTime.now().microsecondsSinceEpoch}',
-                            'type': type,
-                            'product_id': row['product_id'],
-                            'product_name': row['name'] ?? '',
-                            'qty': signedQty,
-                            'location_id': locId,
-                            'location_name': row['location_name'] ?? '',
-                            'to_location_id': destId,
-                            'to_name': destId.isNotEmpty ? (_locations.firstWhere((l) => '${l['id']}' == destId, orElse: () => {'name': ''})['name'] ?? '') : '',
-                            'note': noteCtrl.text.trim(),
-                            'worker_name': workerName,
-                            'created_at': now,
-                          };
-                          await DbService.I.putAll('movements', [movement]);
-                          if (mounted) {
-                            final cached = await DbService.I.cacheGet('ws_movements_list');
-                            final list = (cached is List) ? List<Map<String, dynamic>>.from(cached) : <Map<String, dynamic>>[];
-                            list.insert(0, movement);
-                            DbService.I.cacheSet('ws_movements_list', list);
+                          await _saveLocalMovement(
+                              type,
+                              [
+                                {
+                                  'product_id': row['product_id'],
+                                  'qty': qty,
+                                  'name': row['name'] ?? '',
+                                }
+                              ],
+                              locId,
+                              destId,
+                              noteCtrl.text.trim(),
+                              id: localMid);
+                          // 2) Refresco de UI: después de persistir y sin
+                          //    poder abortar nada si esta pantalla ya no vive.
+                          try {
+                            if (mounted) setState(() {});
+                          } catch (_) {}
+                          try {
+                            _loadAll();
+                          } catch (e) {
+                            wsLog('! stock _loadAll tras movimiento: $e');
                           }
-                          if (mounted) setState(() {});
-                          // Refleja el movimiento en el Historial al instante.
-                          SyncService.I.emitChange();
                         },
                       );
                     },
@@ -667,42 +699,6 @@ class _StockScreenState extends State<StockScreen> {
         ),
       ),
     );
-  }
-
-  /// Actualiza la caché de movimientos tras un movimiento individual.
-  Future<void> _refreshMovementsCache(
-      String type, Map<String, dynamic> row, num qty,
-      String locId, String destId, String note) async {
-    final now = DateTime.now().toIso8601String();
-    final workerName = AuthService.I.me?['name'] ?? '';
-    final signedQty = (type == 'salida' || type == 'baja' || type == 'transferencia') ? -qty : qty;
-    final movement = <String, dynamic>{
-      'id': 'local_${DateTime.now().microsecondsSinceEpoch}',
-      'type': type,
-      'product_id': row['product_id'],
-      'product_name': row['name'] ?? '',
-      'qty': signedQty,
-      'location_id': locId,
-      'location_name': row['location_name'] ?? '',
-      'to_location_id': destId,
-      'to_name': destId.isNotEmpty
-          ? (_locations.firstWhere(
-                  (l) => '${l['id']}' == destId,
-                  orElse: () => {'name': ''})['name'] ?? '')
-          : '',
-      'note': note,
-      'worker_name': workerName,
-      'created_at': now,
-    };
-    await DbService.I.putAll('movements', [movement]);
-    final cached = await DbService.I.cacheGet('ws_movements_list');
-    final list = (cached is List)
-        ? List<Map<String, dynamic>>.from(cached)
-        : <Map<String, dynamic>>[];
-    list.insert(0, movement);
-    await DbService.I.cacheSet('ws_movements_list', list);
-    if (mounted) setState(() {});
-    SyncService.I.emitChange();
   }
 
   // ---- Batch move modal ----
@@ -1093,8 +1089,11 @@ class _BatchMoveSheetState extends State<_BatchMoveSheet> {
     final items = _items
         .map((e) => Map<String, dynamic>.from(e))
         .toList(growable: false);
+    // El asistente por lotes manda `items[]`; el endpoint de UN producto
+    // (ws_stock_transfer) solo entiende product_id+qty y devolvía
+    // "Datos de transferencia inválidos.".
     final endpoint = _type == 'transferencia'
-        ? 'ws_stock_transfer'
+        ? 'ws_stock_batch_transfer'
         : 'ws_stock_batch_move';
     final payload = <String, dynamic>{
       'type': _type,
@@ -1108,18 +1107,27 @@ class _BatchMoveSheetState extends State<_BatchMoveSheet> {
     }
     final note = _noteCtrl.text.trim();
     final toLoc = _type == 'transferencia' ? _destId : '';
+    // Id del movimiento local, compartido con la op en cola (ver
+    // `_saveLocalMovement`): permite retirar la fila local cuando el
+    // servidor ya la tiene, sin duplicarla en el Historial.
+    final localMid = 'local_${DateTime.now().microsecondsSinceEpoch}';
     final ok = await U.handlePush(
       context,
-      SyncService.I.push(endpoint, payload),
+      SyncService.I.push(endpoint, payload, localId: localMid),
       'Movimiento registrado',
       onOk: () async {
-        await _saveLocalMovement(_type, items, _locId, toLoc, note);
+        // El servidor ya lo registró: se refleja en local para no esperar
+        // al próximo pull (emitChange dentro de _saveLocalMovement refresca
+        // Stock, Historial y POS).
+        await _saveLocalMovement(_type, items, _locId, toLoc, note,
+            id: localMid);
       },
       onQueued: (_) async {
-        // Ajustar stock local INMEDIATAMENTE para que stock y POS lo
-        // reflejen aunque esté offline.
+        // 1) PERSISTIR PRIMERO: stock + movimiento, en ese orden y sin que
+        //    un refresco de UI pueda abortar el guardado. Antes la interfaz
+        //    no reflejaba nada hasta subir la cola.
         for (final it in items) {
-          final qty = (it['qty'] as int?) ?? 1;
+          final qty = ((it['qty'] as num?) ?? 1).toInt();
           if (_type == 'transferencia') {
             await SyncService.I.adjustLocalStock(
                 _locId, it['product_id'], -qty, notify: false);
@@ -1131,7 +1139,12 @@ class _BatchMoveSheetState extends State<_BatchMoveSheet> {
                 _locId, it['product_id'], delta, notify: false);
           }
         }
-        await _saveLocalMovement(_type, items, _locId, toLoc, note);
+        await _saveLocalMovement(_type, items, _locId, toLoc, note,
+            id: localMid);
+        // 2) Refresco de UI, después de persistir y sin romper nada.
+        try {
+          if (mounted) setState(() {});
+        } catch (_) {}
       },
     );
     if (!ok) return;
@@ -1148,41 +1161,78 @@ class _BatchMoveSheetState extends State<_BatchMoveSheet> {
   }
 
   /// Guarda un movimiento en SQLite local para historial offline.
-  Future<void> _saveLocalMovement(String type, List<Map<String, dynamic>> items,
-      String fromLoc, String toLoc, String note) async {
-    try {
-      final now = DateTime.now().toIso8601String();
-      final workerName = AuthService.I.me?['name'] ?? '';
-      final totalQty = items.fold<int>(0, (t, i) => t + ((i['qty'] as int?) ?? 1));
-      // Salida/baja/transferencia se registran con qty negativo (como en la web)
-      final signedQty = (type == 'salida' || type == 'baja' || type == 'transferencia')
-          ? -totalQty
-          : totalQty;
-      final movement = <String, dynamic>{
-        'id': 'local_${DateTime.now().microsecondsSinceEpoch}',
-        'type': type,
-        'product_id': items.isNotEmpty ? items.first['product_id'] : null,
-        'product_name': items.map((i) => '${i['name'] ?? i['product_id'] ?? ''}').join(', '),
-        'qty': signedQty,
-        'location_id': fromLoc,
-        'location_name': '',
-        'to_location_id': toLoc,
-        'note': note,
-        'worker_name': workerName,
-        'created_at': now,
-        'items': items,
-      };
-      final locs = await DbService.I.all('locations');
+  /// (Implementación compartida abajo, como función de nivel superior.)
+}
+
+/// Guarda un movimiento en SQLite local (tabla `movements` + caché) para que
+/// el Historial lo muestre SIN conexión.
+///
+/// Es el ÚNICO punto de escritura de movimientos locales: lo usan la acción
+/// rápida y el asistente por lotes. Persiste SIEMPRE y avía a las pantallas
+/// en un `finally` — antes un `catch (_) {}` silencioso dejaba el movimiento
+/// solo en la cola y la interfaz con datos viejos ("tengo que actualizar").
+Future<void> _saveLocalMovement(String type, List<Map<String, dynamic>> items,
+    String fromLoc, String toLoc, String note,
+    {String? id}) async {
+  try {
+    final now = DateTime.now().toIso8601String();
+    final workerName = AuthService.I.me?['name'] ?? '';
+    // `qty` llega como int o double según el campo de origen.
+    final totalQty =
+        items.fold<num>(0, (t, i) => t + (((i['qty'] as num?) ?? 1)));
+    // Salida/baja/transferencia se registran con qty negativo (como en la web).
+    final signedQty =
+        (type == 'salida' || type == 'baja' || type == 'transferencia')
+            ? -totalQty
+            : totalQty;
+    final movement = <String, dynamic>{
+      // `id` es el mismo que se pasa como `localId` al encolar: es el enlace
+      // que permite retirar esta fila cuando el servidor ya la tiene (evita
+      // ver el movimiento duplicado tras subir la cola).
+      'id': id ?? 'local_${DateTime.now().microsecondsSinceEpoch}',
+      'type': type,
+      'product_id': items.isNotEmpty ? items.first['product_id'] : null,
+      'product_name':
+          items.map((i) => '${i['name'] ?? i['product_id'] ?? ''}').join(', '),
+      'qty': signedQty,
+      'location_id': fromLoc,
+      'location_name': '',
+      'to_location_id': toLoc,
+      // El Historial pide `dest_name` o `to_name` para mostrar el destino:
+      // sin ellas una transferencia offline aparecía sin destino.
+      'to_name': '',
+      'dest_name': '',
+      'note': note,
+      'worker_name': workerName,
+      'created_at': now,
+      'items': items,
+    };
+    final locs = await DbService.I.all('locations');
+    String nameOf(String id) {
+      if (id.isEmpty) return '';
       for (final l in locs) {
-        if ('${l['id']}' == fromLoc) movement['location_name'] = l['name'] ?? '';
+        if ('${l['id']}' == id) return '${l['name'] ?? ''}';
       }
-      await DbService.I.putAll('movements', [movement]);
-      final cached = await DbService.I.cacheGet('ws_movements_list');
-      final list = (cached is List) ? List<Map<String, dynamic>>.from(cached) : <Map<String, dynamic>>[];
-      list.insert(0, movement);
-      await DbService.I.cacheSet('ws_movements_list', list);
-    } catch (_) {}
+      return '';
+    }
+
+    movement['location_name'] = nameOf(fromLoc);
+    if (toLoc.isNotEmpty) {
+      movement['to_name'] = nameOf(toLoc);
+      movement['dest_name'] = nameOf(toLoc);
+    }
+    await DbService.I.putAll('movements', [movement]);
+    final cached = await DbService.I.cacheGet('ws_movements_list');
+    final list = (cached is List)
+        ? List<Map<String, dynamic>>.from(cached)
+        : <Map<String, dynamic>>[];
+    list.insert(0, movement);
+    await DbService.I.cacheSet('ws_movements_list', list);
+  } catch (e) {
+    wsLog('! _saveLocalMovement: $e');
+  } finally {
     // Refleja el movimiento en Historial (y stock) al instante, sin esperar sync.
     SyncService.I.emitChange();
   }
 }
+

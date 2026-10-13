@@ -20,6 +20,8 @@ class PendingScreen extends StatelessWidget {
     'ws_stock_move': _ActionInfo('Movimiento de stock', Icons.warehouse_outlined, AppTheme.amber),
     'ws_stock_transfer': _ActionInfo('Transferencia de stock', Icons.swap_horiz, AppTheme.primary),
     'ws_stock_batch_move': _ActionInfo('Movimiento masivo', Icons.warehouse_outlined, AppTheme.amber),
+    'ws_stock_batch_transfer': _ActionInfo('Transferencia de stock', Icons.swap_horiz, AppTheme.primary),
+    'ws_delete_location': _ActionInfo('Eliminar ubicación', Icons.location_off_outlined, AppTheme.danger),
     'ws_stock_count_save': _ActionInfo('Cuadre de inventario', Icons.fact_check_outlined, AppTheme.success),
     'ws_undo': _ActionInfo('Deshacer movimiento', Icons.undo, AppTheme.purple),
     'ws_redo': _ActionInfo('Rehacer movimiento', Icons.redo, AppTheme.purple),
@@ -59,6 +61,20 @@ class PendingScreen extends StatelessWidget {
         final name = data['name'] ?? data['product_name'] ?? '';
         final qty = data['qty'];
         return '$name${qty != null ? ' · ${num.tryParse('$qty')! > 0 ? '+' : ''}$qty' : ''}';
+      case 'ws_stock_batch_transfer':
+        // Lote: los datos van en `items[]` (nunca un `qty`/`name` de raíz).
+        final items = (data['items'] is List)
+            ? (data['items'] as List).whereType<Map>().toList()
+            : const <Map>[];
+        final names = items
+            .map((i) => '${i['name'] ?? i['product_name'] ?? ''}')
+            .where((s) => s.trim().isNotEmpty)
+            .toList();
+        if (names.isNotEmpty) return names.join(', ');
+        final n = items.length;
+        return '$n producto${n == 1 ? '' : 's'}';
+      case 'ws_delete_location':
+        return 'Ubicación #${data['id'] ?? ''}';
       case 'ws_pos_sale_save':
         final total = data['total'] ?? '';
         final loc = data['location_name'] ?? '';

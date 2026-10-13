@@ -194,14 +194,32 @@ class SyncService extends ChangeNotifier {
             await DbService.I.cacheSet('ws_stock_list_combos', combos);
             await DbService.I.putAll('stock', rows);
             await DbService.I.putAll('combos', combos);
+            // El pull pisa el stock con el estado del servidor: si aún hay
+            // movimientos EN COLA (no subidos), sus deltas se pierden y la
+            // pantalla "revierte" lo que el usuario hizo offline. Se
+            // reaplican encima para que la interfaz siga siendo coherente.
+            await reapplyPendingStockDeltas();
           }));
 
       // Movimientos (merge/upsert: preservar movimientos creados offline).
       await step(() => ApiService.I.req('ws_movements_list',
           {'scope': '', 'pageSize': 500, 'page': 1}).then((d) async {
             final rows = List<Map<String, dynamic>>.from((((d as Map)['movements']) as List?) ?? []);
+            // Los movimientos LOCALES (`local_…`) solo se conservan mientras
+            // su op siga EN COLA: en cuanto el servidor ya los tiene, la fila
+            // local se retira para no mostrarlos DUPLICADOS con la que llega
+            // del pull. Se usa replaceAll para que el retiro sea efectivo.
+            final keep = <String>{};
+            for (final op in await DbService.I.pending()) {
+              final lid = '${op['local_id'] ?? ''}';
+              if (lid.isNotEmpty) keep.add(lid);
+            }
+            final local = await DbService.I.all('movements');
+            local.removeWhere((m) =>
+                '${m['id']}'.startsWith('local_') && !keep.contains('${m['id']}'));
+            rows.addAll(local);
             await DbService.I.cacheSet('ws_movements_list', rows);
-            await DbService.I.putAll('movements', rows);
+            await DbService.I.replaceAll('movements', rows);
           }));
 
       // Pedidos web.
@@ -846,6 +864,11 @@ class SyncService extends ChangeNotifier {
   /// Ajusta el stock LOCAL (SQLite) y notifica en tiempo real.
   /// Clave para vender offline tras una entrada en cola: la entrada suma
   /// localmente al momento y el POS puede seguir vendiendo.
+  ///
+  /// UPSERT: si la fila (ubicación, producto) no existía se CREA, para que
+  /// una transferencia hacia una ubicación sin registro previo —o una
+  /// entrada de un producto nuevo— se refleje al instante en Stock, en las
+  /// demás ubicaciones y en el POS (que leen esta misma tabla).
   Future<void> adjustLocalStock(dynamic locationId, dynamic productId, num delta,
       {bool notify = true}) async {
     try {
@@ -858,9 +881,146 @@ class SyncService extends ChangeNotifier {
         row['qty'] = q < 0 ? 0 : q;
         changed = true;
       }
-      if (!changed) return;
+      if (!changed) {
+        final q = delta < 0 ? 0 : delta;
+        rows.add({
+          'id': 'p$productId:$locationId',
+          'product_id': int.tryParse('$productId') ?? 0,
+          'location_id': int.tryParse('$locationId') ?? 0,
+          'qty': q,
+        });
+      }
       await DbService.I.putAll('stock', rows);
       if (notify) _emit();
-    } catch (_) {}
+    } catch (e) {
+      wsLog('! adjustLocalStock($locationId,$productId,$delta): $e');
+      // Aunque falle la escritura se notifica: la pantalla debe refrescar
+      // con lo que haya, no quedarse con datos viejos.
+      if (notify) _emit();
+    }
+  }
+
+  /// Reaplica sobre el stock local los deltas de las operaciones de stock
+  /// que siguen EN COLA (todavía no enviadas).
+  ///
+  /// Un pull descarga el estado del servidor, que aún no incluye esos
+  /// movimientos: sin este paso, refrescar —o entrar a Stock/POS— "deshacía"
+  /// lo que el usuario acababa de registrar offline y obligaba a subir la
+  /// cola para volver a verlo. Se ejecuta SIEMPRE después de escribir el
+  /// stock que vino del servidor.
+  Future<void> reapplyPendingStockDeltas() async {
+    try {
+      final ops = await DbService.I.pending();
+      if (ops.isEmpty) return;
+
+      // Combo -> componentes, para descontar sus productos reales.
+      Map<int, List<Map<String, dynamic>>> comboItems = {};
+      try {
+        for (final c in await DbService.I.all('combos')) {
+          final cid = int.tryParse('${c['id'] ?? 0}') ?? 0;
+          if (cid <= 0) continue;
+          final its = c['items'];
+          if (its is List) {
+            comboItems[cid] = its.whereType<Map>().toList().cast<Map<String, dynamic>>();
+          }
+        }
+      } catch (_) {}
+
+      final deltas = <String, num>{};
+      void add(dynamic loc, dynamic pid, num d) {
+        final l = int.tryParse('$loc') ?? 0;
+        final p = int.tryParse('$pid') ?? 0;
+        if (l <= 0 || p <= 0) return;
+        final k = '$l|$p';
+        deltas[k] = (deltas[k] ?? 0) + d;
+      }
+
+      for (final op in ops) {
+        final action = '${op['action'] ?? ''}';
+        final data = (op['data'] is Map)
+            ? Map<String, dynamic>.from(op['data'] as Map)
+            : <String, dynamic>{};
+        final items = (data['items'] is List)
+            ? (data['items'] as List).whereType<Map>().toList()
+            : <Map>[];
+
+        switch (action) {
+          case 'ws_stock_move':
+            add(data['location_id'], data['product_id'],
+                _moveSign('${data['type']}', (data['qty'] as num?) ?? 0));
+            break;
+          case 'ws_stock_batch_move':
+            for (final it in items) {
+              add(data['location_id'], it['product_id'],
+                  _moveSign('${data['type']}', (it['qty'] as num?) ?? 0));
+            }
+            break;
+          case 'ws_stock_transfer':
+            final q = (data['qty'] as num?) ?? 0;
+            add(data['from_location'], data['product_id'], -q);
+            add(data['to_location'], data['product_id'], q);
+            break;
+          case 'ws_stock_batch_transfer':
+            for (final it in items) {
+              final q = (it['qty'] as num?) ?? 0;
+              add(data['from_location'], it['product_id'], -q);
+              add(data['to_location'], it['product_id'], q);
+            }
+            break;
+          case 'ws_pos_sale_save':
+            // La venta descuenta stock en la ubicación del POS.
+            for (final it in items) {
+              final q = (it['qty'] as num?) ?? 0;
+              final cid = int.tryParse('${it['combo_id'] ?? 0}') ?? 0;
+              if (cid > 0) {
+                for (final ci in comboItems[cid] ?? const <Map<String, dynamic>>[]) {
+                  add(data['location_id'], ci['product_id'],
+                      -q * (((ci['qty'] as num?) ?? 1)));
+                }
+              } else {
+                add(data['location_id'], it['product_id'], -q);
+              }
+            }
+            break;
+          default:
+            break;
+        }
+      }
+      if (deltas.isEmpty) return;
+      final rows = await DbService.I.all('stock');
+      for (final e in deltas.entries) {
+        final parts = e.key.split('|');
+        final loc = parts[0], pid = parts[1];
+        var found = false;
+        for (final row in rows) {
+          if ('${row['location_id']}' != loc || '${row['product_id']}' != pid) {
+            continue;
+          }
+          final q = ((row['qty'] as num?) ?? 0) + e.value;
+          row['qty'] = q < 0 ? 0 : q;
+          found = true;
+        }
+        if (!found) {
+          rows.add({
+            'id': 'p$pid:$loc',
+            'product_id': int.tryParse(pid) ?? 0,
+            'location_id': int.tryParse(loc) ?? 0,
+            'qty': e.value < 0 ? 0 : e.value,
+          });
+        }
+      }
+      await DbService.I.putAll('stock', rows);
+      _emit();
+    } catch (e) {
+      wsLog('! reapplyPendingStockDeltas: $e');
+    }
+  }
+
+  /// Signo de un movimiento de stock según su tipo (entrada suma, el resto
+  /// resta — igual que en la web).
+  num _moveSign(String type, num qty) {
+    if (type == 'entrada') return qty;
+    if (type == 'salida' || type == 'baja' || type == 'venta') return -qty;
+    return 0;
   }
 }

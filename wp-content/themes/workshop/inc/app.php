@@ -18,11 +18,40 @@ defined( 'ABSPATH' ) || exit;
  * Versión del build móvil actual (la sube sync:web / se edita en wp-admin).
  * Es el valor por defecto del ajuste; el administrador lo cambia al publicar.
  */
-define( 'WS_APP_VERSION', '0.6.4' );
-define( 'WS_APP_RELEASE_DATE', '2026-10-12' );
-define( 'WS_APP_CHANGELOG', 'Búsqueda de vistas desde el navbar.
-Soporte accesible desde el menú lateral.
-Mejoras en Mi cuenta y estabilidad general.' );
+define( 'WS_APP_VERSION', '0.6.5' );
+define( 'WS_APP_RELEASE_DATE', '2026-10-13' );
+define( 'WS_APP_CHANGELOG', 'OFFLINE REAL
+- Entradas, salidas, bajas y transferencias se guardan ya en el dispositivo: se ven al instante en Stock, en el Historial, en las demás ubicaciones y en el POS, sin tener que subir ni refrescar.
+- Transferencia: corregido el error «Datos de transferencia inválidos» al subir la cola.
+- Los movimientos subidos ya no salen duplicados en el Historial.
+- Refrescar Stock ya no borra lo hecho sin conexión.
+- Si la fila de stock de una ubicación no existía, ahora se crea (transferencias y entradas a ubicaciones nuevas).
+
+STOCK Y POS
+- Stock, POS, Historial y Productos dejan de «marearse» al cambiar de pestaña o al subir la cola.
+- Historial de caja del POS con pestañas (Todas / Abiertas / Cerradas), resumen de aperturas, cierres y diferencia.
+- Cierre de caja con monto contado y cuadre.
+- Nuevo: monto de cierre registrado en cada cierre.
+
+PRODUCTOS Y CATÁLOGO
+- Nueva gráfica de precios por producto (semana / mes / año) con subidas y bajadas, desde el detalle del producto.
+- Botón «Ver histórico de precios».
+- Conteo de productos en la portada y en /tienda-negocio/ ahora cuenta solo las tiendas activas.
+
+UBICACIONES Y PERMISOS
+- Ubicaciones: se pueden eliminar (con su stock, movimientos, conexiones y asignaciones), igual que en la web.
+- El dueño ya no puede editarse sus propios permisos: los gestiona el administrador del sitio.
+
+TRABAJADORES
+- El rol «Dueño» ya no aparece al crear o editar un trabajador: el dueño se da de alta desde el panel web.
+- Las filas de dueño se muestran solo en lectura (sin editar, pausar ni eliminar) desde la app.
+- Un trabajador creado con su calendario ya entra a la app con sus propias credenciales y ve su turno.
+
+ANUNCIOS Y AJUSTES
+- Anuncios con tipo, banner fijado y permiso de cierre, e igual que la web: creaciones, ediciones y toggles se guardan offline sin duplicar.
+- Ajustes del negocio desde la app: monedas, tasa de cambio (USD/CUP), WhatsApp de pedidos y métodos de pago.
+- Banners de anuncios fijados visibles para todos los usuarios.
+- Mejoras de estabilidad general en la sincronización.' );
 
 /**
  * Descarga del APK desde el repo público de GitHub (raw).
