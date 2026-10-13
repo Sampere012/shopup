@@ -55,7 +55,7 @@ get_header();
             </form>
             <div class="ws-auth-divider"><span><?php esc_html_e( '¿Eres dueño de un negocio?', 'workshop' ); ?></span></div>
             <a class="ws-btn ws-btn-accent ws-btn-block ws-login-register-cta" href="<?php echo esc_url( ws_register_url() ); ?>">
-                <i class="fa-solid fa-gift"></i> <?php esc_html_e( 'Crea tu tienda gratis · 7 días de prueba', 'workshop' ); ?>
+                <i class="fa-solid fa-gift"></i> <?php echo esc_html( sprintf( __( 'Crea tu tienda gratis · %d días de prueba', 'workshop' ), (int) ws_trial_days() ) ); ?>
             </a>
             <a class="ws-auth-back" href="<?php echo esc_url( ws_business_home() ); ?>"><i class="fa-solid fa-arrow-left"></i> <?php esc_html_e( 'Volver', 'workshop' ); ?></a>
         </div>

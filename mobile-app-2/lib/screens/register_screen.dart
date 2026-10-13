@@ -35,6 +35,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _busy = false;
   bool _showPass = false;
   String? _error;
+  // Días de prueba: del panel de WordPress (ws_app_version → trial_days);
+  // AppConfig.trialDays solo como fallback si no hay red.
+  int _trialDays = AppConfig.trialDays;
   final List<TextEditingController> _otp =
       List.generate(6, (_) => TextEditingController());
   final List<FocusNode> _otpFocus = List.generate(6, (_) => FocusNode());
@@ -45,6 +48,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   void initState() {
     super.initState();
+    _loadTrialDays();
     // Retoma un registro que quedó a medias: si la app se cerró en el paso 2
     // (código ya enviado), se vuelve a esa pantalla con el email puesto en
     // vez de perder el estado y dejar al usuario sin dónde escribir el código.
@@ -58,6 +62,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
         _error = null;
       });
     });
+  }
+
+  /// Carga los días de prueba configurados en el panel de WordPress.
+  Future<void> _loadTrialDays() async {
+    try {
+      final d = await ApiService.I.req('ws_app_version', {}, timeoutSec: 8);
+      if (!mounted || d is! Map) return;
+      final days = int.tryParse('${d['trial_days'] ?? ''}');
+      if (days != null && days > 0 && days != _trialDays) {
+        setState(() => _trialDays = days);
+      }
+    } catch (_) {
+      // Sin red: se mantiene el valor por defecto.
+    }
   }
 
   @override
@@ -356,7 +374,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         const Text('Crea tu negocio gratis',
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
         const SizedBox(height: 4),
-        Text('Con ${AppConfig.trialDays} días de prueba gratis',
+        Text('Con $_trialDays días de prueba gratis',
             style: TextStyle(color: Colors.grey[500], fontSize: 12)),
         const SizedBox(height: 16),
         _messages(),

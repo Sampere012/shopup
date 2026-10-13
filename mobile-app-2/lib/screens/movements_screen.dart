@@ -46,6 +46,12 @@ class _MovementsScreenState extends State<MovementsScreen> {
     SyncService.I.onChange(_onSync);
   }
 
+  @override
+  void dispose() {
+    SyncService.I.removeOnChange(_onSync);
+    super.dispose();
+  }
+
   void _onSync() {
     if (mounted) _reload();
   }
@@ -66,8 +72,23 @@ class _MovementsScreenState extends State<MovementsScreen> {
   Widget build(BuildContext context) {
     context.watch<SyncNotifier>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final canEntry = AuthService.I.has('stock_entry');
+    final canExit = AuthService.I.has('stock_exit');
+    final canTransfer = AuthService.I.has('stock_transfer');
+    final canWriteoff = AuthService.I.has('stock_writeoff');
+    final hasAnyAction = canEntry || canExit || canTransfer || canWriteoff;
 
-    return Column(children: [
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      floatingActionButton: hasAnyAction
+          ? FloatingActionButton.extended(
+              heroTag: 'newMovement',
+              onPressed: () => NavCallback.of(context)?.navigate('stock'),
+              icon: const Icon(Icons.add),
+              label: const Text('Nuevo movimiento'),
+            )
+          : null,
+      body: Column(children: [
       // ── Search bar ──
       Padding(
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
@@ -434,7 +455,8 @@ class _MovementsScreenState extends State<MovementsScreen> {
           },
         ),
       ),
-    ]);
+      ]),
+    );
   }
 
   // ── Helpers ──

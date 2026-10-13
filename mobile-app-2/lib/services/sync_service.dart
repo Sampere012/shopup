@@ -52,6 +52,11 @@ class SyncService extends ChangeNotifier {
   void removeOnChange(void Function() fn) => _changeListeners.remove(fn);
   void onBackgroundSync(void Function() fn) => _bgListeners.add(fn);
 
+  /// Fuerza una notificación a las pantallas suscritas (y a los `watch`).
+  /// Útil tras guardar datos locales (p.ej. un movimiento offline) para que
+  /// la UI los refleje al instante, sin esperar a un ciclo de sync.
+  void emitChange() => _emit();
+
   void _emit() {
     for (final fn in List.of(_changeListeners)) {
       try { fn(); } catch (_) {}
@@ -215,12 +220,25 @@ class SyncService extends ChangeNotifier {
             }));
       }
 
+      // Anuncios fijados (banners): para TODOS los usuarios, igual que en el
+      // panel web, no solo para quien gestiona anuncios.
+      await step(() => ApiService.I.req('ws_announcements_pinned_list', {})
+          .then((d) async {
+        final rows =
+            List<Map<String, dynamic>>.from((((d as Map)['list']) as List?) ?? []);
+        await DbService.I.cacheSet('ws_announcements_pinned', rows);
+      }));
+
       // Anuncios.
       if (menuKeys.contains('anuncios')) {
         await step(() => ApiService.I.req('ws_announcements_list', {}).then((d) async {
               final rows = List<Map<String, dynamic>>.from((((d as Map)['list']) as List?) ?? []);
               await DbService.I.cacheSet('ws_announcements_list', rows);
-              await DbService.I.replaceAll('announcements', rows);
+              // Conservar lo que todavía no se subió (creaciones locales y
+              // ediciones en cola): el replaceAll no debe pisarlo
+              // (mismo criterio que cuadres/ventas POS).
+              final merged = await mergeAnnouncementRows(rows);
+              await DbService.I.replaceAll('announcements', merged);
             }));
       }
 
@@ -387,7 +405,8 @@ class SyncService extends ChangeNotifier {
   /// acción con los MISMOS datos encolada en los últimos 30 s (doble toque
   /// del botón mientras no hay conexión), se reutiliza ese registro.
   /// Devuelve el id de la op en cola ('op_…') o null si se dedupeó.
-  Future<String?> _enqueueDedup(String action, Map<String, dynamic> data) async {
+  Future<String?> _enqueueDedup(String action, Map<String, dynamic> data,
+      {String? localId}) async {
     try {
       final key = jsonEncode(data);
       final nowUs = DateTime.now().microsecondsSinceEpoch;
@@ -411,7 +430,7 @@ class SyncService extends ChangeNotifier {
     } catch (_) {
       // Si la dedupe falla, se encola igual (nunca perder un guardado).
     }
-    final n = await DbService.I.enqueue(action, data);
+    final n = await DbService.I.enqueue(action, data, localId: localId);
     return 'op_$n';
   }
 
@@ -435,7 +454,10 @@ class SyncService extends ChangeNotifier {
   ///    decide si guardar en el dispositivo en vez de esperar ciegas);
   ///  - si el usuario guarda localmente y la petición termina BIEN después,
   ///    la copia en cola se descarta para no duplicar el envío.
-  Future<dynamic> push(String action, Map<String, dynamic> data) async {
+  /// [localId] enlaza la op con la fila local que la originó (p.ej. un
+  /// anuncio creado offline) para poder coalescer ediciones posteriores.
+  Future<dynamic> push(String action, Map<String, dynamic> data,
+      {String? localId}) async {
     // Plan bloqueado: la operación se rechaza en vez de encolarse, para no
     // acumular escrituras que el servidor va a rechazar igualmente.
     if (PlanGuardService.I.isBlocked) {
@@ -456,7 +478,7 @@ class SyncService extends ChangeNotifier {
         localQueued = true;
         _slowOp = null;
         _emit();
-        enqueueFuture = _enqueueDedup(action, data);
+        enqueueFuture = _enqueueDedup(action, data, localId: localId);
         return enqueueFuture!;
       }
 
@@ -531,9 +553,178 @@ class SyncService extends ChangeNotifier {
       });
       return done.future;
     }
-    await _enqueueDedup(action, data);
+    await _enqueueDedup(action, data, localId: localId);
     _emit();
     return {'queued': true, 'payload': data};
+  }
+
+  // ------- Anuncios: coalescencia de ops sobre filas LOCALES --------
+
+  /// Op en cola de creación de UN anuncio local. Busca por [localId] y, si
+  /// la op es de una versión anterior de la app (sin ese enlace), por el
+  /// título del payload.
+  Future<Map<String, dynamic>?> queuedAnnouncementSaveFor(
+      String localId, {String? title}) async {
+    final ops = await DbService.I.pending();
+    Map<String, dynamic>? byTitle;
+    for (final op in ops) {
+      if (op['action'] != 'ws_announcement_save') continue;
+      if ('${op['local_id'] ?? ''}' == localId) return op;
+      if (title != null &&
+          title.isNotEmpty &&
+          '${(op['data'] is Map ? op['data'] : const {})['title'] ?? ''}' ==
+              title) {
+        byTitle ??= op;
+      }
+    }
+    return byTitle;
+  }
+
+  /// Reescribe el payload de la creación encolada de un anuncio local
+  /// (editar/toggle mientras aún no se subió) en vez de encolar otra op que
+  /// el servidor terminaría rechazando con "Anuncio no encontrado".
+  /// Devuelve true si había una op y se actualizó.
+  Future<bool> updateQueuedAnnouncementSave(
+      String localId, Map<String, dynamic> data,
+      {String? title}) async {
+    final op = await queuedAnnouncementSaveFor(localId, title: title);
+    if (op == null) return false;
+    return DbService.I.updatePendingData(op['id'], data);
+  }
+
+  /// Aplica [fields] (p.ej. {active: '0'} o {pinned: '1'}) sobre el payload
+  /// de la creación encolada de un anuncio local: el toggle de una fila que
+  /// todavía no está en el servidor se "fusiona" en su propia creación en
+  /// vez de generar una op que el servidor rechazaría.
+  Future<bool> updateQueuedAnnouncementField(
+      String localId, Map<String, String> fields,
+      {String? title}) async {
+    final op = await queuedAnnouncementSaveFor(localId, title: title);
+    if (op == null) return false;
+    final data = (op['data'] is Map)
+        ? Map<String, dynamic>.from(op['data'] as Map)
+        : <String, dynamic>{};
+    data.addAll(fields);
+    return DbService.I.updatePendingData(op['id'], data);
+  }
+
+  /// Descarta TODAS las ops encoladas que referencian una fila local
+  /// (creación pendiente + toggles/borrados que ya no aplican).
+  /// Devuelve cuántas ops se descartaron (0 = la creación ya se subió).
+  Future<int> discardQueuedAnnouncementOps(String localId,
+      {String? title}) async {
+    var removed = 0;
+    final ops = await DbService.I.pending();
+    for (final op in ops) {
+      final action = '${op['action'] ?? ''}';
+      if (!action.startsWith('ws_announcement_')) continue;
+      if ('${op['local_id'] ?? ''}' == localId) {
+        await DbService.I.removePending(op['id']);
+        removed++;
+        continue;
+      }
+      // Ops antiguas (sin local_id): solo las de guardado se emparejan por
+      // título; toggle/delete jamás se emparejan (su payload no tiene título).
+      if (action == 'ws_announcement_save' &&
+          title != null &&
+          title.isNotEmpty &&
+          '${(op['data'] is Map ? op['data'] : const {})['title'] ?? ''}' ==
+              title) {
+        await DbService.I.removePending(op['id']);
+        removed++;
+      }
+    }
+    if (removed > 0) {
+      _emit();
+    }
+    return removed;
+  }
+
+  /// Filas de anuncios que aún están SOLO en el dispositivo (creación en
+  /// cola): lo que la pantalla muestra como pendiente de subir. Se usan para
+  /// no perderlas cuando el pull reemplaza la tabla con la lista del
+  /// servidor.
+  Future<List<Map<String, dynamic>>> queuedAnnouncementRows() async {
+    final out = <Map<String, dynamic>>[];
+    try {
+      final ops = await DbService.I.pending();
+      for (final op in ops) {
+        if (op['action'] != 'ws_announcement_save') continue;
+        final data = (op['data'] is Map)
+            ? Map<String, dynamic>.from(op['data'] as Map)
+            : <String, dynamic>{};
+        if ('${data['title'] ?? ''}'.trim().isEmpty) continue;
+        out.add({
+          ...data,
+          'id': '${op['local_id'] ?? ''}'.isNotEmpty
+              ? '${op['local_id']}'
+              : 'local-op-${op['id']}',
+          'active': '${data['active'] ?? '1'}',
+          'pinned': '${data['pinned'] ?? '0'}',
+          'dismissible': '${data['dismissible'] ?? '1'}',
+          'type': '${data['type'] ?? 'info'}',
+          'message': '${data['message'] ?? ''}',
+          'created_at':
+              data['created_at'] ?? DateTime.now().toIso8601String(),
+          'queued': true,
+        });
+      }
+    } catch (_) {}
+    return out;
+  }
+
+  /// Combina la lista del servidor con las operaciones de anuncios aún en
+  /// cola, para que el pull no pise lo que todavía no se ha subido:
+  ///  - las CREACIONES locales (id 'local-…') se añaden como filas propias;
+  ///  - las EDICIONES pendientes de anuncios ya sincronizados se aplican
+  ///    encima de su fila del servidor (mismo id).
+  Future<List<Map<String, dynamic>>> mergeAnnouncementRows(
+      List<Map<String, dynamic>> serverRows) async {
+    final overrides = <String, Map<String, dynamic>>{};
+    try {
+      final ops = await DbService.I.pending();
+      for (final op in ops) {
+        if (op['action'] != 'ws_announcement_save') continue;
+        final data = (op['data'] is Map)
+            ? Map<String, dynamic>.from(op['data'] as Map)
+            : <String, dynamic>{};
+        if ('${data['title'] ?? ''}'.trim().isEmpty) continue;
+        var id = '${op['local_id'] ?? ''}';
+        if (id.isEmpty) id = '${data['id'] ?? ''}';
+        if (id.isEmpty || id == '0') continue;
+        overrides[id] = data;
+      }
+    } catch (_) {}
+    final merged = <Map<String, dynamic>>[];
+    for (final row in serverRows) {
+      final override = overrides['${row['id']}'];
+      if (override == null) {
+        merged.add(Map<String, dynamic>.from(row));
+      } else {
+        merged.add({
+          ...row,
+          ...override,
+          'id': row['id'],
+          'queued': true,
+        });
+      }
+    }
+    for (final entry in overrides.entries) {
+      if (!entry.key.startsWith('local-')) continue;
+      merged.insert(0, {
+        ...entry.value,
+        'id': entry.key,
+        'active': '${entry.value['active'] ?? '1'}',
+        'pinned': '${entry.value['pinned'] ?? '0'}',
+        'dismissible': '${entry.value['dismissible'] ?? '1'}',
+        'type': '${entry.value['type'] ?? 'info'}',
+        'message': '${entry.value['message'] ?? ''}',
+        'created_at': entry.value['created_at'] ??
+            DateTime.now().toIso8601String(),
+        'queued': true,
+      });
+    }
+    return merged;
   }
 
   /// Envía pendientes en orden. Devuelve {sent, remaining}.
@@ -561,8 +752,18 @@ class SyncService extends ChangeNotifier {
           await ApiService.I.req('${op['action']}',
               Map<String, dynamic>.from(op['data'] as Map),
               timeoutSec: 12);
-          await DbService.I.updatePending(op['id'], status: 'sent');
-          await DbService.I.removePending(op['id']);
+          // Si el usuario coalescó un cambio (p.ej. editó un anuncio local)
+          // MIENTRAS se enviaba esta op, la versión nueva sigue pendiente:
+          // no se borra, se reenvía en el próximo flush.
+          final fresh = await DbService.I.pendingById(op['id']);
+          final samePayload = fresh == null ||
+              jsonEncode(fresh['data'] ?? {}) == jsonEncode(op['data'] ?? {});
+          if (!samePayload) {
+            await DbService.I.updatePending(op['id'], status: 'pending');
+          } else {
+            await DbService.I.updatePending(op['id'], status: 'sent');
+            await DbService.I.removePending(op['id']);
+          }
           sent++;
         } on ApiException catch (e) {
           await DbService.I.updatePending(
@@ -570,7 +771,11 @@ class SyncService extends ChangeNotifier {
             status: 'error',
             error: e.message,
           );
-          if (e.response != null) {
+          // Rechazo del servidor (o el `0` de admin-ajax con sesión
+          // inválida/acción inexistente): NO detener la cola, solo marcar y
+          // seguir. Detener aquí dejaba TODOS los pendientes detrás sin
+          // subirse nunca (p.ej. los anuncios encolados).
+          if (e.response != null || e.reachedServer) {
             failures.add(e.message.replaceAll(RegExp(r'\s+'), ' ').trim());
             continue; // definitiva: sigue en cola, continúa con la siguiente
           }
@@ -641,7 +846,8 @@ class SyncService extends ChangeNotifier {
   /// Ajusta el stock LOCAL (SQLite) y notifica en tiempo real.
   /// Clave para vender offline tras una entrada en cola: la entrada suma
   /// localmente al momento y el POS puede seguir vendiendo.
-  Future<void> adjustLocalStock(dynamic locationId, dynamic productId, num delta) async {
+  Future<void> adjustLocalStock(dynamic locationId, dynamic productId, num delta,
+      {bool notify = true}) async {
     try {
       final rows = await DbService.I.all('stock');
       var changed = false;
@@ -654,7 +860,7 @@ class SyncService extends ChangeNotifier {
       }
       if (!changed) return;
       await DbService.I.putAll('stock', rows);
-      _emit();
+      if (notify) _emit();
     } catch (_) {}
   }
 }

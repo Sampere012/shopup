@@ -23,8 +23,23 @@ $products_table = ws_table_name( 'products' );
 $stock_table    = ws_table_name( 'stock' );
 $orders_table   = ws_table_name( 'orders' );
 $pos_table      = ws_table_name( 'pos_sales' );
+$locations_t    = ws_table_name( 'locations' );
 
-$products_total = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$products_table} WHERE active=1" );
+// Productos activos: contar solo los que tienen stock en las ubicaciones
+// activas del usuario (tiendas activas). Un producto sin stock en ninguna
+// tienda activa no debe contar en el dashboard del vendedor.
+$products_total = 0;
+if ( $loc_ids ) {
+    $products_total = (int) $wpdb->get_var( $wpdb->prepare(
+        "SELECT COUNT(DISTINCT p.id) FROM {$products_table} p
+         INNER JOIN {$stock_table} s ON s.product_id = p.id
+         INNER JOIN {$locations_t} lt ON lt.id = s.location_id AND lt.active = 1
+         WHERE p.active = 1 AND s.location_id IN ({$loc_placeholders})",
+        ...$args
+    ) );
+} else {
+    $products_total = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$products_table} WHERE active=1" );
+}
 
 // Stock bajo con el STOCK DEL GRUPO CONECTADO (stock compartido): el total
 // de las ubicaciones vinculadas cuenta para el mínimo, no el stock de cada
@@ -67,7 +82,11 @@ if ( abs( $sales_today ) >= 1000000 ) {
 <div class="ws-kpis">
     <div class="ws-kpi">
         <div class="ws-kpi-icon ws-kpi-blue"><i class="fa-solid fa-boxes-stacked"></i></div>
-        <div><span><?php esc_html_e( 'Productos activos', 'workshop' ); ?></span><strong><?php echo esc_html( number_format_i18n( $products_total ) ); ?></strong></div>
+        <div><span><?php esc_html_e( 'Productos activos', 'workshop' ); ?></span><strong><?php echo esc_html( number_format_i18n( $products_total ) ); ?></strong>
+        <?php if ( $loc_ids ): ?>
+        <small class="ws-muted"><?php esc_html_e( 'en tus tiendas activas', 'workshop' ); ?></small>
+        <?php endif; ?>
+        </div>
     </div>
     <div class="ws-kpi">
         <div class="ws-kpi-icon ws-kpi-amber"><i class="fa-solid fa-triangle-exclamation"></i></div>

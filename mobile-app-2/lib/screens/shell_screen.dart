@@ -35,6 +35,10 @@ class _ShellScreenState extends State<ShellScreen> with WidgetsBindingObserver {
   List<_SearchTarget> _searchMatches = [];
   Timer? _searchDebounce;
 
+  // Anuncios fijados (banners), igual que en el panel web: se muestran a
+  // todos los usuarios, activos y anclados, salvo los descartados.
+  List<Map<String, dynamic>> _announcements = [];
+
   static const _bottomNavKeys = ['dashboard', 'products', 'stock', 'pos', 'pos-sales'];
 
   @override
@@ -48,7 +52,9 @@ class _ShellScreenState extends State<ShellScreen> with WidgetsBindingObserver {
     _sessionRefreshTimer = Timer.periodic(const Duration(minutes: 5), (_) => _refreshSession());
     _updateNotifBadge();
     _checkUpdate();
+    _loadAnnouncements();
     SyncService.I.onChange(_updateNotifBadge);
+    SyncService.I.onChange(_loadAnnouncements);
   }
 
   @override
@@ -83,6 +89,93 @@ class _ShellScreenState extends State<ShellScreen> with WidgetsBindingObserver {
       final count = await DbService.I.getMeta('notif_unread_count');
       if (mounted) setState(() => _unreadCount = (count as num?)?.toInt() ?? 0);
     } catch (_) {}
+  }
+
+  /// Carga los anuncios fijados por el negocio (banners del panel web).
+  Future<void> _loadAnnouncements() async {
+    try {
+      final raw = await DbService.I.cacheGet('ws_announcements_pinned');
+      final rows = raw is List
+          ? List<Map<String, dynamic>>.from(raw.whereType<Map>())
+          : <Map<String, dynamic>>[];
+      final sp = await SharedPreferences.getInstance();
+      final dismissed = (sp.getStringList('ws_dismissed_anns') ?? []).toSet();
+      final visible = rows
+          .where((a) =>
+              '${a['active'] ?? '1'}' != '0' &&
+              !dismissed.contains('${a['id']}'))
+          .toList();
+      if (mounted) setState(() => _announcements = visible);
+    } catch (_) {}
+  }
+
+  Future<void> _dismissAnnouncement(String id) async {
+    final sp = await SharedPreferences.getInstance();
+    final list = sp.getStringList('ws_dismissed_anns') ?? <String>[];
+    if (!list.contains(id)) list.add(id);
+    await sp.setStringList('ws_dismissed_anns', list);
+    await _loadAnnouncements();
+  }
+
+  /// Banner de un anuncio fijado (colores como ws-banner-* de la web).
+  Widget _announcementsBar(bool isDark) {
+    if (_announcements.isEmpty) return const SizedBox.shrink();
+    const colors = {
+      'info': Color(0xFF2563EB),
+      'success': Color(0xFF059669),
+      'warning': Color(0xFFD97706),
+      'danger': Color(0xFFDC2626),
+    };
+    const icons = {
+      'info': Icons.info_outline,
+      'success': Icons.check_circle_outline,
+      'warning': Icons.warning_amber_outlined,
+      'danger': Icons.error_outline,
+    };
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      child: Column(children: _announcements.map((a) {
+        final type = colors.containsKey('${a['type']}') ? '${a['type']}' : 'info';
+        final color = colors[type]!;
+        final dismissible = '${a['dismissible'] ?? '1'}' != '0';
+        return Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.fromLTRB(12, 10, 6, 10),
+          decoration: BoxDecoration(
+            color: color.withAlpha(isDark ? 35 : 22),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: color.withAlpha(70)),
+          ),
+          child: Row(children: [
+            Icon(icons[type], color: color, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min, children: [
+                Text('${a['title'] ?? ''}',
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? Colors.white : const Color(0xFF0F172A))),
+                if ('${a['message'] ?? ''}'.isNotEmpty)
+                  Text('${a['message']}',
+                      style: TextStyle(
+                          fontSize: 12,
+                          height: 1.35,
+                          color: isDark ? Colors.white70 : const Color(0xFF334155))),
+              ]),
+            ),
+            if (dismissible)
+              IconButton(
+                tooltip: 'Ocultar',
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.close, size: 18),
+                onPressed: () => _dismissAnnouncement('${a['id']}'),
+              ),
+          ]),
+        );
+      }).toList()),
+    );
   }
 
   Future<void> _checkUpdate() async {
@@ -550,20 +643,25 @@ class _ShellScreenState extends State<ShellScreen> with WidgetsBindingObserver {
           NavBus.clear();
           setState(() => _route = r);
         },
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 280),
-          switchInCurve: Curves.easeOutCubic,
-          switchOutCurve: Curves.easeInCubic,
-          transitionBuilder: (child, anim) => FadeTransition(
-            opacity: anim,
-            child: SlideTransition(
-              position: Tween<Offset>(begin: const Offset(0.04, 0.0), end: Offset.zero)
-                  .animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
-              child: child,
+        child: Column(children: [
+          _announcementsBar(isDark),
+          Expanded(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 280),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (child, anim) => FadeTransition(
+                opacity: anim,
+                child: SlideTransition(
+                  position: Tween<Offset>(begin: const Offset(0.04, 0.0), end: Offset.zero)
+                      .animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+                  child: child,
+                ),
+              ),
+              child: KeyedSubtree(key: ValueKey(_route), child: RouteView(route: _route)),
             ),
           ),
-          child: KeyedSubtree(key: ValueKey(_route), child: RouteView(route: _route)),
-        ),
+        ]),
       ),
       bottomNavigationBar: isTablet ? null : NavigationBar(
         selectedIndex: (() {

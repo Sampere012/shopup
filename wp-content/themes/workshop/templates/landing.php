@@ -23,23 +23,13 @@ usort( $locations, function ( $a, $b ) {
 $currency  = ws_currency_symbol();
 $biz       = ws_current_business();
 
-global $wpdb;
-$store_count = count( $locations );
-// Solo cuenta lo VISIBLE EN LA TIENDA (ojito POR UBICACIÓN): lo que está en
-// el inventario pero oculto del catálogo público no cuenta como "producto".
-// El override de ws_store_visibility (visible en AL MENOS una ubicación
-// activa) manda sobre el flag global.
-$pro_t = ws_table_name( 'products' );
-$loc_t = ws_table_name( 'locations' );
-$sv_t  = ws_table_name( 'store_visibility' );
-if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $sv_t ) ) === $sv_t ) {
-    $prod_count = (int) $wpdb->get_var( "SELECT COUNT(DISTINCT p.id) FROM {$pro_t} p
-        INNER JOIN {$loc_t} l ON l.active=1
-        LEFT JOIN {$sv_t} sv ON sv.entity_type='product' AND sv.entity_id=p.id AND sv.location_id=l.id AND sv.channel='store'
-        WHERE p.active=1 AND COALESCE(sv.visible, p.store_visible) = 1" );
-} else {
-    $prod_count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$pro_t} WHERE active=1 AND store_visible=1" );
-}
+// Conteo canónico (solo TIENDAS ACTIVAS): mismo criterio que el directorio
+// /tienda-negocio/, vía WS_Business::store_stats(), para que la portada y el
+// mercado nunca muestren totales distintos. Productos = activos y visibles en
+// la tienda que además tienen existencia en alguna ubicación ACTIVA.
+$ws_stats    = WS_Business::store_stats( $biz );
+$store_count = (int) $ws_stats['stores'];
+$prod_count  = (int) $ws_stats['products'];
 
 get_header();
 ?>

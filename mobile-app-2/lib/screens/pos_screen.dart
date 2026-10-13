@@ -8,6 +8,7 @@ import '../main.dart';
 import '../theme/app_theme.dart';
 import '../theme/app_animations.dart';
 import '../services/auth_service.dart';
+import '../services/api_service.dart';
 import '../services/db_service.dart';
 import '../services/sync_service.dart';
 import '../services/pos_local_service.dart';
@@ -68,6 +69,7 @@ class _PosScreenState extends State<PosScreen> {
 
   @override
   void dispose() {
+    SyncService.I.removeOnChange(_onSyncChanged);
     _reloadDebounce?.cancel();
     _nameCtrl.dispose();
     _docCtrl.dispose();
@@ -83,6 +85,7 @@ class _PosScreenState extends State<PosScreen> {
     await PosLocalService.I.loadRecentCustomers();
     await PosLocalService.I.loadFrozen();
     await PosLocalService.I.loadCash();
+    await PosLocalService.I.loadCashHistory();
 
     var allLocs = (await DbService.I.all('locations'))
         .where((l) => '${l['pos_enabled']}' != '0' && '${l['pos_enabled']}' != 'false')
@@ -378,16 +381,26 @@ class _PosScreenState extends State<PosScreen> {
   void _openCashModal() {
     final cash = PosLocalService.I.cashState;
     final openingCtrl = TextEditingController();
+    final closingCtrl = TextEditingController();
     // Guarda el estado local de caja (online y offline: el resultado es el
     // mismo, la cola se encarga de sincronizar).
     void saveLocalCash(num amount) {
+      final now = DateTime.now();
       PosLocalService.I.cashState = CashState(
         open: true,
-        openedAt: DateTime.now().toString(),
+        openedAt: now.toString(),
         sellerName: '${AuthService.I.me?['name'] ?? ''}',
         openingAmount: amount,
       );
       PosLocalService.I.saveCash();
+      // Registrar en historial
+      PosLocalService.I.addCashHistoryEntry(CashHistoryEntry(
+        type: 'open',
+        timestamp: now,
+        sellerName: '${AuthService.I.me?['name'] ?? ''}',
+        openingAmount: amount,
+        locationId: _loc,
+      ));
     }
 
     // Botón ocupado: evita el doble toque (un SOLO registro por acción,
@@ -412,6 +425,12 @@ class _PosScreenState extends State<PosScreen> {
               Text('Vendedor: ${cash.sellerName}', style: TextStyle(color: Colors.grey[600])),
               Text('Apertura: ${cash.openingAmount}', style: TextStyle(color: Colors.grey[600])),
               const SizedBox(height: 12),
+              TextField(
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Monto contado al cierre'),
+                controller: closingCtrl,
+              ),
+              const SizedBox(height: 12),
               FilledButton(
                 style: FilledButton.styleFrom(backgroundColor: AppTheme.danger),
                 onPressed: busy
@@ -419,18 +438,28 @@ class _PosScreenState extends State<PosScreen> {
                     : () async {
                         if (busy) return;
                         setS(() => busy = true);
+                        final closing = num.tryParse(closingCtrl.text.trim()) ?? 0;
+                        void saveLocalClose() {
+                          PosLocalService.I.addCashHistoryEntry(CashHistoryEntry(
+                            type: 'close',
+                            timestamp: DateTime.now(),
+                            sellerName: cash.sellerName,
+                            openingAmount: cash.openingAmount,
+                            closingAmount: closing,
+                            locationId: _loc,
+                          ));
+                          PosLocalService.I.cashState = CashState();
+                          PosLocalService.I.saveCash();
+                        }
                         final done = await U.handlePush(
                           context,
-                          SyncService.I.push('ws_pos_cash_close', {'location_id': _loc}),
+                          SyncService.I.push('ws_pos_cash_close', {
+                            'location_id': _loc,
+                            'closing_amount': closing,
+                          }),
                           'Caja cerrada',
-                          onOk: () async {
-                            PosLocalService.I.cashState = CashState();
-                            PosLocalService.I.saveCash();
-                          },
-                          onQueued: (_) async {
-                            PosLocalService.I.cashState = CashState();
-                            PosLocalService.I.saveCash();
-                          },
+                          onOk: () async => saveLocalClose(),
+                          onQueued: (_) async => saveLocalClose(),
                         );
                         if (!mounted) return;
                         if (done && ctx.mounted) Navigator.pop(ctx);
@@ -469,10 +498,76 @@ class _PosScreenState extends State<PosScreen> {
                       },
                 child: const Text('Abrir caja'),
               ),
+              const SizedBox(height: 12),
             ],
+            OutlinedButton.icon(
+              onPressed: () => _openCashHistoryModal(),
+              icon: const Icon(Icons.history),
+              label: const Text('Ver historial'),
+            ),
           ]),
         ),
       ),
+    );
+  }
+
+  // ── Cash History Modal (con pestañas, como la web) ──
+  Future<void> _openCashHistoryModal() async {
+    Navigator.pop(context); // Close cash modal
+
+    // Obtener historial del servidor (si hay conexión)
+    List<Map<String, dynamic>> serverHistory = [];
+    try {
+      final d = await ApiService.I.req('ws_mobile_pos_cash_history', {
+        'location_id': _loc,
+        'status': '',
+        'date_from': '',
+        'date_to': '',
+      });
+      serverHistory =
+          List<Map<String, dynamic>>.from((d['registers'] as List?) ?? []);
+    } catch (_) {}
+
+    // Combinar: servidor primero (ordenado por fecha DESC), luego local.
+    final allHistory = <CashHistoryEntry>[];
+
+    for (final r in serverHistory) {
+      try {
+        final openedAt = DateTime.tryParse('${r['opened_at']}');
+        if (openedAt != null) {
+          allHistory.add(CashHistoryEntry(
+            type: '${r['status'] ?? 'closed'}' == 'open' ? 'open' : 'close',
+            timestamp: openedAt,
+            sellerName: '${r['seller_name'] ?? ''}',
+            openingAmount: (r['opening_amount'] as num?) ?? 0,
+            closingAmount:
+                r['closed_at'] != null && '${r['closed_at']}'.isNotEmpty
+                    ? (r['closing_amount'] as num?) ?? 0
+                    : null,
+            locationId: '${r['location_id'] ?? _loc}',
+          ));
+        }
+      } catch (_) {}
+    }
+
+    // Añadir entradas locales que no estén en el servidor
+    final serverIds =
+        serverHistory.map((r) => '${r['opened_at'] ?? ''}'.hashCode).toSet();
+    for (final e in PosLocalService.I.cashHistory) {
+      if (!serverIds.contains(e.timestamp.hashCode)) {
+        allHistory.add(e);
+      }
+    }
+
+    // Ordenar por fecha DESC
+    allHistory.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+
+    if (!mounted) return;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(child: _CashHistorySheet(entries: allHistory)),
     );
   }
 
@@ -999,10 +1094,12 @@ dynamic res;
     await DbService.I.cacheSet('ws_pos_sales_get_all', list);
     await DbService.I.putAll('pos_sales', list);
 
-    // Adjust local stock
+    // Adjust local stock (una sola notificación: N ajustes = 1 refresh)
     for (final c in pos.cart) {
-      await SyncService.I.adjustLocalStock(_loc, c.productId, -c.qty);
+      await SyncService.I.adjustLocalStock(_loc, c.productId, -c.qty,
+          notify: false);
     }
+    SyncService.I.emitChange();
 
     // Remember customer for transfers
     if (mode == 'transfer') {
@@ -1261,6 +1358,172 @@ dynamic res;
         ),
     ]);
   }
+}
+
+/// Historial de aperturas/cierres de caja con pestañas (Todas / Abiertas /
+/// Cerradas) y resumen del cuadre: mismo criterio que el panel web.
+class _CashHistorySheet extends StatefulWidget {
+  const _CashHistorySheet({required this.entries});
+  final List<CashHistoryEntry> entries;
+
+  @override
+  State<_CashHistorySheet> createState() => _CashHistorySheetState();
+}
+
+class _CashHistorySheetState extends State<_CashHistorySheet> {
+  String _filter = 'all'; // all | open | closed
+
+  @override
+  Widget build(BuildContext context) {
+    final cur = AuthService.I.currency;
+    final all = widget.entries;
+    final filtered = _filter == 'all'
+        ? all
+        : all
+            .where((e) =>
+                _filter == 'open' ? e.type == 'open' : e.type == 'close')
+            .toList();
+
+    // Resumen del cuadre (solo cierres con cierre contado).
+    final closes =
+        all.where((e) => e.type == 'close' && e.closingAmount != null);
+    final esperado =
+        closes.fold<num>(0, (a, e) => a + e.openingAmount);
+    final contado =
+        closes.fold<num>(0, (a, e) => a + (e.closingAmount ?? 0));
+
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            Text('Historial de caja (${all.length})',
+                style: const TextStyle(
+                    fontWeight: FontWeight.w700, fontSize: 16)),
+            IconButton(
+              icon: const Icon(Icons.close, size: 20),
+              onPressed: () => Navigator.pop(context),
+              padding: EdgeInsets.zero,
+            ),
+          ]),
+          const SizedBox(height: 8),
+          // Resumen del cuadre (como la web)
+          if (closes.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                _summaryChip(Icons.lock, 'Aperturas', esperado, cur, null),
+                _summaryChip(Icons.lock_open, 'Cierres', contado, cur, null),
+                _summaryChip(
+                    Icons.compare_arrows,
+                    'Diferencia',
+                    contado - esperado,
+                    cur,
+                    contado - esperado >= 0 ? AppTheme.success : AppTheme.danger),
+              ]),
+            ),
+          SegmentedButton<String>(
+            segments: const [
+              ButtonSegment(value: 'all', label: Text('Todas')),
+              ButtonSegment(value: 'open', label: Text('Abiertas')),
+              ButtonSegment(value: 'closed', label: Text('Cerradas')),
+            ],
+            selected: {_filter},
+            onSelectionChanged: (s) => setState(() => _filter = s.first),
+          ),
+          const SizedBox(height: 8),
+          if (filtered.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: Text('Sin historial de apertura/cierre de caja.',
+                  textAlign: TextAlign.center),
+            )
+          else
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: filtered.length,
+                separatorBuilder: (_, __) => const Divider(height: 1),
+                itemBuilder: (context, i) {
+                  final e = filtered[i];
+                  final isOpen = e.type == 'open';
+                  return ListTile(
+                    leading: Icon(
+                      isOpen ? Icons.lock_open : Icons.lock,
+                      color: isOpen ? Colors.green : Colors.red,
+                    ),
+                    title: Text(
+                      isOpen ? 'Caja abierta' : 'Caja cerrada',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(e.sellerName.isNotEmpty ? e.sellerName : '—',
+                            style: TextStyle(
+                                fontSize: 11, color: Colors.grey[600])),
+                        Text(
+                          '${e.timestamp.hour.toString().padLeft(2, '0')}:${e.timestamp.minute.toString().padLeft(2, '0')} · ${e.timestamp.day}/${e.timestamp.month}/${e.timestamp.year}',
+                          style:
+                              TextStyle(fontSize: 11, color: Colors.grey[500]),
+                        ),
+                        if (!isOpen && e.closingAmount != null)
+                          Text(
+                            'Cierre: ${U.money(e.closingAmount!, cur)}',
+                            style: TextStyle(
+                                fontSize: 11, color: Colors.grey[500]),
+                          ),
+                      ],
+                    ),
+                    trailing: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          U.money(e.openingAmount, cur),
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w700, fontSize: 13),
+                        ),
+                        if (!isOpen && e.closingAmount != null)
+                          Text(
+                            'Diff: ${U.money(e.closingAmount! - e.openingAmount, cur)}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: (e.closingAmount! - e.openingAmount) >= 0
+                                  ? AppTheme.success
+                                  : AppTheme.danger,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _summaryChip(IconData icon, String label, num value, String cur,
+          Color? color) =>
+      Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label,
+              style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+          const SizedBox(height: 2),
+          Text(U.money(value, cur),
+              style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 14,
+                  color: color ?? Colors.grey[800])),
+        ],
+      );
 }
 
 class ScannerPage extends StatefulWidget {

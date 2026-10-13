@@ -15,7 +15,7 @@ get_header();
 ?>
 <div class="ws-auth-wrap">
     <div class="ws-auth-side">
-        <span class="ws-auth-badge"><i class="fa-solid fa-gift"></i> <?php esc_html_e( '7 días gratis', 'workshop' ); ?></span>
+        <span class="ws-auth-badge"><i class="fa-solid fa-gift"></i> <?php echo esc_html( sprintf( __( '%d días gratis', 'workshop' ), (int) ws_trial_days() ) ); ?></span>
         <h2><?php esc_html_e( 'Crea tu tienda gratis y empieza a vender hoy', 'workshop' ); ?></h2>
         <p><?php esc_html_e( 'Registra tu negocio, verifica tu correo con un código de 6 dígitos y en menos de 5 minutos tendrás tu tienda online, tu panel y tus puntos de venta.', 'workshop' ); ?></p>
         <div class="ws-auth-features">

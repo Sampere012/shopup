@@ -28,7 +28,10 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
   String get _myRole => '${AuthService.I.me?['role'] ?? ''}';
 
   // El dueño NO se edita a sí mismo: solo el administrador del sitio lo hace.
-  bool get _canEditOwner => _myRole != 'owner';
+  // El dueño SÍ puede editar su propia fila (p. ej. ocultar Valoraciones o
+  // Fidelización); el servidor conserva igualmente permissions_manage y
+  // expenses_manage para no dejarse sin salida.
+  bool get _canEditOwner => true;
 
   @override
   void initState() {

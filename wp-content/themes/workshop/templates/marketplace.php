@@ -266,7 +266,7 @@ get_header();
                     <div class="ws-value-card ws-value-card-accent">
                         <span class="ws-value-ico"><i class="fa-solid fa-gift"></i></span>
                         <div>
-                            <h4><?php esc_html_e( '7 días gratis, sin tarjeta', 'workshop' ); ?></h4>
+                            <h4><?php echo esc_html( sprintf( _n( '%d día gratis, sin tarjeta', '%d días gratis, sin tarjeta', (int) ws_trial_days(), 'workshop' ), (int) ws_trial_days() ) ); ?></h4>
                             <p><?php esc_html_e( 'Prueba todo el sistema sin pagar nada y sin compromiso.', 'workshop' ); ?></p>
                         </div>
                     </div>
@@ -309,7 +309,7 @@ get_header();
                     <span class="ws-how-num">1</span>
                     <span class="ws-how-icon"><i class="fa-solid fa-user-plus"></i></span>
                     <h3><?php esc_html_e( 'Crea tu cuenta', 'workshop' ); ?></h3>
-                    <p><?php esc_html_e( 'Regístrate con tu email, verifica tu correo y activa tu prueba gratis de 7 días.', 'workshop' ); ?></p>
+                    <p><?php echo esc_html( sprintf( __( 'Regístrate con tu email, verifica tu correo y activa tu prueba gratis de %d días.', 'workshop' ), (int) ws_trial_days() ) ); ?></p>
                 </div>
                 <div class="ws-how-card">
                     <span class="ws-how-num">2</span>
@@ -382,13 +382,13 @@ get_header();
                 <div class="ws-mp-cta-bg" aria-hidden="true"><span class="ws-blob ws-blob-cta"></span></div>
                 <div class="ws-mp-cta-inner">
                     <span class="ws-hero-badge"><i class="fa-solid fa-gift"></i> <?php esc_html_e( 'Tu oportunidad', 'workshop' ); ?></span>
-                    <h2><?php esc_html_e( '¿Tienes un negocio? Ábrelo gratis por 7 días', 'workshop' ); ?></h2>
+                    <h2><?php echo esc_html( sprintf( __( '¿Tienes un negocio? Ábrelo gratis por %d días', 'workshop' ), (int) ws_trial_days() ) ); ?></h2>
                     <p><?php esc_html_e( 'Crea tu tienda, personalízala y empieza a vender sin pagar nada. Sin tarjeta, sin compromiso.', 'workshop' ); ?></p>
                     <div class="ws-mp-cta-actions">
                         <a class="ws-btn ws-btn-accent ws-btn-lg" href="<?php echo esc_url( ws_register_url() ); ?>">
                             <i class="fa-solid fa-rocket"></i> <?php esc_html_e( 'Empezar', 'workshop' ); ?>
                         </a>
-                        <span class="ws-mp-cta-note"><i class="fa-solid fa-clock"></i> <?php esc_html_e( 'La prueba dura 7 días · Te guiamos paso a paso al entrar', 'workshop' ); ?></span>
+                        <span class="ws-mp-cta-note"><i class="fa-solid fa-clock"></i> <?php echo esc_html( sprintf( __( 'La prueba dura %d días · Te guiamos paso a paso al entrar', 'workshop' ), (int) ws_trial_days() ) ); ?></span>
                     </div>
                 </div>
             </div>

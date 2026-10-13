@@ -137,14 +137,45 @@ class _DashboardScreenState extends State<DashboardScreen> {
         FutureBuilder<List<dynamic>>(
           future: _future,
           builder: (context, snap) {
-            final prods = snap.data?[1] ?? [];
-            final orders = snap.data?[2] ?? [];
-            final pend = snap.data?[3] ?? 0;
-            final stock = snap.data?[4] ?? [];
-            final lowStock = (stock as List).where((x) {
+            final locations = (snap.data?[0] as List?) ?? [];
+            final prods = (snap.data?[1] as List?) ?? [];
+            final orders = (snap.data?[2] as List?) ?? [];
+            final pend = (snap.data?[3] ?? 0) as int;
+            final stock = (snap.data?[4] as List?) ?? [];
+
+            // Filtrar por tiendas ACTIVAS: el servidor envía `active` en las
+            // ubicaciones (no existe `enabled`; sin esa clave el filtro anterior
+            // dejaba pasar todas). Si aún no hay ubicaciones, no se filtra.
+            final activeLocIds = locations.isEmpty
+                ? null
+                : locations
+                    .where((l) =>
+                        '${l['active'] ?? '1'}' != '0' &&
+                        '${l['active'] ?? '1'}' != 'false')
+                    .map((l) => '${l['id']}')
+                    .toSet();
+
+            // Productos = solo los de las tiendas activas (con stock en una
+            // ubicación activa), como en el panel web.
+            final prodsInActiveStores = activeLocIds == null
+                ? prods.length
+                : prods.where((p) {
+                    final isActive = '${p['active'] ?? '1'}' != '0' &&
+                        '${p['active'] ?? '1'}' != 'false';
+                    if (!isActive) return false;
+                    final pid = '${p['id']}';
+                    return stock.any((s) =>
+                        '${s['product_id']}' == pid &&
+                        activeLocIds.contains('${s['location_id']}'));
+                  }).length;
+
+            final lowStock = stock.where((x) {
               final qty = (num.tryParse('${x['qty']}') ?? 0).toInt();
               final min = (num.tryParse('${x['min_stock']}') ?? 0).toInt();
-              return qty > 0 && qty <= min;
+              final locId = '${x['location_id'] ?? ''}';
+              return qty > 0 &&
+                  qty <= min &&
+                  (activeLocIds?.contains(locId) ?? true);
             }).length;
 
             return GridView.count(
@@ -155,7 +186,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               crossAxisSpacing: 10,
               childAspectRatio: 1.6,
               children: [
-                _gradientStat(Icons.inventory_2_outlined, prods.length, 'Productos', [AppTheme.success, const Color(0xFF34D399)], onTap: () => NavCallback.of(context)?.navigate('products')),
+                _gradientStat(Icons.inventory_2_outlined, prodsInActiveStores, 'Productos', [AppTheme.success, const Color(0xFF34D399)], onTap: () => NavCallback.of(context)?.navigate('products')),
                 _gradientStat(Icons.receipt_long_outlined, orders.length, 'Pedidos web', [AppTheme.purple, const Color(0xFFA78BFA)], onTap: () => NavCallback.of(context)?.navigate('orders')),
                 _gradientStat(Icons.warning_amber_outlined, lowStock, 'Stock bajo', lowStock > 0 ? [AppTheme.amber, const Color(0xFFFBBF24)] : [AppTheme.success, const Color(0xFF34D399)], onTap: () => NavCallback.of(context)?.navigate('stock')),
                 _gradientStat(Icons.cloud_upload_outlined, pend, 'Sin subir', pend > 0 ? [AppTheme.amber, const Color(0xFFFBBF24)] : [AppTheme.success, const Color(0xFF34D399)], onTap: () => NavCallback.of(context)?.navigate('pending')),

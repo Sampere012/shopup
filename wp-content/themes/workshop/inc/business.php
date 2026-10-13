@@ -126,6 +126,58 @@ class WS_Business {
     }
 
     /**
+     * Conteo CANÓNICO de una tienda/negocio: solo TIENDAS ACTIVAS.
+     *
+     * Centraliza lo que antes se calculaba por separado en landing.php y en
+     * marketplace_ranked() con criterios distintos (una requería stock en una
+     * ubicación activa y la otra no), lo que descuadraba el número de
+     * "Productos" entre la portada y el directorio /tienda-negocio/.
+     *
+     * 'stores'   = ubicaciones ACTIVAS.
+     * 'products' = productos ACTIVOS y VISIBLES EN LA TIENDA (respetando el
+     *              ojito por ubicación) que además tienen existencia en al
+     *              menos una ubicación ACTIVA. Así un producto sin ninguna
+     *              tienda activa detrás no infla el total.
+     *
+     * @param object|null $b Negocio; por defecto el del contexto actual.
+     * @return array{products:int,stores:int}
+     */
+    public static function store_stats( $b = null ) {
+        global $wpdb;
+        if ( null === $b ) {
+            $b = ws_current_business();
+        }
+        if ( ! $b ) {
+            return array( 'products' => 0, 'stores' => 0 );
+        }
+
+        $loc_table = ws_table_name( 'locations', $b );
+        $pro_table = ws_table_name( 'products', $b );
+        $stk_table = ws_table_name( 'stock', $b );
+        $sv_table  = ws_table_name( 'store_visibility', $b );
+
+        $stores = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$loc_table} WHERE active=1" );
+
+        // INNER JOIN con stock en ubicación activa: sin tienda activa detrás,
+        // el producto no cuenta.
+        $stock_join = "INNER JOIN {$stk_table} st ON st.product_id = p.id
+            INNER JOIN {$loc_table} l ON l.id = st.location_id AND l.active = 1";
+
+        if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $sv_table ) ) === $sv_table ) {
+            $products = (int) $wpdb->get_var( "SELECT COUNT(DISTINCT p.id) FROM {$pro_table} p
+                {$stock_join}
+                LEFT JOIN {$sv_table} sv ON sv.entity_type='product' AND sv.entity_id=p.id AND sv.location_id=l.id AND sv.channel='store'
+                WHERE p.active=1 AND COALESCE(sv.visible, p.store_visible) = 1" );
+        } else {
+            $products = (int) $wpdb->get_var( "SELECT COUNT(DISTINCT p.id) FROM {$pro_table} p
+                {$stock_join}
+                WHERE p.active=1 AND p.store_visible = 1" );
+        }
+
+        return array( 'products' => $products, 'stores' => $stores );
+    }
+
+    /**
      * Negocios del mercado ordenados por "mejor primero".
      *
      * Puntuación de calidad para el ranking: productos activos, puntos de
@@ -139,27 +191,14 @@ class WS_Business {
         $bizs = self::marketplace();
         $rows = array();
         foreach ( $bizs as $b ) {
-            $loc_table = ws_table_name( 'locations', $b );
-            $pro_table = ws_table_name( 'products', $b );
             $rev_table = ws_table_name( 'reviews', $b );
             $ord_table = ws_table_name( 'orders', $b );
-            // Solo cuenta lo VISIBLE EN LA TIENDA (ojito POR UBICACIÓN): un
-            // producto puede estar en el inventario y oculto del catálogo
-            // público, y ese no debe contar como "producto del negocio" en el
-            // mercado. El override de ws_store_visibility (visible en AL MENOS
-            // una ubicación activa) manda sobre el flag global.
-            $sv_table = ws_table_name( 'store_visibility', $b );
-            if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $sv_table ) ) === $sv_table ) {
-                $products = (int) $wpdb->get_var( "SELECT COUNT(DISTINCT p.id) FROM {$pro_table} p
-                    INNER JOIN {$loc_table} l ON l.active=1
-                    LEFT JOIN {$sv_table} sv ON sv.entity_type='product' AND sv.entity_id=p.id AND sv.location_id=l.id AND sv.channel='store'
-                    WHERE p.active=1 AND COALESCE(sv.visible, p.store_visible) = 1" );
-            } else {
-                $products = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$pro_table} WHERE active=1 AND store_visible=1" );
-            }
-            // Tiendas públicas: puntos de venta y almacenes activos (ambos
-            // tienen tienda pública, como un PV).
-            $pvs      = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$loc_table} WHERE active=1" );
+            // Conteo canónico (solo TIENDAS ACTIVAS): mismo criterio que la
+            // portada, vía WS_Business::store_stats(), para que el total de
+            // "Productos"/"Tiendas" no se descuadre entre páginas.
+            $stats    = self::store_stats( $b );
+            $products = (int) $stats['products'];
+            $pvs      = (int) $stats['stores'];
             $reviews  = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$rev_table} WHERE approved=1" );
             $avg_rate = (float) $wpdb->get_var( "SELECT AVG(rating) FROM {$rev_table} WHERE approved=1" );
             // Pedidos válidos (no cancelados ni rechazados) y su facturación.

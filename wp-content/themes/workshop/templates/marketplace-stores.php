@@ -161,12 +161,12 @@ get_header();
                 <div class="ws-mp-cta-inner">
                     <span class="ws-hero-badge"><i class="fa-solid fa-bullhorn"></i> <?php esc_html_e( '¿Tienes un negocio?', 'workshop' ); ?></span>
                     <h2><?php esc_html_e( 'Aparece aquí y cuenta tu historia', 'workshop' ); ?></h2>
-                    <p><?php esc_html_e( 'Con tu descripción, logo y actividad bien presentados, los clientes te encuentran y te eligen. Ábrelo gratis por 7 días.', 'workshop' ); ?></p>
+                    <p><?php echo esc_html( sprintf( __( 'Con tu descripción, logo y actividad bien presentados, los clientes te encuentran y te eligen. Ábrelo gratis por %d días.', 'workshop' ), (int) ws_trial_days() ) ); ?></p>
                     <div class="ws-mp-cta-actions">
                         <a class="ws-btn ws-btn-accent ws-btn-lg" href="<?php echo esc_url( ws_register_url() ); ?>">
                             <i class="fa-solid fa-rocket"></i> <?php esc_html_e( 'Empezar', 'workshop' ); ?>
                         </a>
-                        <span class="ws-mp-cta-note"><i class="fa-solid fa-clock"></i> <?php esc_html_e( '7 días gratis · Sin tarjeta · Te guiamos paso a paso', 'workshop' ); ?></span>
+                        <span class="ws-mp-cta-note"><i class="fa-solid fa-clock"></i> <?php echo esc_html( sprintf( __( '%d días gratis · Sin tarjeta · Te guiamos paso a paso', 'workshop' ), (int) ws_trial_days() ) ); ?></span>
                     </div>
                 </div>
             </div>

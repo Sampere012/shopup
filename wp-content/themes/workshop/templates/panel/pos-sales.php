@@ -446,8 +446,9 @@ document.addEventListener('alpine:init', () => {
         countsSummary: { count: 0, sobrante: 0, faltante: 0 },
 
         init() {
-            this.setTodayDates();
-            this.setCashDates();
+            // Sin filtros de fecha por defecto: antes se preajustaba a "hoy"
+            // y la pestaña quedaba vacía (ventas/arqueos de días anteriores
+            // no se cargaban). Los siguen poniendo el usuario en los inputs.
             this.loadSales();
             this.loadStats();
         },

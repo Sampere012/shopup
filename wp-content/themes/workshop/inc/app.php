@@ -18,8 +18,8 @@ defined( 'ABSPATH' ) || exit;
  * Versión del build móvil actual (la sube sync:web / se edita en wp-admin).
  * Es el valor por defecto del ajuste; el administrador lo cambia al publicar.
  */
-define( 'WS_APP_VERSION', '0.6.3' );
-define( 'WS_APP_RELEASE_DATE', '2026-10-11' );
+define( 'WS_APP_VERSION', '0.6.4' );
+define( 'WS_APP_RELEASE_DATE', '2026-10-12' );
 define( 'WS_APP_CHANGELOG', 'Búsqueda de vistas desde el navbar.
 Soporte accesible desde el menú lateral.
 Mejoras en Mi cuenta y estabilidad general.' );
@@ -125,6 +125,8 @@ function ws_app_version_info() {
 		'support_links' => $s['support_links'],
 		'has_apk'     => ws_app_has_download(),
 		'pwa_version' => defined( 'WS_VERSION' ) ? WS_VERSION : '',
+		// Días de prueba configurables en wp-admin (no hardcodear en la app).
+		'trial_days'  => function_exists( 'ws_trial_days' ) ? ws_trial_days() : 7,
 	);
 }
 

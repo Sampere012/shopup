@@ -78,7 +78,11 @@ class DbService {
 
   // ---- Cola de pendientes (mismo contrato que js/db.js pending) ----
 
-  Future<int> enqueue(String action, Map<String, dynamic> data) async {
+  /// Encola una operación. [localId] enlaza la op con la fila LOCAL que la
+  /// generó (p.ej. un anuncio creado offline con id 'local-…'): se guarda en
+  /// la op pero NUNCA se envía al servidor (flush solo transmite `data`).
+  Future<int> enqueue(String action, Map<String, dynamic> data,
+      {String? localId}) async {
     final d = await db;
     final n = DateTime.now().microsecondsSinceEpoch;
     await d.insert('pending', {
@@ -86,6 +90,7 @@ class DbService {
       'data': jsonEncode({
         'action': action,
         'data': data,
+        if (localId != null && localId.isNotEmpty) 'local_id': localId,
         'created_at': n,
         'updated_at': n,
         'status': 'pending',
@@ -103,6 +108,17 @@ class DbService {
       op['id'] = r['id'];
       return op;
     }).toList();
+  }
+
+  /// Una sola op por id (null si ya fue enviada/borrada).
+  Future<Map<String, dynamic>?> pendingById(Object id) async {
+    final d = await db;
+    final rows =
+        await d.query('pending', where: 'id = ?', whereArgs: ['$id'], limit: 1);
+    if (rows.isEmpty) return null;
+    final op = jsonDecode(rows.first['data'] as String) as Map<String, dynamic>;
+    op['id'] = rows.first['id'];
+    return op;
   }
 
   Future<void> removePending(Object id) async {
@@ -138,6 +154,30 @@ class DbService {
       where: 'id = ?',
       whereArgs: ['$id'],
     );
+  }
+
+  /// Reescribe el payload (`data`) de una op en cola y la vuelve a dejar
+  /// como 'pending'. Permite coalescer varios cambios sobre la MISMA fila
+  /// local (editar/toggle de un anuncio aún no subido) en una sola op.
+  Future<bool> updatePendingData(
+      Object id, Map<String, dynamic> data) async {
+    final d = await db;
+    final rows =
+        await d.query('pending', where: 'id = ?', whereArgs: ['$id'], limit: 1);
+    if (rows.isEmpty) return false;
+    final operation =
+        jsonDecode(rows.first['data'] as String) as Map<String, dynamic>;
+    operation['data'] = data;
+    operation['status'] = 'pending';
+    operation['updated_at'] = DateTime.now().microsecondsSinceEpoch;
+    operation.remove('error');
+    await d.update(
+      'pending',
+      {'data': jsonEncode(operation)},
+      where: 'id = ?',
+      whereArgs: ['$id'],
+    );
+    return true;
   }
 
   Future<int> pendingCount() async {

@@ -3542,10 +3542,10 @@ function ws_ajax_save_permissions() {
     $raw = isset( $_POST['matrix'] ) ? $_POST['matrix'] : array();
     $all  = array_keys( WS_Capabilities::all_caps() );
     $roles = array( 'owner', 'storekeeper', 'seller' );
-    // El dueño del negocio no puede modificar sus propios permisos: la fila
-    // 'owner' solo la edita el administrador del sitio (manage_options).
-    // Se conserva tal cual para cualquier otro usuario.
-    $can_edit_owner = current_user_can( 'manage_options' );
+    // El dueño SÍ puede ajustar su propia fila (así puede ocultar módulos
+    // como Valoraciones/Fidelización); matrix() fuerza en el servidor las
+    // capacidades críticas (permissions_manage/expenses_manage) para que nadie
+    // se quede sin salida. El administrador del sitio mantiene acceso total.
     $existing_all = WS_Capabilities::matrix();
     if ( is_string( $raw ) ) {
         // Formato app (JSON): la app manda solo los módulos que tiene. Se
@@ -3554,11 +3554,6 @@ function ws_ajax_save_permissions() {
         $merged = array();
         foreach ( $roles as $role ) {
             $merged[ $role ] = array();
-            if ( ! $can_edit_owner && 'owner' === $role ) {
-                // Conservar tal cual los permisos del dueño.
-                $merged[ $role ] = isset( $existing_all[ $role ] ) ? $existing_all[ $role ] : array();
-                continue;
-            }
             foreach ( $all as $cap ) {
                 $merged[ $role ][ $cap ] = isset( $posted[ $role ][ $cap ] )
                     ? ! empty( $posted[ $role ][ $cap ] )
@@ -3569,11 +3564,6 @@ function ws_ajax_save_permissions() {
     } else {
         // Formato web (form): matriz completa, autoritativa.
         $matrix = (array) $raw;
-        if ( ! $can_edit_owner ) {
-            // Forzar la fila 'owner' a los permisos existentes: el panel del
-            // dueño solo edita almacenero y vendedor.
-            $matrix['owner'] = isset( $existing_all['owner'] ) ? $existing_all['owner'] : array();
-        }
     }
     WS_Capabilities::save_matrix( $matrix );
     ws_log_audit( 'permissions_update', 'settings', 0 );
@@ -5403,6 +5393,38 @@ function ws_ajax_announcements_list() {
         wp_send_json_error( array( 'msg' => __( 'Sin permiso.', 'workshop' ) ) );
     }
     wp_send_json_success( array( 'list' => ws_announcements_json() ) );
+}
+
+/**
+ * Anuncios fijados (banners) para la app móvil: igual que en el panel web,
+ * se muestran a TODOS los usuarios del negocio (no solo a quien gestiona
+ * anuncios), solo los activos, anclados y dentro de su ventana de vigencia.
+ */
+add_action( 'wp_ajax_ws_announcements_pinned_list', 'ws_ajax_announcements_pinned_list' );
+add_action( 'wp_ajax_nopriv_ws_announcements_pinned_list', 'ws_ajax_announcements_pinned_list' );
+function ws_ajax_announcements_pinned_list() {
+    if ( ! ws_mobile_auth_user() && ! check_ajax_referer( 'ws_nonce', 'ws_nonce', false ) ) {
+        wp_send_json_error( array( 'msg' => __( 'Sesión inválida.', 'workshop' ) ) );
+    }
+    if ( ! is_user_logged_in() ) {
+        wp_send_json_error( array( 'msg' => __( 'Sesión inválida.', 'workshop' ) ) );
+    }
+    $out = array();
+    foreach ( ws_announcements_pinned() as $a ) {
+        if ( function_exists( 'ws_announcement_is_visible' ) && ! ws_announcement_is_visible( $a ) ) {
+            continue;
+        }
+        $out[] = array(
+            'id'           => (int) $a->id,
+            'title'        => (string) $a->title,
+            'message'      => (string) $a->message,
+            'type'         => (string) $a->type,
+            'dismissible'  => (int) ( $a->dismissible ?? 1 ),
+            'pinned_until' => (string) ( $a->pinned_until ?? '' ),
+            'active'       => (int) $a->active,
+        );
+    }
+    wp_send_json_success( array( 'list' => $out ) );
 }
 
 /* Permisos: matriz completa (roles × capacidades) para la app móvil. */

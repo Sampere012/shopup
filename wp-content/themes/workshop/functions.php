@@ -64,6 +64,7 @@ require_once WS_PATH . 'inc/admin-users.php';
 require_once WS_PATH . 'inc/admin-plans.php';
 require_once WS_PATH . 'inc/app.php';
 require_once WS_PATH . 'inc/support.php';
+require_once WS_PATH . 'inc/mobile-pos.php';
 
 // Flush rewrite rules on theme activation
 add_action( 'after_switch_theme', 'ws_flush_rewrite_rules' );

@@ -14,8 +14,13 @@ void wsLog(String msg) {
 
 class ApiException implements Exception {
   final String message;
-  final Map<String, dynamic>? response; // no nulo = rechazo definitivo del servidor
-  ApiException(this.message, {this.response});
+  // no nulo = rechazo definitivo del servidor
+  final Map<String, dynamic>? response;
+  // true cuando el SERVIDOR respondió (aunque sea un body inesperado, p.ej.
+  // el `0` de admin-ajax con acción inexistente o sesión inválida). Distingue
+  // "no hay red" de "el servidor contestó y no entendió/rechazó la op".
+  final bool reachedServer;
+  ApiException(this.message, {this.response, this.reachedServer = false});
   @override
   String toString() => message;
 }
@@ -102,11 +107,21 @@ class ApiService {
         json = jsonDecode(raw);
       } catch (e) {
         wsLog('✗ $action JSON inválido: $e');
-        throw ApiException('Respuesta inválida del servidor');
+        // Body no vacío pero ilegible (p.ej. HTML de un proxy): el servidor
+        // contestó. Body vacío = respuesta cortada → error de red.
+        if (raw.trim().isEmpty) {
+          throw ApiException('Respuesta vacía del servidor');
+        }
+        throw ApiException('Respuesta inesperada del servidor',
+            reachedServer: true);
       }
       if (json is! Map<String, dynamic>) {
         wsLog('✗ $action respuesta no es Map: ${json.runtimeType}');
-        throw ApiException('Respuesta inválida del servidor');
+        // admin-ajax responde el body `0` (HTTP 400) cuando la acción no
+        // existe o la sesión/móvil no está autenticada: el servidor SÍ
+        // respondió, no es un corte de red.
+        throw ApiException('Respuesta inesperada del servidor (0)',
+            reachedServer: true);
       }
       final ok = json['success'] == true || json['success'] == 1;
       wsLog('← $action success=$ok dataKeys='

@@ -13,6 +13,7 @@ class PosLocalService extends ChangeNotifier {
   static const _custKey = 'wsm_pos_recent_customers_v1';
   static const _frozenKey = 'wsm_pos_frozen_v1';
   static const _cashKey = 'wsm_pos_cash_v1';
+  static const _cashHistoryKey = 'wsm_pos_cash_history_v1';
 
   // ── Carrito ──
   List<PosCartItem> cart = [];
@@ -193,6 +194,38 @@ class PosLocalService extends ChangeNotifier {
     final sp = await SharedPreferences.getInstance();
     await sp.setString(_cashKey, jsonEncode(cashState.toJson()));
     notifyListeners();
+  }
+
+  // ── Historial de caja (apertura/cierre) ──
+  List<CashHistoryEntry> cashHistory = [];
+
+  Future<void> loadCashHistory() async {
+    final sp = await SharedPreferences.getInstance();
+    final raw = sp.getString(_cashHistoryKey);
+    if (raw != null) {
+      try {
+        final list = jsonDecode(raw) as List;
+        cashHistory = list
+            .map((e) => CashHistoryEntry.fromJson(e as Map<String, dynamic>))
+            .toList();
+      } catch (_) {}
+    }
+  }
+
+  Future<void> saveCashHistory() async {
+    final sp = await SharedPreferences.getInstance();
+    await sp.setString(_cashHistoryKey,
+        jsonEncode(cashHistory.map((e) => e.toJson()).toList()));
+    notifyListeners();
+  }
+
+  void addCashHistoryEntry(CashHistoryEntry entry) {
+    cashHistory.insert(0, entry);
+    // Mantener últimas 100 entradas (evita que crezca indefinidamente)
+    if (cashHistory.length > 100) {
+      cashHistory = cashHistory.sublist(0, 100);
+    }
+    saveCashHistory();
   }
 }
 
@@ -398,3 +431,40 @@ class CashState {
         'opening_amount': openingAmount,
       };
 }
+
+class CashHistoryEntry {
+  final String type; // 'open' | 'close'
+  final DateTime timestamp;
+  final String sellerName;
+  final num openingAmount;
+  final num? closingAmount;
+  final String locationId;
+
+  CashHistoryEntry({
+    required this.type,
+    required this.timestamp,
+    required this.sellerName,
+    required this.openingAmount,
+    this.closingAmount,
+    required this.locationId,
+  });
+
+  factory CashHistoryEntry.fromJson(Map<String, dynamic> j) => CashHistoryEntry(
+        type: '${j['type'] ?? 'open'}',
+        timestamp: DateTime.parse('${j['timestamp'] ?? ''}'),
+        sellerName: '${j['seller_name'] ?? ''}',
+        openingAmount: (j['opening_amount'] as num?) ?? 0,
+        closingAmount: (j['closing_amount'] as num?),
+        locationId: '${j['location_id'] ?? ''}',
+      );
+
+  Map<String, dynamic> toJson() => {
+        'type': type,
+        'timestamp': timestamp.toIso8601String(),
+        'seller_name': sellerName,
+        'opening_amount': openingAmount,
+        'closing_amount': closingAmount,
+        'location_id': locationId,
+      };
+}
+

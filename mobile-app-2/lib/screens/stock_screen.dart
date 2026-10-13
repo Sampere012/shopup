@@ -33,6 +33,9 @@ class _StockScreenState extends State<StockScreen> {
   // Densidad de la grilla (pellizco tipo galería). 0 = automático por ancho.
   int _cols = 0;
   bool _exportingCatalog = false;
+  // Evita que varios eventos de sync disparen refrescos de servidor
+  // solapados (causaban parpadeo/"mareo" en la lista).
+  bool _refreshing = false;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   /// Catálogo PDF de la ubicación seleccionada — misma lógica que la web:
@@ -94,6 +97,12 @@ class _StockScreenState extends State<StockScreen> {
     SyncService.I.onChange(_onSync);
   }
 
+  @override
+  void dispose() {
+    SyncService.I.removeOnChange(_onSync);
+    super.dispose();
+  }
+
   Future<void> _setCols(int v) async {
     if (v == _cols) return;
     setState(() => _cols = v);
@@ -135,7 +144,8 @@ class _StockScreenState extends State<StockScreen> {
   }
 
   Future<void> _refreshFromServer() async {
-    if (SyncService.I.isPulling) return;
+    if (SyncService.I.isPulling || _refreshing) return;
+    _refreshing = true;
     try {
       final d = await ApiService.I.req('ws_stock_list', {
         'location_id': 0,
@@ -172,7 +182,9 @@ class _StockScreenState extends State<StockScreen> {
         await DbService.I.replaceAll('locations', _locations);
       }
       if (mounted) setState(() {});
-    } catch (_) {}
+    } catch (_) {} finally {
+      _refreshing = false;
+    }
   }
 
   Future<List<Map<String, dynamic>>> _repairStockDuplicates(
@@ -587,49 +599,66 @@ class _StockScreenState extends State<StockScreen> {
                     final endpoint = type == 'transferencia'
                         ? 'ws_stock_transfer'
                         : 'ws_stock_move';
+                    final pushed = SyncService.I.push(endpoint, payload);
                     await U.handlePush(
-                        context, SyncService.I.push(endpoint, payload),
+                        context, pushed,
                         'Movimiento registrado',
-                        onOk: () => _loadAll());
-                    // SIEMPRE ajustar stock local (online o encolado)
-                    final delta = type == 'entrada'
-                        ? qty
-                        : (type == 'salida' || type == 'baja'
-                            ? -qty
-                            : 0);
-                    if (delta != 0) {
-                      SyncService.I.adjustLocalStock(
-                          locId, row['product_id'], delta);
-                    }
-                    if (type == 'transferencia') {
-                      SyncService.I.adjustLocalStock(
-                          locId, row['product_id'], -qty);
-                      SyncService.I.adjustLocalStock(
-                          destId, row['product_id'], qty);
-                    }
-                    // Guardar movimiento en historial local
-                    final now = DateTime.now().toIso8601String();
-                    final workerName = AuthService.I.me?['name'] ?? '';
-                    final movement = <String, dynamic>{
-                      'id': 'local_${DateTime.now().microsecondsSinceEpoch}',
-                      'type': type,
-                      'product_id': row['product_id'],
-                      'product_name': row['name'] ?? '',
-                      'qty': qty,
-                      'location_id': locId,
-                      'location_name': row['location_name'] ?? '',
-                      'to_location_id': destId,
-                      'note': noteCtrl.text.trim(),
-                      'worker_name': workerName,
-                      'created_at': now,
-                    };
-                    await DbService.I.putAll('movements', [movement]);
-                    final cached = await DbService.I.cacheGet('ws_movements_list');
-                    final list = (cached is List) ? List<Map<String, dynamic>>.from(cached) : <Map<String, dynamic>>[];
-                    list.insert(0, movement);
-                    await DbService.I.cacheSet('ws_movements_list', list);
-                    _loadAll();
-                  },
+                        onOk: () async {
+                          _loadAll();
+                          await _refreshMovementsCache(type, row, qty, locId, destId, noteCtrl.text.trim());
+                        },
+                        onQueued: (_) async {
+                          // Ajustar stock local INMEDIATAMENTE (sin esperar sync)
+                          // para que la interfaz refleje el cambio aunque esté offline.
+                          final delta = type == 'entrada'
+                              ? qty
+                              : (type == 'salida' || type == 'baja'
+                                  ? -qty
+                                  : 0);
+                          if (delta != 0) {
+                            SyncService.I.adjustLocalStock(
+                                locId, row['product_id'], delta, notify: false);
+                          }
+                          if (type == 'transferencia') {
+                            SyncService.I.adjustLocalStock(
+                                locId, row['product_id'], -qty, notify: false);
+                            SyncService.I.adjustLocalStock(
+                                destId, row['product_id'], qty, notify: false);
+                          }
+                          // Recargar stock inmediatamente para reflejar cambios offline
+                          _loadAll();
+                          // Guardar movimiento en historial local con qty negativo
+                          // para salida/baja/transferencia (como en la web)
+                          final now = DateTime.now().toIso8601String();
+                          final workerName = AuthService.I.me?['name'] ?? '';
+                          final signedQty = (type == 'salida' || type == 'baja' || type == 'transferencia') ? -qty : qty;
+                          final movement = <String, dynamic>{
+                            'id': 'local_${DateTime.now().microsecondsSinceEpoch}',
+                            'type': type,
+                            'product_id': row['product_id'],
+                            'product_name': row['name'] ?? '',
+                            'qty': signedQty,
+                            'location_id': locId,
+                            'location_name': row['location_name'] ?? '',
+                            'to_location_id': destId,
+                            'to_name': destId.isNotEmpty ? (_locations.firstWhere((l) => '${l['id']}' == destId, orElse: () => {'name': ''})['name'] ?? '') : '',
+                            'note': noteCtrl.text.trim(),
+                            'worker_name': workerName,
+                            'created_at': now,
+                          };
+                          await DbService.I.putAll('movements', [movement]);
+                          if (mounted) {
+                            final cached = await DbService.I.cacheGet('ws_movements_list');
+                            final list = (cached is List) ? List<Map<String, dynamic>>.from(cached) : <Map<String, dynamic>>[];
+                            list.insert(0, movement);
+                            DbService.I.cacheSet('ws_movements_list', list);
+                          }
+                          if (mounted) setState(() {});
+                          // Refleja el movimiento en el Historial al instante.
+                          SyncService.I.emitChange();
+                        },
+                      );
+                    },
                   child: const Text('Guardar'),
                 ),
               ]),
@@ -638,6 +667,42 @@ class _StockScreenState extends State<StockScreen> {
         ),
       ),
     );
+  }
+
+  /// Actualiza la caché de movimientos tras un movimiento individual.
+  Future<void> _refreshMovementsCache(
+      String type, Map<String, dynamic> row, num qty,
+      String locId, String destId, String note) async {
+    final now = DateTime.now().toIso8601String();
+    final workerName = AuthService.I.me?['name'] ?? '';
+    final signedQty = (type == 'salida' || type == 'baja' || type == 'transferencia') ? -qty : qty;
+    final movement = <String, dynamic>{
+      'id': 'local_${DateTime.now().microsecondsSinceEpoch}',
+      'type': type,
+      'product_id': row['product_id'],
+      'product_name': row['name'] ?? '',
+      'qty': signedQty,
+      'location_id': locId,
+      'location_name': row['location_name'] ?? '',
+      'to_location_id': destId,
+      'to_name': destId.isNotEmpty
+          ? (_locations.firstWhere(
+                  (l) => '${l['id']}' == destId,
+                  orElse: () => {'name': ''})['name'] ?? '')
+          : '',
+      'note': note,
+      'worker_name': workerName,
+      'created_at': now,
+    };
+    await DbService.I.putAll('movements', [movement]);
+    final cached = await DbService.I.cacheGet('ws_movements_list');
+    final list = (cached is List)
+        ? List<Map<String, dynamic>>.from(cached)
+        : <Map<String, dynamic>>[];
+    list.insert(0, movement);
+    await DbService.I.cacheSet('ws_movements_list', list);
+    if (mounted) setState(() {});
+    SyncService.I.emitChange();
   }
 
   // ---- Batch move modal ----
@@ -667,6 +732,7 @@ class _StockScreenState extends State<StockScreen> {
           Navigator.pop(ctx);
           _loadAll();
         },
+        onReload: _loadAll,
       ),
     );
   }
@@ -679,6 +745,7 @@ class _BatchMoveSheet extends StatefulWidget {
   final List<Map<String, dynamic>> stockRows;
   final String initialLoc;
   final VoidCallback onSaved;
+  final VoidCallback onReload;
 
   const _BatchMoveSheet({
     required this.allowedTypes,
@@ -686,6 +753,7 @@ class _BatchMoveSheet extends StatefulWidget {
     required this.stockRows,
     required this.initialLoc,
     required this.onSaved,
+    required this.onReload,
   });
 
   @override
@@ -698,8 +766,26 @@ class _BatchMoveSheetState extends State<_BatchMoveSheet> {
   late String _destId;
   final _searchCtrl = TextEditingController();
   final _noteCtrl = TextEditingController();
+  // Controllers de cantidad por producto (evita perder el foco al teclear).
+  final Map<String, TextEditingController> _qtyCtrls = {};
   List<Map<String, dynamic>> _products = [];
   final List<Map<String, dynamic>> _items = [];
+
+  void _clearItems() {
+    for (final c in _qtyCtrls.values) {
+      c.dispose();
+    }
+    _qtyCtrls.clear();
+    _items.clear();
+  }
+
+  @override
+  void dispose() {
+    _clearItems();
+    _searchCtrl.dispose();
+    _noteCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -736,6 +822,25 @@ class _BatchMoveSheetState extends State<_BatchMoveSheet> {
             .toList();
       });
     }
+  }
+
+  /// Extrae el id de producto de una fila. En las filas de stock el `id` es
+  /// compuesto ('p12:4') y el id real vive en `product_id`; si por datos
+  /// antiguos `product_id` faltara, se deriva del id compuesto. Así la
+  /// selección y el descuento funcionan siempre (antes un `int.tryParse` del
+  /// id compuesto devolvía null y el producto no se marcaba).
+  int? _pidOf(Map<String, dynamic> p) {
+    final direct = p['product_id'];
+    if (direct is num) return direct.toInt();
+    final directStr = '${direct ?? ''}'.trim();
+    if (directStr.isNotEmpty) {
+      final n = num.tryParse(directStr);
+      if (n != null) return n.toInt();
+    }
+    final raw = '${p['id'] ?? ''}'.trim();
+    final m = RegExp(r'^p?(\d+)').firstMatch(raw);
+    if (m != null) return int.tryParse(m.group(1)!);
+    return num.tryParse(raw)?.toInt();
   }
 
   @override
@@ -775,7 +880,7 @@ class _BatchMoveSheetState extends State<_BatchMoveSheet> {
                   onTap: () {
                     setState(() {
                       _type = t;
-                      _items.clear();
+                      _clearItems();
                       _loadProducts();
                     });
                   },
@@ -815,7 +920,7 @@ class _BatchMoveSheetState extends State<_BatchMoveSheet> {
                   .toList(),
               onChanged: (v) => setState(() {
                 _locId = v ?? '';
-                _items.clear();
+                _clearItems();
                 _loadProducts();
               }),
             ),
@@ -851,7 +956,10 @@ class _BatchMoveSheetState extends State<_BatchMoveSheet> {
                     itemCount: filtered.length > 100 ? 100 : filtered.length,
                     itemBuilder: (ctx, i) {
                       final p = filtered[i];
-                      final pid = '${p['id'] ?? p['product_id'] ?? ''}';
+                      // Id de producto robusto: en filas de stock el `id` es
+                      // compuesto ('p12:4') y el real va en `product_id`.
+                      final prodId = _pidOf(p);
+                      final pid = '$prodId';
                       final item = _items.firstWhere(
                           (x) => '${x['product_id']}' == pid,
                           orElse: () => {});
@@ -873,38 +981,48 @@ class _BatchMoveSheetState extends State<_BatchMoveSheet> {
                                       fontSize: 11,
                                       color: Colors.grey[500])),
                           ],
-                        ),
-                        secondary: checked
-                            ? SizedBox(
-                                width: 70,
-                                child: TextField(
-                                  keyboardType: TextInputType.number,
-                                  controller:
-                                      TextEditingController(text: '$qty'),
-                                  style: const TextStyle(fontSize: 13),
-                                  decoration: const InputDecoration(
-                                      isDense: true,
-                                      contentPadding: EdgeInsets.symmetric(
-                                          horizontal: 6, vertical: 4)),
-                                  onChanged: (v) {
-                                    final nq = int.tryParse(v) ?? 1;
-                                    setState(() {
-                                      final idx = _items.indexWhere(
-                                          (x) =>
-                                              '${x['product_id']}' == pid);
-                                      if (idx != -1) _items[idx]['qty'] = nq;
-                                    });
-                                  },
-                                ),
-                              )
-                            : null,
+                        ),                            secondary: checked
+                                ? SizedBox(
+                                    width: 70,
+                                    child: TextField(
+                                      keyboardType: TextInputType.number,
+                                      // Controller cacheado: crear uno nuevo en
+                                      // cada rebuild robaba el foco al escribir.
+                                      controller: _qtyCtrls.putIfAbsent(
+                                          pid,
+                                          () => TextEditingController(
+                                              text: '$qty')),
+                                      style: const TextStyle(fontSize: 13),
+                                      decoration: const InputDecoration(
+                                          isDense: true,
+                                          contentPadding: EdgeInsets.symmetric(
+                                              horizontal: 6, vertical: 4)),
+                                      onChanged: (v) {
+                                        var nq = int.tryParse(v) ?? 1;
+                                        if (nq < 1) nq = 1;
+                                        setState(() {
+                                          final idx = _items.indexWhere(
+                                              (x) =>
+                                                  '${x['product_id']}' == pid);
+                                          if (idx != -1) _items[idx]['qty'] = nq;
+                                        });
+                                      },
+                                    ),
+                                  )
+                                : null,
                         onChanged: (v) {
                           setState(() {
                             if (v == true) {
-                              _items.add({'product_id': int.tryParse(pid), 'qty': 1});
+                              if (prodId == null) return;
+                              _items.add({
+                                'product_id': prodId,
+                                'name': '${p['name'] ?? ''}',
+                                'qty': 1,
+                              });
                             } else {
                               _items.removeWhere(
                                   (x) => '${x['product_id']}' == pid);
+                              _qtyCtrls.remove(pid)?.dispose();
                             }
                           });
                         },
@@ -927,68 +1045,106 @@ class _BatchMoveSheetState extends State<_BatchMoveSheet> {
           ),
           fField('Nota', _noteCtrl, hint: 'Opcional'),
           const SizedBox(height: 8),
-          Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-            TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancelar')),
-            const SizedBox(width: 8),
-            FilledButton(
-              onPressed: _items.isEmpty
-                  ? null
-                  : () async {
-                      if (_locId.isEmpty) {
-                        U.toast(context, 'Selecciona una ubicación',
-                            kind: 'err');
-                        return;
-                      }
-                      if (_type == 'transferencia' && _destId.isEmpty) {
-                        U.toast(context, 'Selecciona ubicación destino',
-                            kind: 'err');
-                        return;
-                      }
-                      final endpoint =
-                          _type == 'transferencia' ? 'ws_stock_transfer' : 'ws_stock_batch_move';
-                      final payload = <String, dynamic>{
-                        'type': _type,
-                        'location_id': _locId,
-                        'items': _items,
-                        'note': _noteCtrl.text.trim(),
-                      };
-                      if (_type == 'transferencia') {
-                        payload['from_location'] = _locId;
-                        payload['to_location'] = _destId;
-                      }
-                      await U.handlePush(
-                          context,
-                          SyncService.I.push(endpoint, payload),
-                          'Movimiento registrado',
-                          onOk: () => SyncService.I.pullStore('ws_stock_list', {'limit': 1000, 'pageSize': 1000}, 'stock', cacheKey: 'ws_stock_list', dataKey: 'rows'));
-                      // SIEMPRE ajustar stock local (online o encolado/offline)
-                      // para que POS y stock se actualicen de inmediato.
-                      for (final it in _items) {
-                        final qty = (it['qty'] as int?) ?? 1;
-                        if (_type == 'transferencia') {
-                          SyncService.I.adjustLocalStock(
-                              _locId, it['product_id'], -qty);
-                          SyncService.I.adjustLocalStock(
-                              _destId, it['product_id'], qty);
-                        } else {
-                          final delta = _type == 'entrada' ? qty : -qty;
-                          SyncService.I.adjustLocalStock(
-                              _locId, it['product_id'], delta);
-                        }
-                      }
-                      // Guardar movimiento en historial local
-                      await _saveLocalMovement(_type, _items, _locId,
-                          _type == 'transferencia' ? _destId : '', _noteCtrl.text.trim());
-                      widget.onSaved();
-                    },
-              child: const Text('Guardar movimiento'),
-            ),
-           ]),
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancelar')),
+              OutlinedButton(
+                onPressed:
+                    _items.isEmpty ? null : () => _submit(context, true),
+                child: const Text('Guardar y registrar otro'),
+              ),
+              FilledButton(
+                onPressed:
+                    _items.isEmpty ? null : () => _submit(context, false),
+                child: const Text('Guardar movimiento'),
+              ),
+            ],
+          ),
         ],
       ),
     );
+  }
+
+  /// Envía el movimiento y gestiona el refresco local:
+  ///  - ONLINE: el servidor ya aplicó el cambio; solo se guarda el movimiento
+  ///    en el historial local y se recarga el stock real (sin ajuste local
+  ///    para no descontar dos veces).
+  ///  - OFFLINE (encolado): se ajusta el stock local al instante y se guarda
+  ///    el movimiento en el historial para que se vea sin conexión.
+  /// `keepOpen` deja la hoja abierta para registrar otro movimiento seguido.
+  Future<void> _submit(BuildContext context, bool keepOpen) async {
+    if (_locId.isEmpty) {
+      U.toast(context, 'Selecciona una ubicación', kind: 'err');
+      return;
+    }
+    if (_type == 'transferencia' && _destId.isEmpty) {
+      U.toast(context, 'Selecciona ubicación destino', kind: 'err');
+      return;
+    }
+    if (_items.any((e) => e['product_id'] == null)) {
+      U.toast(context, 'Producto no válido', kind: 'err');
+      return;
+    }
+    final items = _items
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList(growable: false);
+    final endpoint = _type == 'transferencia'
+        ? 'ws_stock_transfer'
+        : 'ws_stock_batch_move';
+    final payload = <String, dynamic>{
+      'type': _type,
+      'location_id': _locId,
+      'items': items,
+      'note': _noteCtrl.text.trim(),
+    };
+    if (_type == 'transferencia') {
+      payload['from_location'] = _locId;
+      payload['to_location'] = _destId;
+    }
+    final note = _noteCtrl.text.trim();
+    final toLoc = _type == 'transferencia' ? _destId : '';
+    final ok = await U.handlePush(
+      context,
+      SyncService.I.push(endpoint, payload),
+      'Movimiento registrado',
+      onOk: () async {
+        await _saveLocalMovement(_type, items, _locId, toLoc, note);
+      },
+      onQueued: (_) async {
+        // Ajustar stock local INMEDIATAMENTE para que stock y POS lo
+        // reflejen aunque esté offline.
+        for (final it in items) {
+          final qty = (it['qty'] as int?) ?? 1;
+          if (_type == 'transferencia') {
+            await SyncService.I.adjustLocalStock(
+                _locId, it['product_id'], -qty, notify: false);
+            await SyncService.I.adjustLocalStock(
+                _destId, it['product_id'], qty, notify: false);
+          } else {
+            final delta = _type == 'entrada' ? qty : -qty;
+            await SyncService.I.adjustLocalStock(
+                _locId, it['product_id'], delta, notify: false);
+          }
+        }
+        await _saveLocalMovement(_type, items, _locId, toLoc, note);
+      },
+    );
+    if (!ok) return;
+    if (keepOpen) {
+      // Registrar otro: limpia la selección y recarga el stock sin cerrar.
+      _clearItems();
+      _noteCtrl.clear();
+      _loadProducts();
+      widget.onReload();
+      if (mounted) setState(() {});
+    } else {
+      widget.onSaved();
+    }
   }
 
   /// Guarda un movimiento en SQLite local para historial offline.
@@ -997,12 +1153,17 @@ class _BatchMoveSheetState extends State<_BatchMoveSheet> {
     try {
       final now = DateTime.now().toIso8601String();
       final workerName = AuthService.I.me?['name'] ?? '';
+      final totalQty = items.fold<int>(0, (t, i) => t + ((i['qty'] as int?) ?? 1));
+      // Salida/baja/transferencia se registran con qty negativo (como en la web)
+      final signedQty = (type == 'salida' || type == 'baja' || type == 'transferencia')
+          ? -totalQty
+          : totalQty;
       final movement = <String, dynamic>{
         'id': 'local_${DateTime.now().microsecondsSinceEpoch}',
         'type': type,
         'product_id': items.isNotEmpty ? items.first['product_id'] : null,
         'product_name': items.map((i) => '${i['name'] ?? i['product_id'] ?? ''}').join(', '),
-        'qty': items.fold<int>(0, (t, i) => t + ((i['qty'] as int?) ?? 1)),
+        'qty': signedQty,
         'location_id': fromLoc,
         'location_name': '',
         'to_location_id': toLoc,
@@ -1021,5 +1182,7 @@ class _BatchMoveSheetState extends State<_BatchMoveSheet> {
       list.insert(0, movement);
       await DbService.I.cacheSet('ws_movements_list', list);
     } catch (_) {}
+    // Refleja el movimiento en Historial (y stock) al instante, sin esperar sync.
+    SyncService.I.emitChange();
   }
 }

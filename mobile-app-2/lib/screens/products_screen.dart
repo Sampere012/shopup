@@ -13,6 +13,7 @@ import '../services/image_cache_service.dart';
 import '../services/sync_service.dart';
 import '../widgets/common.dart';
 import '../widgets/crud.dart';
+import 'price_history_sheet.dart';
 
 /// Productos con crear/editar, escaneo de código de barras,
 /// thumbnails de imagen, galería y gestión de combos.
@@ -41,6 +42,12 @@ class _ProductsScreenState extends State<ProductsScreen> {
     SyncService.I.onChange(_onSync);
   }
 
+  @override
+  void dispose() {
+    SyncService.I.removeOnChange(_onSync);
+    super.dispose();
+  }
+
   Future<void> _setCols(int v) async {
     if (v == _cols) return;
     setState(() => _cols = v);
@@ -62,8 +69,12 @@ class _ProductsScreenState extends State<ProductsScreen> {
   /// Images.warm() de la app Cordova): ListView solo construye los ítems
   /// visibles, así que sin esto las imágenes no vistas nunca se descargan
   /// y no estarían disponibles offline.
+  /// Solo se calienta una vez por pantalla: recalientar en cada sync
+  /// recorría todo el catálogo y causaba el "mareo" del Productos.
+  bool _warmed = false;
+
   Future<void> _warmImages() async {
-    if (!SyncService.I.isOnline) return;
+    if (!SyncService.I.isOnline || _warmed) return;
     try {
       final rows = await _future;
       for (final r in rows) {
@@ -71,6 +82,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
         if (u.isEmpty) continue;
         await ImageDisk.warm(u);
       }
+      _warmed = true;
     } catch (_) {}
   }
 
@@ -818,6 +830,12 @@ void _showDetail(BuildContext context, Map<String, dynamic> p) {
                 child: Text('Costo: ${U.money(costPrice, cur)}',
                     style: TextStyle(fontSize: 13, color: Colors.grey[600])),
               ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.show_chart, size: 18),
+              label: const Text('Ver histórico de precios'),
+              onPressed: () => PriceHistorySheet.show(sheetCtx, p),
+            ),
             const Divider(height: 24),
             // Datos generales
             _detailRow('Código de barras', '${p['barcode'] ?? ''}'),
@@ -974,6 +992,12 @@ class _CategoriesTabState extends State<_CategoriesTab> {
     super.initState();
     _load();
     SyncService.I.onChange(_onSync);
+  }
+
+  @override
+  void dispose() {
+    SyncService.I.removeOnChange(_onSync);
+    super.dispose();
   }
 
   void _onSync() {
