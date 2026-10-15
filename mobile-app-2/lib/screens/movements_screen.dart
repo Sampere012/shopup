@@ -28,6 +28,9 @@ class _MovementsScreenState extends State<MovementsScreen> {
   bool _sortNewest = true;
   bool _busy = false;
   late Future<List<Map<String, dynamic>>> _future;
+  // Catálogo local de productos (id -> fila): permite resolver nombre y foto
+  // de un movimiento offline sin volver a consultar la base.
+  final Map<String, Map<String, dynamic>> _catalog = {};
 
   @override
   void initState() {
@@ -57,8 +60,20 @@ class _MovementsScreenState extends State<MovementsScreen> {
   }
 
   void _reload() {
-    _future = DbService.I.all('movements');
+    _future = _loadAll();
     setState(() {});
+  }
+
+  Future<List<Map<String, dynamic>>> _loadAll() async {
+    // El catálogo se recarga en paralelo con los movimientos: si falla,
+    // los movimientos se muestran igual (solo se pierde la foto de apoyo).
+    try {
+      final products = await DbService.I.all('products');
+      _catalog
+        ..clear()
+        ..addEntries(products.map((p) => MapEntry('${p['id']}', p)));
+    } catch (_) {}
+    return DbService.I.all('movements');
   }
 
   Future<void> _refresh() async {
@@ -360,10 +375,10 @@ class _MovementsScreenState extends State<MovementsScreen> {
                         children: [
                           for (final movement in dayRows)
                             ListTile(
-                              leading: const Icon(Icons.inventory_2_outlined,
-                                  size: 18),
+                              leading: _thumbFor(
+                                  movement, AppTheme.primary),
                               title: Text(
-                                  '${movement['product_name'] ?? movement['combo_name'] ?? 'Movimiento'}',
+                                  _nameOf(movement),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis),
                               subtitle: Text(
@@ -410,18 +425,11 @@ class _MovementsScreenState extends State<MovementsScreen> {
                   ];
                   return Card(
                     child: ListTile(
-                      leading: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: color.withAlpha(20),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Icon(_typeIcon(type), color: color, size: 20),
-                      ),
+                      leading: _thumbFor(m, color),
                       title: Row(children: [
                         Expanded(
                           child: Text(
-                            '${m['product_name'] ?? m['combo_name'] ?? ''}',
+                            _nameOf(m),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
@@ -461,6 +469,67 @@ class _MovementsScreenState extends State<MovementsScreen> {
 
   // ── Helpers ──
 
+  /// Nombre mostrable de un movimiento: producto, combo o —si no hay nada—
+  /// el id para no dejar el título vacío.
+  String _nameOf(Map<String, dynamic> m) {
+    final name = '${m['product_name'] ?? m['combo_name'] ?? ''}';
+    if (name.trim().isNotEmpty) return name;
+    // Movimiento local recién creado: si la fila no trae nombre (p.ej. se
+    // encoló antes de tener la ficha), se recupera del catálogo local.
+    return _catalogName(m['product_id']);
+  }
+
+  /// Nombre del producto desde el catálogo local (funciona offline).
+  String _catalogName(dynamic productId) {
+    if (productId == null || '$productId'.isEmpty) return 'Producto';
+    final p = _catalog['$productId'];
+    if (p == null) return 'Producto';
+    final name = '${p['name'] ?? ''}';
+    return name.trim().isNotEmpty ? name : 'Producto';
+  }
+
+  /// Foto del movimiento: la de la fila si la trae, o la del catálogo local
+  /// por `product_id`. Vacío si no hay ninguna (→ se pinta el icono).
+  String _imageUrlOf(Map<String, dynamic> m) {
+    final direct = '${m['image'] ?? ''}';
+    if (direct.trim().isNotEmpty) return direct;
+    final p = _catalog['${m['product_id']}'];
+    if (p == null) return '';
+    return '${p['image'] ?? ''}';
+  }
+
+  /// Miniatura de la fila: foto del producto si la hay (sirve offline desde
+  /// `ImageDisk` cuando ya estaba cacheada) y si no el icono de tipo, que es
+  /// lo que se pintaba siempre hasta ahora.
+  Widget _thumbFor(Map<String, dynamic> m, Color color) {
+    final type = '${m['type'] ?? ''}'.toLowerCase();
+    final imgUrl = _imageUrlOf(m);
+    final icon = Icon(_typeIcon(type), color: color, size: 20);
+    return Container(
+      padding: EdgeInsets.all(imgUrl.isNotEmpty ? 0 : 8),
+      decoration: BoxDecoration(
+        color: imgUrl.isNotEmpty ? Colors.transparent : color.withAlpha(20),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: imgUrl.isNotEmpty
+          ? ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: NetImage(
+                imgUrl,
+                width: 36,
+                height: 36,
+                fit: BoxFit.cover,
+                memCacheWidth: 100,
+                fallback: (_) => Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: icon,
+                ),
+              ),
+            )
+          : icon,
+    );
+  }
+
   void _openDetail(Map<String, dynamic> m) {
     final type = '${m['type'] ?? ''}'.toLowerCase();
     final color = _typeColor(type);
@@ -478,7 +547,7 @@ class _MovementsScreenState extends State<MovementsScreen> {
     final rows = <(String, String)>[
       ('Tipo', _typeLabel(type)),
       ('Producto/Combo',
-          '${m['product_name'] ?? m['combo_name'] ?? '—'}${m['combo_id'] != null && (num.tryParse('${m['combo_id']}') ?? 0) > 0 ? ' (combo)' : ''}'),
+          '${_nameOf(m)}${m['combo_id'] != null && (num.tryParse('${m['combo_id']}') ?? 0) > 0 ? ' (combo)' : ''}'),
       ('Cantidad', '${qty > 0 ? '+' : ''}${qty.toStringAsFixed(qty == qty.roundToDouble() ? 0 : 2)}'),
       ('Ubicación', '${m['location_name'] ?? m['to_name'] ?? '—'}'),
       if ('${m['dest_name'] ?? m['to_name'] ?? ''}'.isNotEmpty &&
@@ -506,17 +575,12 @@ class _MovementsScreenState extends State<MovementsScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Row(children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: color.withAlpha(20),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(_typeIcon(type), color: color, size: 24),
-                ),
+                _thumbFor(m, color),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Text(_typeLabel(type),
+                  child: Text(_nameOf(m),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                           fontWeight: FontWeight.w800, fontSize: 16)),
                 ),

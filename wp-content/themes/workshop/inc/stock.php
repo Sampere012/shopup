@@ -934,7 +934,8 @@ class WS_Stock {
         $where = self::movements_where( $args );
         $limit = isset( $args['limit'] ) ? (int) $args['limit'] : 50;
         $offset = isset( $args['offset'] ) ? (int) $args['offset'] : 0;
-        $sql = "SELECT m.*, p.name AS product_name, u.display_name AS user_name,
+        $sql = "SELECT m.*, p.name AS product_name, p.image AS product_image,
+                u.display_name AS user_name,
                 c.name AS combo_name,
                 l1.name AS location_name, l2.name AS dest_name
                 FROM " . self::table( 'movements' ) . " m

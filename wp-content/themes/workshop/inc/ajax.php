@@ -2746,6 +2746,10 @@ function ws_ajax_movements_list() {
             $out[] = array(
                 'id'              => (int) $m->id,
                 'type'            => $m->type,
+                'product_id'      => (int) ( $m->product_id ?? 0 ),
+                // Foto del producto: la app la pinta en el Historial y la
+                // cachea en local (funciona offline tras la primera carga).
+                'image'           => (string) ( $m->product_image ?? '' ),
                 'product_name'    => $m->product_name,
                 'combo_name'      => (string) ( $m->combo_name ?? '' ),
                 'combo_id'        => (int) $m->combo_id,

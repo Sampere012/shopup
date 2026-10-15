@@ -80,10 +80,13 @@ class SyncService extends ChangeNotifier {
     // Intervalo local persistido (si el usuario lo cambió en Ajustes).
     final sp = await SharedPreferences.getInstance();
     _autoSyncMinutes = sp.getInt(_minsKey) ?? AppConfig.autoSyncMinutes;
-    // Cronómetro de autosync: SOLO intervalos periódicos. Sin sync automática
-    // al abrir la app ni al volver a primer plano ni al recuperar conexión
-    // (igual que la app anterior).
+    // Cronómetro de autosync: intervalos periódicos.
+    // Además, al abrir la app se lanza un pull con throttle (syncSoon): antes
+    // el único disparo automático era este cronómetro, así que un día entero
+    // de uso podía pasar sin bajar nada si el usuario no visitaba una
+    // pantalla que sincronizara por su cuenta.
     if (autoSync) startTimer();
+    unawaited(syncSoon());
   }
 
   /// Guarda el intervalo de autosync localmente y reinicia el cronómetro.
@@ -115,18 +118,66 @@ class SyncService extends ChangeNotifier {
 
   /// Sube pendientes y baja cambios. Devuelve
   /// 'blocked' | 'offline' | true | false.
+  ///
+  /// El pull se ejecuta SIEMPRE (si hay red y el plan no está bloqueado),
+  /// aunque la cola aún tenga operaciones pendientes: si una op se queda
+  /// atascada, antes se abortaba aquí y la app dejaba de descargar datos para
+  /// siempre — sólo sobrevivían las pantallas que volvían a llamar a la API
+  /// por su cuenta. Devuelve `false` si algo falló, pero ya no decide
+  /// si se baja o no el estado del servidor.
   Future<Object> syncNow() async {
     // Plan bloqueado: ni subir ni bajar. La UI muestra la pantalla de bloqueo.
     if (PlanGuardService.I.isBlocked) return 'blocked';
     await checkConnectivity();
     if (!_online) return 'offline';
-    final flushRes = await flush();
-    if ((flushRes['remaining'] ?? 0) > 0) return false;
-    final okPull = await pull();
+    var ok = true;
+    try {
+      final flushRes = await flush();
+      if ((flushRes['remaining'] ?? 0) > 0) ok = false;
+    } catch (_) {
+      ok = false;
+    }
+    try {
+      // pull() es independiente de la cola: descarga el estado del servidor
+      // y reaplica los deltas pendientes encima.
+      final okPull = await pull();
+      if (!okPull) ok = false;
+    } catch (_) {
+      ok = false;
+    }
     _lastSync = DateTime.now().millisecondsSinceEpoch;
-    for (final fn in List.of(_bgListeners)) { try { fn(); } catch (_) {} }
+    for (final fn in List.of(_bgListeners)) {
+      try {
+        fn();
+      } catch (_) {}
+    }
     _emit();
-    return okPull;
+    return ok;
+  }
+
+  /// Sincroniza con throttle: se dispara al abrir la app y al volver de
+  /// segundo plano. Sin este paso, un día entero de uso podía pasar sin
+  /// ningún pull si el usuario no visitaba una pantalla que sincronizara
+  /// por su cuenta (el único disparo automático era el timer de 25 min).
+  ///
+  /// [minInterval] evita martillear la red cuando el usuario alterna entre
+  /// la app y otras apps.
+  Future<void> syncSoon({Duration? minInterval}) async {
+    if (_pulling || _flushing || PlanGuardService.I.isBlocked) return;
+    // En el arranque `me` puede no estar cargado todavía: sin él, pull()
+    // no sabe qué menús/caps tiene el usuario y se salta los endpoints
+    // acotados. `load()` es idempotente y sólo lee SharedPreferences.
+    if (AuthService.I.me == null) {
+      try {
+        await AuthService.I.load();
+      } catch (_) {}
+    }
+    final interval = minInterval ?? const Duration(minutes: 3);
+    final last = DateTime.fromMillisecondsSinceEpoch(_lastSync);
+    if (DateTime.now().difference(last) < interval) return;
+    try {
+      await backgroundSync();
+    } catch (_) {}
   }
 
   Future<void> backgroundSync() async {
@@ -173,15 +224,17 @@ class SyncService extends ChangeNotifier {
           }));
 
       // Categorías de productos (árbol: parent_id/name/active/products).
-      if (hasCap('categories_manage')) {
-        await step(() => ApiService.I.req('ws_categories_list', {}).then((d) async {
-              final dm = d as Map;
-              final rows = List<Map<String, dynamic>>.from(((dm['categories']) as List?) ?? []);
-              await DbService.I.cacheSet('ws_categories_list', rows);
-              await DbService.I.cacheSet('ws_categories_payload', dm['payload'] ?? {});
-              await DbService.I.replaceAll('categories', rows);
-            }));
-      }
+      // Sin gate de caps: el POS y el catálogo de Stock las usan todos, y el
+      // que no puede gestionarlas simplemente no las edita (lo decide el
+      // servidor). Antes sólo se bajaban con `categories_manage` y el POS
+      // trabajaba sin ellas.
+      await step(() => ApiService.I.req('ws_categories_list', {}).then((d) async {
+            final dm = d as Map;
+            final rows = List<Map<String, dynamic>>.from(((dm['categories']) as List?) ?? []);
+            await DbService.I.cacheSet('ws_categories_list', rows);
+            await DbService.I.cacheSet('ws_categories_payload', dm['payload'] ?? {});
+            await DbService.I.replaceAll('categories', rows);
+          }));
 
       // Stock + combos (merge/upsert: no borrar filas locales que el
       // servidor no devolvió, p.ej. productos recién creados offline).
@@ -229,14 +282,13 @@ class SyncService extends ChangeNotifier {
             await DbService.I.replaceAll('orders', rows);
           }));
 
-      // Clientes.
-      if (hasCap('customers_view')) {
-        await step(() => ApiService.I.req('ws_cache_customers', {}).then((d) async {
-              final rows = List<Map<String, dynamic>>.from(((d as Map)['data'] as List?) ?? []);
-              await DbService.I.cacheSet('ws_customers_get', rows);
-              await DbService.I.replaceAll('customers', rows);
-            }));
-      }
+      // Clientes. Sin gate de caps: el autocompletado del POS los necesita
+      // también (el servidor rechaza a quien no tenga el permiso).
+      await step(() => ApiService.I.req('ws_cache_customers', {}).then((d) async {
+            final rows = List<Map<String, dynamic>>.from(((d as Map)['data'] as List?) ?? []);
+            await DbService.I.cacheSet('ws_customers_get', rows);
+            await DbService.I.replaceAll('customers', rows);
+          }));
 
       // Anuncios fijados (banners): para TODOS los usuarios, igual que en el
       // panel web, no solo para quien gestiona anuncios.
@@ -328,6 +380,32 @@ class SyncService extends ChangeNotifier {
               await DbService.I.cacheSet('ws_stock_counts_list:all', rows);
               await DbService.I.replaceAll('stock_counts', rows);
             }));
+        // Cuadre virtual + histórico POR UBICACIÓN: es lo que abre la pantalla
+        // de Cuadre. Antes sólo se descargaban al entrar en ella, así que
+        // sin visitar la vista el usuario veía "sin cuadrar" aunque hubiera
+        // datos en el servidor.
+        await step(() async {
+          final locs = await DbService.I.all('locations');
+          for (final row in locs) {
+            final id = '${row['id']}';
+            if (id.isEmpty) continue;
+            await step(() => ApiService.I.req('ws_stock_count_virtual', {'location_id': id}).then((d) {
+              // Igual que en counts_screen: el endpoint devuelve la lista
+              // directamente o envuelta en `data`.
+              final rows = (d is List)
+                  ? d
+                  : (d is Map && d['data'] is List ? d['data'] : const []);
+              DbService.I.cacheSet('ws_stock_count_virtual:$id', rows);
+            }));
+            await step(() => ApiService.I.req('ws_stock_counts_list',
+                    {'location_id': id, 'limit': 20, 'offset': 0})
+                .then((d) async {
+              final rows =
+                  List<Map<String, dynamic>>.from((((d as Map)['data']) as List?) ?? []);
+              await DbService.I.cacheSet('ws_stock_counts_list:$id', rows);
+            }));
+          }
+        });
       }
 
       // Estadísticas POS.
@@ -380,10 +458,11 @@ class SyncService extends ChangeNotifier {
         await step(() => ApiService.I.req('ws_plan_info', {})
             .then((d) => DbService.I.cacheSet('ws_plan_info', (d as Map)['data'] ?? {})));
       }
-      if (menuKeys.contains('settings')) {
-        await step(() => ApiService.I.req('ws_settings_get', {})
-            .then((d) => DbService.I.cacheSet('ws_settings_get', (d as Map)['data'] ?? {})));
-      }
+      // Ajustes. Sin gate de menú: `main.dart` lee `ws_settings_get` para la
+      // URL del WebSocket y el catálogo de Stock para Cloudinary, y ambos
+      // funcionan sin importar si el menú incluye "Ajustes".
+      await step(() => ApiService.I.req('ws_settings_get', {})
+          .then((d) => DbService.I.cacheSet('ws_settings_get', (d as Map)['data'] ?? {})));
       if (menuKeys.contains('appearance')) {
         await step(() => ApiService.I.req('ws_appearance_get', {})
             .then((d) => DbService.I.cacheSet('ws_appearance_get', (d as Map)['data'] ?? {})));
@@ -861,6 +940,63 @@ class SyncService extends ChangeNotifier {
     } catch (_) {}
   }
 
+  /// Devuelve la ficha mínima de un producto (nombre, foto y datos de
+  /// presentación) a partir de la caché local. Se usa para hidratar filas de
+  /// stock creadas offline y los movimientos locales, de modo que Historial y
+  /// Stock muestren el mismo nombre/foto que el servidor aunque la fila sea
+  /// nueva.
+  ///
+  /// Primero mira la tabla `products` (catálogo maestro) y, si el producto no
+  /// está ahí, cualquier otra fila de `stock` con ese producto (la foto ya
+  /// cacheada en otra ubicación). Vacío si no hay nada que copiar.
+  static Future<Map<String, dynamic>> productInfoFor(
+      dynamic productId, List<Map<String, dynamic>> stockRows) async {
+    final out = <String, dynamic>{};
+    final id = '$productId';
+    if (id.isEmpty || id == 'null') return out;
+    try {
+      for (final p in await DbService.I.all('products')) {
+        if ('${p['id']}' != id) continue;
+        out.addAll(_productFields(p));
+        return out;
+      }
+      // Fallback: otra fila de stock con el mismo producto.
+      for (final row in stockRows) {
+        if ('${row['product_id']}' != id) continue;
+        out.addAll(_productFields(row));
+        // `group_*` no se copia: son agregados de la fila de origen.
+        return out;
+      }
+    } catch (e) {
+      wsLog('! productInfoFor($id): $e');
+    }
+    return out;
+  }
+
+  /// Campos de ficha de producto que se copian a filas derivadas.
+  static Map<String, dynamic> _productFields(Map raw) {
+    const keys = [
+      'name',
+      'image',
+      'gallery',
+      'barcode',
+      'category',
+      'category_id',
+      'description',
+      'min_stock',
+      'sale_price',
+      'cost_price',
+      'currency',
+      'store_visible',
+      'pos_visible',
+    ];
+    final out = <String, dynamic>{};
+    for (final k in keys) {
+      if (raw.containsKey(k)) out[k] = raw[k];
+    }
+    return out;
+  }
+
   /// Ajusta el stock LOCAL (SQLite) y notifica en tiempo real.
   /// Clave para vender offline tras una entrada en cola: la entrada suma
   /// localmente al momento y el POS puede seguir vendiendo.
@@ -883,12 +1019,17 @@ class SyncService extends ChangeNotifier {
       }
       if (!changed) {
         final q = delta < 0 ? 0 : delta;
-        rows.add({
+        final created = <String, dynamic>{
           'id': 'p$productId:$locationId',
           'product_id': int.tryParse('$productId') ?? 0,
           'location_id': int.tryParse('$locationId') ?? 0,
           'qty': q,
-        });
+        };
+        // Hidrata con la ficha del producto (nombre, foto, precios…): sin
+        // esto una transferencia hacia una ubicación sin registro previo
+        // aparecía en Stock como "solo el monto", sin nombre ni foto.
+        created.addAll(await productInfoFor(productId, rows));
+        rows.add(created);
       }
       await DbService.I.putAll('stock', rows);
       if (notify) _emit();

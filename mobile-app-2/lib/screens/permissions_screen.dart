@@ -35,48 +35,56 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
   @override
   void initState() {
     super.initState();
+    // 1) Pintar lo que ya está en caché (funciona SIN conexión).
     _loadFromCache();
-    _loadFromServer();
+    // 2) Refrescar desde el servidor si hay red; sin red no-op y la caché
+    //    anterior sigue siendo la fuente de verdad.
+    SyncService.I.pullCache('ws_permissions_get', {}, 'ws_permissions_get')
+        .then((_) => _loadFromCache())
+        .catchError((_) => _loadFromCache());
     SyncService.I.onChange(_onSync);
   }
 
+  @override
+  void dispose() {
+    SyncService.I.removeOnChange(_onSync);
+    super.dispose();
+  }
+
   void _onSync() {
-    if (mounted) { _loadFromCache(); _loadFromServer(); }
+    // Los cambios sin guardar (`_dirty`) NO se descartan: el usuario puede
+    // estar ajustando la matriz mientras corre un pull.
+    if (!mounted || _dirty.isNotEmpty) return;
+    _loadFromCache();
   }
 
+  /// Aplica a la UI el payload cacheado de `ws_permissions_get`. Vacío si no
+  /// hay nada cacheado: en ese caso se muestra el estado de "sin datos" y no
+  /// un spinner eterno.
   Future<void> _loadFromCache() async {
-    final raw = await DbService.I.cacheGet('ws_permissions_get');
-    if (raw is Map && mounted) {
-      final data = Map<String, dynamic>.from(raw);
-      setState(() {
-        _caps = Map<String, dynamic>.from(data['caps'] ?? {});
-        _matrix = Map<String, dynamic>.from(data['matrix'] ?? {});
-        _roles = (data['roles'] as Map?)?.keys.map((e) => '$e').toList() ?? [];
-        _readonly = (data['readonly'] as List?)?.map((e) => '$e').toList() ?? [];
-        _currentRole = _roles.isNotEmpty ? _roles.first : 'owner';
-        _loading = false;
-      });
-    }
-  }
-
-  Future<void> _loadFromServer() async {
+    dynamic raw;
     try {
-      final d = await DbService.I.cacheGet('ws_permissions_get');
-      if (d is Map && mounted) {
-        final data = Map<String, dynamic>.from(d);
-        setState(() {
-          _caps = Map<String, dynamic>.from(data['caps'] ?? {});
-          _matrix = Map<String, dynamic>.from(data['matrix'] ?? {});
-          _roles = (data['roles'] as Map?)?.keys.map((e) => '$e').toList() ?? [];
-          _readonly = (data['readonly'] as List?)?.map((e) => '$e').toList() ?? [];
-          if (_currentRole.isEmpty || !_roles.contains(_currentRole)) {
-            _currentRole = _roles.isNotEmpty ? _roles.first : 'owner';
-          }
-          _dirty.clear();
-          _loading = false;
-        });
+      raw = await DbService.I.cacheGet('ws_permissions_get');
+    } catch (_) {
+      raw = null;
+    }
+    if (!mounted) return;
+    final data =
+        raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+    setState(() {
+      _caps = Map<String, dynamic>.from(data['caps'] ?? {});
+      _matrix = Map<String, dynamic>.from(data['matrix'] ?? {});
+      _roles =
+          (data['roles'] as Map?)?.keys.map((e) => '$e').toList() ?? <String>[];
+      _readonly =
+          (data['readonly'] as List?)?.map((e) => '$e').toList() ?? <String>[];
+      if (_currentRole.isEmpty || !_roles.contains(_currentRole)) {
+        _currentRole = _roles.isNotEmpty ? _roles.first : 'owner';
       }
-    } catch (_) {}
+      // SIEMPRE se apaga el indicador: antes solo se hacía dentro del `if`,
+      // así que sin caché la pantalla se quedaba cargando para siempre.
+      _loading = false;
+    });
   }
 
   bool _valueFor(String role, String cap) {
@@ -121,18 +129,27 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
     final ok = await U.handlePush(
       context,
       SyncService.I.push('ws_save_permissions', {
-        'matrix': Uri.encodeComponent('${next}'),
+        // La matriz se envía como Map: `ApiService._doReq` la serializa con
+        // `jsonEncode` y el servidor hace `json_decode`. Antes se mandaba
+        // `Uri.encodeComponent('${next}')` (el `toString()` de Dart, que no
+        // es JSON) y `json_decode` devolvía NULL → el guardado no hacía nada.
+        'matrix': next,
       }),
       'Permisos guardados',
-      onOk: () => SyncService.I.pullCache('ws_permissions_get', {}, 'ws_permissions_get'),
+      onOk: () =>
+          SyncService.I.pullCache('ws_permissions_get', {}, 'ws_permissions_get')
+              .then((_) => _loadFromCache()),
       onQueued: (qp) async {
-        // Solo se actualiza la matriz: se conservan caps/roles/readonly.
+        // Solo se actualiza la matriz: se conservan caps/roles/readonly. Si
+        // la caché no está completa todavía (p.ej. primera ejecución sin
+        // red), no se escribe nada para no dejar un payload a medias que la
+        // pantalla interprete como "sin datos".
         final prev = await DbService.I.cacheGet('ws_permissions_get');
-        final map = prev is Map
-            ? Map<String, dynamic>.from(prev)
-            : <String, dynamic>{};
+        if (prev is! Map || prev['matrix'] is! Map) return;
+        final map = Map<String, dynamic>.from(prev);
         map['matrix'] = next;
         await DbService.I.cacheSet('ws_permissions_get', map);
+        if (mounted) _loadFromCache();
       },
     );
     if (ok) {
@@ -159,8 +176,31 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
 
     if (_caps.isEmpty || _roles.isEmpty) {
       return Center(
-        child: Text('Sin datos de permisos.',
-            style: TextStyle(color: isDark ? AppTheme.darkMuted : AppTheme.lightMuted)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.lock_outline,
+                  size: 34,
+                  color: isDark ? AppTheme.darkMuted : AppTheme.lightMuted),
+              const SizedBox(height: 10),
+              Text('Sin datos de permisos.',
+                  style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? AppTheme.darkMuted : AppTheme.lightMuted)),
+              const SizedBox(height: 6),
+              Text(
+                'Se cargarán al sincronizar. Comprueba la conexión o pulsa '
+                'el botón de sincronizar.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    color: isDark ? AppTheme.darkMuted : AppTheme.lightMuted,
+                    fontSize: 12),
+              ),
+            ],
+          ),
+        ),
       );
     }
 

@@ -73,6 +73,9 @@ class _ShellScreenState extends State<ShellScreen> with WidgetsBindingObserver {
       SyncService.I.checkConnectivity();
       // Al volver a primer plano: verificación inmediata contra la nube.
       PlanGuardService.I.checkFromCloud();
+      // Y baja el estado del servidor (con throttle), para que las vistas
+      // que no se hayan visitado también queden actualizadas.
+      SyncService.I.syncSoon();
       _updateNotifBadge();
       _checkUpdate();
     }
