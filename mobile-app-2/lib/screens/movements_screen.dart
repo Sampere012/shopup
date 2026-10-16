@@ -4,6 +4,7 @@ import '../main.dart';
 import '../theme/app_theme.dart';
 import '../services/auth_service.dart';
 import '../services/db_service.dart';
+import '../services/filter_prefs.dart';
 import '../services/sync_service.dart';
 import '../widgets/common.dart';
 import '../widgets/route_nav.dart';
@@ -31,6 +32,9 @@ class _MovementsScreenState extends State<MovementsScreen> {
   // Catálogo local de productos (id -> fila): permite resolver nombre y foto
   // de un movimiento offline sin volver a consultar la base.
   final Map<String, Map<String, dynamic>> _catalog = {};
+  // Ubicaciones cacheadas localmente: resuelven el nombre de un movimiento
+  // offline aunque la fila no lo traiga, y alimentan el filtro.
+  final Map<String, String> _locNames = {};
 
   @override
   void initState() {
@@ -44,6 +48,20 @@ class _MovementsScreenState extends State<MovementsScreen> {
       if (p['search'] is String && '${p['search']}'.isNotEmpty) {
         _q = '${p['search']}';
       }
+    }
+    // Filtro de ubicación persistido en el dispositivo (sobrevive a
+    // recargas, reinicios y registros offline; un deep-link lo pisa).
+    if (p['location'] is String && '${p['location']}'.isNotEmpty) {
+      _locationFilter = '${p['location']}';
+      FilterPrefs.setLoc(FilterPrefs.movementsLoc, _locationFilter);
+    } else {
+      FilterPrefs.loc(FilterPrefs.movementsLoc).then((v) {
+        // Puede llegar DESPUÉS de la primera carga: se aplica y se vuelve a
+        // recargar (además de re-validar que la ubicación siga existiendo).
+        if (!mounted || v.isEmpty || v == _locationFilter) return;
+        setState(() => _locationFilter = v);
+        _reload();
+      });
     }
     _reload();
     SyncService.I.onChange(_onSync);
@@ -73,7 +91,30 @@ class _MovementsScreenState extends State<MovementsScreen> {
         ..clear()
         ..addEntries(products.map((p) => MapEntry('${p['id']}', p)));
     } catch (_) {}
+    // Ubicaciones locales: resuelven nombres de movimientos offline.
+    try {
+      final locs = await DbService.I.all('locations');
+      _locNames
+        ..clear()
+        ..addEntries(locs.map((l) =>
+            MapEntry('${l['id']}', '${l['name'] ?? ''}')));
+      // El filtro guardado puede apuntar a una ubicación ya inexistente:
+      // sin esta validación el chip quedaría seleccionado y la lista vacía.
+      if (_locationFilter != 'all' &&
+          !_locNames.containsValue(_locationFilter)) {
+        _locationFilter = 'all';
+        FilterPrefs.setLoc(FilterPrefs.movementsLoc, '');
+      }
+    } catch (_) {}
     return DbService.I.all('movements');
+  }
+
+  /// Ubicación de un movimiento resolviendo el nombre desde el catálogo
+  /// local cuando la fila no lo trae (movimientos creados offline).
+  String _locNameOf(Map<String, dynamic> r) {
+    final direct = '${r['location_name'] ?? ''}';
+    if (direct.trim().isNotEmpty) return direct.trim();
+    return _locNames['${r['location_id']}'] ?? '';
   }
 
   Future<void> _refresh() async {
@@ -137,8 +178,13 @@ class _MovementsScreenState extends State<MovementsScreen> {
           for (final r in rows) {
             final t = '${r['type'] ?? ''}'.toLowerCase();
             if (t.isNotEmpty) types.add(t);
-            final l = '${r['location_name'] ?? ''}';
+            final l = _locNameOf(r);
             if (l.isNotEmpty) locations.add(l);
+          }
+          // El filtro activo se mantiene como chip aunque hoy no haya
+          // movimientos con esa ubicación (así se puede deseleccionar).
+          if (_locationFilter != 'all' && _locationFilter.isNotEmpty) {
+            locations.add(_locationFilter);
           }
           final sortedTypes = types.toList()..sort();
           final sortedLocations = locations.toList()..sort();
@@ -185,11 +231,13 @@ class _MovementsScreenState extends State<MovementsScreen> {
                       _chip('Todas las ubicaciones', 'all', _locationFilter,
                           (v) {
                         setState(() => _locationFilter = v);
+                        FilterPrefs.setLoc(FilterPrefs.movementsLoc, v);
                         _reload();
                       }),
                       for (final l in sortedLocations)
                         _chip(l, l, _locationFilter, (v) {
                           setState(() => _locationFilter = v);
+                          FilterPrefs.setLoc(FilterPrefs.movementsLoc, v);
                           _reload();
                         }),
                     ],
@@ -269,8 +317,7 @@ class _MovementsScreenState extends State<MovementsScreen> {
             // Filter by location
             if (_locationFilter != 'all') {
               rows = rows
-                  .where(
-                      (r) => '${r['location_name'] ?? ''}' == _locationFilter)
+                  .where((r) => _locNameOf(r) == _locationFilter)
                   .toList();
             }
 
@@ -279,7 +326,7 @@ class _MovementsScreenState extends State<MovementsScreen> {
               rows = rows.where((r) {
                 final name = '${r['product_name'] ?? ''}'.toLowerCase();
                 final combo = '${r['combo_name'] ?? ''}'.toLowerCase();
-                final loc = '${r['location_name'] ?? ''}'.toLowerCase();
+                final loc = _locNameOf(r).toLowerCase();
                 final dest = '${r['dest_name'] ?? ''}'.toLowerCase();
                 final type = '${r['type'] ?? ''}'.toLowerCase();
                 final ref = '${r['reference'] ?? ''}'.toLowerCase();
@@ -418,7 +465,7 @@ class _MovementsScreenState extends State<MovementsScreen> {
                       (m['reverted_at'] is String &&
                           (m['reverted_at'] as String).isNotEmpty);
                   final parts = <String>[
-                    '${m['location_name'] ?? ''}',
+                    _locNameOf(m),
                     if (dest.isNotEmpty && dest != '${m['location_name'] ?? ''}')
                       '→ $dest',
                     U.fmtDate(m['created_at']),

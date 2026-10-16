@@ -189,5 +189,40 @@ void main() {
       expect(await DbService.I.pendingCount(), 2,
           reason: 'reaplicar no debe consumir la cola');
     });
+
+    test('cuadre con ajuste en cola reaplica su diff tras un pull', () async {
+      await DbService.I.replaceAll('stock', [
+        {'id': 'p1:1', 'product_id': 1, 'location_id': 1, 'qty': 10},
+      ]);
+      await DbService.I.enqueue('ws_stock_count_save', {
+        'location_id': 1,
+        'adjust': 1,
+        'items': [
+          {'product_id': 1, 'physical': 7, 'diff': -3},
+        ],
+      });
+      // Pull: el servidor devuelve el stock SIN el cuadre offline.
+      await DbService.I.replaceAll('stock', [
+        {'id': 'p1:1', 'product_id': 1, 'location_id': 1, 'qty': 10},
+      ]);
+      await SyncService.I.reapplyPendingStockDeltas();
+      expect(await qtyAt(1, 1), 7,
+          reason: 'el cuadre offline se "deshacía" al refrescar');
+    });
+
+    test('cuadre SIN ajuste no toca el stock', () async {
+      await DbService.I.replaceAll('stock', [
+        {'id': 'p1:1', 'product_id': 1, 'location_id': 1, 'qty': 10},
+      ]);
+      await DbService.I.enqueue('ws_stock_count_save', {
+        'location_id': 1,
+        'adjust': 0,
+        'items': [
+          {'product_id': 1, 'physical': 7},
+        ],
+      });
+      await SyncService.I.reapplyPendingStockDeltas();
+      expect(await qtyAt(1, 1), 10);
+    });
   });
 }

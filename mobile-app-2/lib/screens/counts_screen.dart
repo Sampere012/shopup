@@ -4,6 +4,7 @@ import '../main.dart';
 import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 import '../services/db_service.dart';
+import '../services/filter_prefs.dart';
 import '../services/sync_service.dart';
 import '../widgets/common.dart';
 
@@ -39,7 +40,11 @@ class _CountsScreenState extends State<CountsScreen> {
     final locs = await DbService.I.all('locations');
     if (locs.isNotEmpty) _locations = locs;
     if (_locations.isNotEmpty && _locId.isEmpty) {
-      _locId = '${_locations.first['id']}';
+      // Ubicación recordada en el dispositivo (offline-friendly).
+      final saved = await FilterPrefs.loc(FilterPrefs.countsLoc);
+      final known = _locations.map((l) => '${l['id']}').toSet();
+      _locId = FilterPrefs.keepIfKnown(saved, known);
+      if (_locId.isEmpty) _locId = '${_locations.first['id']}';
     }
     final counts = await DbService.I.all('stock_counts');
     // Solo el historial de la ubicación seleccionada (el resto vive en la
@@ -100,9 +105,25 @@ class _CountsScreenState extends State<CountsScreen> {
     // Load from cache first
     final cached = await DbService.I.cacheGet('ws_stock_count_virtual:$_locId');
     if (cached is List && cached.isNotEmpty) {
-      _items = normalize(cached.whereType<Map>().toList().cast<Map<String, dynamic>>());
+      _items = normalize(SyncService.virtualCountFromLocal(
+              cached.whereType<Map>().toList().cast<Map<String, dynamic>>(),
+              await DbService.I.all('stock'),
+              _locId));
       _phys.clear();
       setState(() {});
+    } else {
+      // SIN CACHÉ (instalación nueva o nunca hubo red con esta ubicación):
+      // el cuadre se arma desde el stock LOCAL, que ya refleja los
+      // movimientos hechos sin conexión.
+      final localRows = (await DbService.I.all('stock'))
+          .where((r) => '${r['location_id']}' == _locId)
+          .toList();
+      if (localRows.isNotEmpty) {
+        _items = normalize(SyncService.virtualCountFromLocal(
+            const [], localRows, _locId));
+        _phys.clear();
+        setState(() {});
+      }
     }
     // Background refresh
     try {
@@ -111,7 +132,13 @@ class _CountsScreenState extends State<CountsScreen> {
       final rows = (d is List)
           ? d
           : (d['data'] is List ? d['data'] : []);
-      _items = normalize(List<Map<String, dynamic>>.from(rows));
+      // El virtual del servidor NO incluye los movimientos que siguen en
+      // cola: se corrige con el stock local (servidor + deltas pendientes)
+      // y se añaden los productos que entraron offline.
+      _items = normalize(SyncService.virtualCountFromLocal(
+          List<Map<String, dynamic>>.from(rows),
+          await DbService.I.all('stock'),
+          _locId));
       await DbService.I.cacheSet('ws_stock_count_virtual:$_locId', _items);
       _phys.clear();
       if (mounted) setState(() {});
@@ -187,7 +214,9 @@ class _CountsScreenState extends State<CountsScreen> {
             ),
             child: DropdownButtonHideUnderline(
               child: DropdownButton<String>(
-                value: _locId.isEmpty ? null : _locId,
+                value: _locations.any((l) => '${l['id']}' == _locId)
+                    ? _locId
+                    : null,
                 isExpanded: true,
                 hint: const Text('Seleccionar ubicación'),
                 items: _locations
@@ -204,6 +233,9 @@ class _CountsScreenState extends State<CountsScreen> {
                     _items = [];
                     _history = [];
                   });
+                  // Selección persistida en el dispositivo: sobrevive a
+                  // recargas, reinicios y registros offline.
+                  FilterPrefs.setLoc(FilterPrefs.countsLoc, _locId);
                   _phys.clear();
                   _loadVirtual();
                   _loadHistory();
@@ -406,18 +438,39 @@ class _CountsScreenState extends State<CountsScreen> {
                   ? null
                   : () async {
                       setInner(() => saving = true);
-                      final itemsPayload = _items
-                          .map((it) => {
-                                'product_id': it['product_id'],
-                                'physical': it['physical'] ?? 0,
-                              })
-                          .toList();
+                      // Delta físico-virtual por producto: viaja en el
+                      // payload (el backend lo ignora) para que
+                      // `reapplyPendingStockDeltas` pueda restaurar el
+                      // ajuste en el dispositivo si llega un pull ANTES de
+                      // subir la cola.
+                      final itemsPayload = <Map<String, dynamic>>[];
+                      for (final it in _items) {
+                        final item = <String, dynamic>{
+                          'product_id': it['product_id'],
+                          'physical': it['physical'] ?? 0,
+                        };
+                        if (adjust) item['diff'] = _diff(it);
+                        itemsPayload.add(item);
+                      }
                       final payload = <String, dynamic>{
                         'location_id': _locId,
                         'adjust': adjust ? 1 : 0,
                         'note': noteCtrl.text.trim(),
                         'items': itemsPayload,
                       };
+                      // Si el guardado queda EN COLA (offline) el ajuste se
+                      // aplica también en el dispositivo para que Stock/POS/
+                      // Cuadre reflejen el conteo sin esperar a subir la cola.
+                      final deltas = <Map<String, dynamic>>[
+                        if (adjust)
+                          for (final it in itemsPayload)
+                            if (((it['diff'] as num?) ?? 0) != 0)
+                              {
+                                'product_id': it['product_id'],
+                                'qty': it['diff'],
+                              },
+                      ];
+                      final pendingBefore = await DbService.I.pendingCount();
                       try {
                         final ok = await U.handlePush(
                             context,
@@ -427,6 +480,18 @@ class _CountsScreenState extends State<CountsScreen> {
                                 ? 'Cuadre guardado y stock ajustado'
                                 : 'Cuadre guardado');
                         if (ok) {
+                          // ¿Se guardó EN COLA (offline)? handlePush no lo
+                          // distingue, así que se compara la cola antes/después.
+                          final queued =
+                              await DbService.I.pendingCount() > pendingBefore;
+                          if (queued) {
+                            for (final d in deltas) {
+                              await SyncService.I.adjustLocalStock(_locId,
+                                  d['product_id'], (d['qty'] as num?) ?? 0,
+                                  notify: false);
+                            }
+                            SyncService.I.emitChange();
+                          }
                           // Add to local history
                           final local = <String, dynamic>{
                             'id': 'local-${DateTime.now().millisecondsSinceEpoch}',
@@ -436,7 +501,9 @@ class _CountsScreenState extends State<CountsScreen> {
                                 .map((l) => '${l['name'] ?? ''}')
                                 .firstOrNull ??
                                 '',
-                            'summary': adjust ? 'Ajustado' : 'Guardado',
+                            'summary': adjust
+                                ? (queued ? 'Ajustado (pendiente)' : 'Ajustado')
+                                : 'Guardado',
                             'note': noteCtrl.text.trim(),
                             'created_at':
                                 DateTime.now().toIso8601String(),

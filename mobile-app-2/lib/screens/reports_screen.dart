@@ -5,6 +5,7 @@ import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/db_service.dart';
+import '../services/filter_prefs.dart';
 import '../services/sync_service.dart';
 import '../widgets/common.dart';
 
@@ -39,9 +40,29 @@ class _ReportsScreenState extends State<ReportsScreen> {
   @override
   void initState() {
     super.initState();
-    _loadLocations();
-    _load();
+    // Los filtros se leen ANTES del primer load: si no, la primera pintada
+    // usaba «14 días / todas» y después saltaba a los filtros guardados.
+    _init();
     SyncService.I.onChange(_onSync);
+  }
+
+  Future<void> _init() async {
+    await _loadFilters();
+    await _loadLocations();
+    await _load();
+  }
+
+  /// Filtros recordados en el dispositivo: sobreviven a recargas,
+  /// reinicios y registros offline (antes volvían a «14 días / todas»
+  /// en cada apertura y el reporte offline ni siquiera se cacheaba).
+  Future<void> _loadFilters() async {
+    final period = await FilterPrefs.intVal(FilterPrefs.reportsPeriod, def: 14);
+    final loc = await FilterPrefs.intVal(FilterPrefs.reportsLoc, def: 0);
+    if (!mounted) return;
+    setState(() {
+      if (_periods.containsKey(period)) _period = period;
+      _locId = loc;
+    });
   }
 
   @override
@@ -66,6 +87,35 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }
   }
 
+  /// Clave de caché: periodo o rango de fechas + ubicación.
+  String get _cacheKey {
+    if (_dateFrom.isNotEmpty && _dateTo.isNotEmpty) {
+      return 'ws_reports_summary:date:$_dateFrom:$_dateTo:$_locId';
+    }
+    return 'ws_reports_summary:$_period:$_locId';
+  }
+
+  /// ¿[raw] (fecha ISO de la fila) cae dentro del período/rango elegido?
+  bool _inWindow(String raw) {
+    final dt = DateTime.tryParse(raw);
+    if (dt == null) return false;
+    if (_dateFrom.isNotEmpty && _dateTo.isNotEmpty) {
+      final from = DateTime.tryParse(_dateFrom);
+      final to = DateTime.tryParse(_dateTo)?.add(const Duration(days: 1));
+      if (from == null || to == null) return true;
+      return !dt.isBefore(from) && dt.isBefore(to);
+    }
+    final cutoff = DateTime.now().subtract(Duration(days: _period));
+    return !dt.isBefore(cutoff);
+  }
+
+  /// La fila pertenece a la ubicación filtrada (comparación como texto:
+  /// las filas locales traen el id como String, las del servidor como int).
+  bool _locMatches(dynamic rowLoc) {
+    if (_locId == 0) return true;
+    return '$rowLoc' == '$_locId';
+  }
+
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
@@ -83,19 +133,210 @@ class _ReportsScreenState extends State<ReportsScreen> {
       // API returns {success:true, data:{data:{...}}}
       final outer = (d['data'] as Map?) ?? {};
       final data = Map<String, dynamic>.from((outer['data'] as Map?) ?? outer);
-      await DbService.I.cacheSet('ws_reports_summary:$_period:$_locId', data);
+      await DbService.I.cacheSet(_cacheKey, data);
       await _mergePendingPosSales(data);
+      await _mergeLocalMovements(data);
       if (mounted) setState(() { _data = data; _loading = false; });
-    } catch (_) {
-      final cached = await DbService.I.cacheGet('ws_reports_summary:$_period:$_locId');
+      return;
+    } catch (_) {}
+    // ── OFFLINE: fallback de caché (exacta → mismo período/todas →
+    // 14 días/todas → cualquier reporte cacheado en el dispositivo) ──
+    final candidates = <String>[
+      _cacheKey,
+      'ws_reports_summary:$_period:0',
+      'ws_reports_summary:14:0',
+      ...await DbService.I.cacheKeys('ws_reports_summary'),
+    ];
+    final seen = <String>{};
+    for (final k in candidates) {
+      if (!seen.add(k)) continue;
+      final cached = await DbService.I.cacheGet(k);
       if (cached is Map) {
         final c = Map<String, dynamic>.from(cached);
         await _mergePendingPosSales(c);
+        await _mergeLocalMovements(c);
         if (mounted) setState(() { _data = c; _loading = false; });
-      } else if (mounted) {
-        setState(() => _loading = false);
+        return;
       }
     }
+    // ── Sin NADA cacheado (app nueva / nunca hubo red): reporte armado
+    // desde las tablas locales (ventas POS, movimientos y pedidos) ──
+    final local = await _buildLocalReport();
+    if (mounted) setState(() { _data = local; _loading = false; });
+  }
+
+  /// Suma al reporte los movimientos hechos SIN conexión (filas `local_…`
+  /// de la tabla `movements`): el servidor no los conoce hasta subir la
+  /// cola, así que sin esto «Movimientos» quedaba en cero offline.
+  Future<void> _mergeLocalMovements(Map<String, dynamic> data) async {
+    try {
+      final rows = await DbService.I.all('movements');
+      int count = 0;
+      final byType = <String, Map<String, dynamic>>{};
+      for (final r in rows) {
+        if (!'${r['id'] ?? ''}'.startsWith('local_')) continue;
+        if (!_inWindow('${r['created_at'] ?? ''}')) continue;
+        if (!_locMatches(r['location_id'])) continue;
+        count++;
+        final type = '${r['type'] ?? ''}';
+        final slot = byType.putIfAbsent(
+            type, () => <String, dynamic>{'type': type, 'n': 0, 'qty': 0});
+        slot['n'] = ((slot['n'] as int?) ?? 0) + 1;
+        slot['qty'] = ((slot['qty'] as num?) ?? 0).abs() +
+            (((r['qty'] as num?) ?? 0).abs());
+      }
+      if (count == 0) return;
+      data['total_moves'] =
+          (num.tryParse('${data['total_moves']}') ?? 0) + count;
+      final existing = (data['by_type'] as List?) ?? [];
+      final map = <String, Map<String, dynamic>>{};
+      for (final t in existing) {
+        final m = Map<String, dynamic>.from(t as Map);
+        map['${m['type'] ?? ''}'] = m;
+      }
+      for (final e in byType.entries) {
+        final cur = map[e.key];
+        if (cur == null) {
+          map[e.key] = e.value;
+        } else {
+          cur['n'] = ((cur['n'] as int?) ?? 0) + ((e.value['n'] as int?) ?? 0);
+          cur['qty'] =
+              ((cur['qty'] as num?) ?? 0) + ((e.value['qty'] as num?) ?? 0);
+        }
+      }
+      data['by_type'] = map.values.toList();
+    } catch (_) {}
+  }
+
+  /// Reporte SIN conexión construido 100% desde SQLite: ventas POS locales
+  /// (incluidas las encoladas), movimientos y pedidos del período elegido.
+  Future<Map<String, dynamic>> _buildLocalReport() async {
+    final cur = AuthService.I.currency;
+    final posRows = await DbService.I.all('pos_sales');
+    final movRows = await DbService.I.all('movements');
+    final orderRows = await DbService.I.all('orders');
+    final locNames = {
+      for (final l in await DbService.I.all('locations'))
+        '${l['id']}': '${l['name'] ?? ''}',
+    };
+
+    num totalSales = 0;
+    int totalOrders = 0;
+    final curTotals = <String, num>{};
+    final curCounts = <String, int>{};
+    final daySales = <String, num>{};
+    final dayCounts = <String, int>{};
+    final prodAgg = <String, Map<String, dynamic>>{};
+    final posSalesOut = <Map<String, dynamic>>[];
+
+    for (final s in posRows) {
+      if (!_inWindow('${s['created_at'] ?? ''}')) continue;
+      if (!_locMatches(s['location_id'])) continue;
+      final total = num.tryParse('${s['total']}') ?? 0;
+      final currency = '${s['currency'] ?? cur}';
+      final createdAt = '${s['created_at'] ?? ''}';
+      totalSales += total;
+      totalOrders++;
+      curTotals[currency] = (curTotals[currency] ?? 0) + total;
+      curCounts[currency] = (curCounts[currency] ?? 0) + 1;
+      if (createdAt.isNotEmpty) {
+        final day = createdAt.substring(0, createdAt.length >= 10 ? 10 : createdAt.length);
+        daySales[day] = (daySales[day] ?? 0) + total;
+        dayCounts[day] = (dayCounts[day] ?? 0) + 1;
+      }
+      final items = (s['items'] is List) ? s['items'] as List : const [];
+      for (final it in items) {
+        if (it is! Map) continue;
+        final name = '${it['name'] ?? it['product_name'] ?? ''}';
+        if (name.isEmpty) continue;
+        final slot = prodAgg.putIfAbsent(
+            name, () => <String, dynamic>{'product_name': name, 'qty': 0, 'transactions': 0, 'total': 0});
+        slot['qty'] = ((slot['qty'] as num?) ?? 0) + ((it['qty'] as num?) ?? 0);
+        slot['transactions'] = ((slot['transactions'] as int?) ?? 0) + 1;
+        slot['total'] = ((slot['total'] as num?) ?? 0) +
+            ((it['total'] as num?) ??
+                (it['subtotal'] as num?) ??
+                (it['price'] as num?) ??
+                0);
+      }
+      posSalesOut.add(<String, dynamic>{
+        'id': s['id'],
+        'number': s['number'],
+        'customer_name': s['customer_name'],
+        'location_name': s['location_name'] ?? locNames['${s['location_id']}'] ?? '',
+        'total': s['total'],
+        'currency': currency,
+        'created_at': createdAt,
+        'status': s['status'],
+      });
+    }
+    posSalesOut.sort((a, b) => '${b['created_at'] ?? ''}'.compareTo('${a['created_at'] ?? ''}'));
+
+    int totalMoves = 0;
+    final byType = <String, Map<String, dynamic>>{};
+    for (final m in movRows) {
+      if (!_inWindow('${m['created_at'] ?? ''}')) continue;
+      if (!_locMatches(m['location_id'])) continue;
+      totalMoves++;
+      final type = '${m['type'] ?? ''}';
+      final slot = byType.putIfAbsent(
+          type, () => <String, dynamic>{'type': type, 'n': 0, 'qty': 0});
+      slot['n'] = ((slot['n'] as int?) ?? 0) + 1;
+      slot['qty'] = ((slot['qty'] as num?) ?? 0).abs() + (((m['qty'] as num?) ?? 0).abs());
+    }
+
+    final transactionsOut = orderRows
+        .where((o) => _inWindow('${o['created_at'] ?? ''}'))
+        .take(12)
+        .toList();
+
+    final periodLabel = _dateFrom.isNotEmpty && _dateTo.isNotEmpty
+        ? '$_dateFrom → $_dateTo'
+        : '$_period días';
+
+    // El banner de «ventas pendientes» se calcula aquí también: en este
+    // camino las ventas encoladas YA están en la tabla `pos_sales`, así que
+    // sumarlas de nuevo duplicaría el total.
+    _pendingPosCount = 0;
+    _pendingPosTotal = 0;
+    try {
+      for (final op in await DbService.I.pending()) {
+        if (op['action'] != 'ws_pos_sale_save') continue;
+        final d = (op['data'] is Map)
+            ? Map<String, dynamic>.from(op['data'] as Map)
+            : <String, dynamic>{};
+        if (!_inWindow('${d['created_at'] ?? ''}')) continue;
+        if (!_locMatches(d['location_id'])) continue;
+        _pendingPosCount++;
+        _pendingPosTotal += num.tryParse('${d['total']}') ?? 0;
+      }
+    } catch (_) {}
+
+    return <String, dynamic>{
+      'currency': cur,
+      'total_sales': totalSales,
+      'total_orders': totalOrders,
+      'total_moves': totalMoves,
+      'currency_totals': [
+        for (final e in curTotals.entries)
+          {'currency': e.key, 'total': e.value, 'n': curCounts[e.key] ?? 0},
+      ],
+      'sales': [
+        for (final e in daySales.entries)
+          {'d': e.key, 'n': dayCounts[e.key] ?? 0, 'total': e.value},
+      ]..sort((a, b) => '${a['d']}'.compareTo('${b['d']}')),
+      'by_type': byType.values.toList(),
+      'pos_products': prodAgg.values.toList()
+        ..sort((a, b) => ((b['qty'] as num?) ?? 0).compareTo((a['qty'] as num?) ?? 0)),
+      'pos_sales': posSalesOut.take(12).toList(),
+      'transactions': transactionsOut,
+      'pos_summary': {
+        'total': totalSales,
+        'orders': totalOrders,
+        'average': totalOrders > 0 ? totalSales / totalOrders : 0,
+      },
+      'filters': {'period_label': periodLabel},
+    };
   }
 
   /// Merge queued POS sales into report data for offline preview.
@@ -116,6 +357,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
     final dayCounts = <String, int>{};
     for (final op in posSales) {
       final d = (op['data'] is Map) ? Map<String, dynamic>.from(op['data'] as Map) : <String, dynamic>{};
+      // Solo lo que cae en el período y la ubicación filtrados: si no,
+      // una venta de otra tienda o de hace 3 meses inflaba el reporte.
+      if (!_inWindow('${d['created_at'] ?? DateTime.now().toIso8601String()}')) {
+        continue;
+      }
+      if (!_locMatches(d['location_id'])) {
+        continue;
+      }
       final total = num.tryParse('${d['total']}') ?? 0;
       final currency = '${d['currency'] ?? data['currency'] ?? ''}';
       final createdAt = '${d['created_at'] ?? ''}';
@@ -187,6 +436,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
       _period = 14;
       _locId = 0;
     });
+    FilterPrefs.setInt(FilterPrefs.reportsPeriod, 14);
+    FilterPrefs.setInt(FilterPrefs.reportsLoc, 0);
     _load();
   }
 
@@ -240,6 +491,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
                     selected: selected,
                     onSelected: (_) {
                       setState(() { _period = e.key; _dateFrom = ''; _dateTo = ''; });
+                      // Periode persistido: la próxima apertura (o un
+                      // reporte offline) usa el mismo rango.
+                      FilterPrefs.setInt(FilterPrefs.reportsPeriod, e.key);
                       _load();
                     },
                     visualDensity: VisualDensity.compact,
@@ -260,7 +514,13 @@ class _ReportsScreenState extends State<ReportsScreen> {
               ),
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<int>(
-                  value: _locId,
+                  // Ignora la ubicación guardada si ya no existe en el
+                  // catálogo (evita la aserción del Dropdown).
+                  value: _locId == 0 ||
+                          _locations.any((l) =>
+                              (int.tryParse('${l['id']}') ?? 0) == _locId)
+                      ? _locId
+                      : 0,
                   isExpanded: true,
                   isDense: true,
                   items: [
@@ -270,7 +530,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
                       child: Text('${l['name'] ?? ''}', style: const TextStyle(fontSize: 12)),
                     )),
                   ],
-                  onChanged: (v) { setState(() { _locId = v ?? 0; }); _load(); },
+                  onChanged: (v) {
+                    setState(() { _locId = v ?? 0; });
+                    FilterPrefs.setInt(FilterPrefs.reportsLoc, _locId);
+                    _load();
+                  },
                 ),
               ),
             ),

@@ -5,6 +5,7 @@ import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/db_service.dart';
+import '../services/filter_prefs.dart';
 import '../services/sync_service.dart';
 import '../widgets/common.dart';
 import '../widgets/crud.dart';
@@ -36,6 +37,11 @@ class _ShiftsScreenState extends State<ShiftsScreen> {
     _weekStart = _monday(now);
     _selectedDay = _iso(now);
     _isManager = AuthService.I.has('shifts_manage');
+    // Filtro de ubicación recordado en el dispositivo (offline-friendly).
+    FilterPrefs.loc(FilterPrefs.shiftsLoc).then((v) {
+      if (!mounted || v.isEmpty) return;
+      setState(() => _locFilter = v);
+    });
     _loadAll();
     SyncService.I.onChange(_onSync);
   }
@@ -120,7 +126,20 @@ class _ShiftsScreenState extends State<ShiftsScreen> {
           List<Map<String, dynamic>>.from((d['shifts'] as List?) ?? []);
       _shifts = rows;
       await DbService.I.cacheSet('ws_shifts_list', rows);
-      await DbService.I.replaceAll('shifts', rows);
+      // Los turnos creados OFFLINE tienen id negativo: el replaceAll los
+      // borraba cada vez que volvía la red. Se conservan los que siguen
+      // EN COLA (mismo criterio que el pull del SyncService).
+      final local = await DbService.I.all('shifts');
+      final pendingOps = await DbService.I.pending();
+      final hasQueuedShiftOps = pendingOps.any((op) {
+        final a = '${op['action'] ?? ''}';
+        return a == 'ws_save_shift' || a == 'ws_delete_shift';
+      });
+      if (!hasQueuedShiftOps) {
+        local.removeWhere((r) => SyncService.isLocalRow(r));
+      }
+      _shifts = SyncService.mergeLocalRows(rows, local);
+      await DbService.I.replaceAll('shifts', _shifts);
       // Workers from server
       if (_isManager) {
         try {
@@ -784,24 +803,32 @@ onOk: () => SyncService.I.pullStore('ws_shifts_list', {'start': '${DateTime.now(
                                 : Colors.black.withAlpha(20)),
                       ),
                       child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          value: _locFilter.isEmpty ? null : _locFilter,
-                          isDense: true,
-                          isExpanded: true,
-                          hint: Text('Todas',
-                              style: TextStyle(
-                                  fontSize: 11,
-                                  color: Theme.of(context).brightness == Brightness.dark
-                                      ? AppTheme.darkMuted
-                                      : AppTheme.lightMuted)),
-                          items: _locations
-                              .map((l) => DropdownMenuItem(
-                                  value: '${l['id']}',
-                                  child: Text('${l['name'] ?? ''}',
-                                      style: const TextStyle(fontSize: 11))))
-                              .toList(),
-                          onChanged: (v) => setState(() => _locFilter = v ?? ''),
-                        ),
+                          child: DropdownButton<String>(
+                            value: _locations
+                                    .any((l) => '${l['id']}' == _locFilter)
+                                ? _locFilter
+                                : null,
+                            isDense: true,
+                            isExpanded: true,
+                            hint: Text('Todas',
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    color: Theme.of(context).brightness == Brightness.dark
+                                        ? AppTheme.darkMuted
+                                        : AppTheme.lightMuted)),
+                            items: _locations
+                                .map((l) => DropdownMenuItem(
+                                    value: '${l['id']}',
+                                    child: Text('${l['name'] ?? ''}',
+                                        style: const TextStyle(fontSize: 11))))
+                                .toList(),
+                            onChanged: (v) {
+                              setState(() => _locFilter = v ?? '');
+                              // Filtro persistido en el dispositivo.
+                              FilterPrefs.setLoc(
+                                  FilterPrefs.shiftsLoc, _locFilter);
+                            },
+                          ),
                       ),
                     ),
                   ),

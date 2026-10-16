@@ -207,6 +207,19 @@ class DbService {
 
   Future<Object?> cacheGet(String key) => getMeta('cache:$key');
 
+  /// Claves de caché guardadas con ese prefijo (sin el prefijo 'cache:').
+  /// Permite, p.ej., localizar en offline EL ÚLTIMO reporte cacheado aunque
+  /// el filtro exacto del usuario (período/ubicación) no tenga copia propia.
+  Future<List<String>> cacheKeys(String prefix) async {
+    final d = await db;
+    final rows = await d.query('meta',
+        columns: ['id'], where: 'id LIKE ?', whereArgs: ['cache:$prefix%']);
+    return rows
+        .map((r) => '${r['id']}'.substring('cache:'.length))
+        .where((k) => k.length > prefix.length)
+        .toList();
+  }
+
   /// Borra TODOS los datos locales (cambio de usuario / logout).
   Future<void> wipe() async {
     final d = await db;

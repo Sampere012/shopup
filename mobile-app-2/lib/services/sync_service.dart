@@ -321,7 +321,12 @@ class SyncService extends ChangeNotifier {
               {'start': from, 'end': '${now.year}-12-31 23:59:59'}).then((d) async {
             final rows = List<Map<String, dynamic>>.from((((d as Map)['shifts']) as List?) ?? []);
             await DbService.I.cacheSet('ws_shifts_list', rows);
-            await DbService.I.replaceAll('shifts', rows);
+            // Los turnos creados OFFLINE tienen id negativo: el replaceAll
+            // los borraba en cada pull y el usuario "perdía" su asignación
+            // al recuperar red. Se conservan mientras su op siga EN COLA.
+            final local = await _localRowsToKeep(
+                'shifts', {'ws_save_shift', 'ws_delete_shift'});
+            await DbService.I.replaceAll('shifts', mergeLocalRows(rows, local));
           });
         });
       }
@@ -331,34 +336,39 @@ class SyncService extends ChangeNotifier {
         await step(() => ApiService.I.req('ws_pos_sales_get',
             {'location_id': 0, 'status': '', 'search': '', 'limit': 200, 'offset': 0}).then((d) async {
               final rows = List<Map<String, dynamic>>.from((((d as Map)['data']) as List?) ?? []);
-              await DbService.I.cacheSet('ws_pos_sales_get', rows);
-              await DbService.I.cacheSet('ws_pos_sales_get_all', rows);
-              await DbService.I.putAll('pos_sales', rows);
-              // Re-inyectar ventas encoladas que el servidor aún no tiene
               final pending = await DbService.I.pending();
-              final queuedSales = pending.where((op) => op['action'] == 'ws_pos_sale_save').toList();
-              if (queuedSales.isNotEmpty) {
-                final sales = List<Map<String, dynamic>>.from(rows);
-                for (final op in queuedSales) {
-                  final data = (op['data'] is Map) ? Map<String, dynamic>.from(op['data'] as Map) : <String, dynamic>{};
-                  final localSale = <String, dynamic>{
-                    'id': op['id'],
-                    'location_id': data['location_id'],
-                    'currency': data['currency'],
-                    'subtotal': data['subtotal'],
-                    'discount': data['discount'],
-                    'total': data['total'],
-                    'payment_method': data['payment_method'],
-                    'customer_name': data['customer_name'],
-                    'status': 'pending',
-                    'created_at': data['created_at'] ?? DateTime.now().toIso8601String(),
-                    'items': data['items'],
-                  };
-                  sales.insert(0, localSale);
-                }
-                await DbService.I.cacheSet('ws_pos_sales_get', sales);
-                await DbService.I.cacheSet('ws_pos_sales_get_all', sales);
+              final queuedOps = pending
+                  .where((op) => op['action'] == 'ws_pos_sale_save')
+                  .toList();
+              // Ids locales que siguen EN COLA: mientras la op no se suba,
+              // la fila local se conserva; en cuanto ya no está en la cola
+              // (se subió), la del servidor manda y la copia local se retira
+              // para no mostrar la venta DUPLICADA.
+              final keepLocal = <String>{};
+              for (final op in queuedOps) {
+                final lid = '${op['local_id'] ?? ''}';
+                if (lid.isNotEmpty) keepLocal.add(lid);
               }
+              final localRows = await DbService.I.all('pos_sales');
+              localRows.removeWhere((r) {
+                final id = '${r['id']}';
+                final localish =
+                    id.startsWith('pending_') || id.startsWith('local_');
+                return localish && !keepLocal.contains(id);
+              });
+              // Servidor primero; debajo siguen las ventas encoladas y el
+              // histórico local que esta página no incluyó (putAll no puede
+              // borrar, así que se reescribe la tabla completa).
+              final merged = <Map<String, dynamic>>[...rows];
+              final seen = rows.map((r) => '${r['id']}').toSet();
+              for (final r in localRows) {
+                final id = '${r['id']}';
+                if (!seen.add(id)) continue;
+                merged.add(r);
+              }
+              await DbService.I.replaceAll('pos_sales', merged);
+              await DbService.I.cacheSet('ws_pos_sales_get', merged);
+              await DbService.I.cacheSet('ws_pos_sales_get_all', merged);
             }));
       }
 
@@ -378,7 +388,13 @@ class SyncService extends ChangeNotifier {
         await step(() => ApiService.I.req('ws_stock_counts_list', {'limit': 50, 'offset': 0}).then((d) async {
               final rows = List<Map<String, dynamic>>.from((((d as Map)['data']) as List?) ?? []);
               await DbService.I.cacheSet('ws_stock_counts_list:all', rows);
-              await DbService.I.replaceAll('stock_counts', rows);
+              // Los cuadres guardados OFFLINE (id 'local-…') se conservan
+              // mientras su op siga EN COLA: antes el replaceAll los borraba
+              // y el usuario perdía el cuadre hecho sin conexión.
+              final local = await _localRowsToKeep(
+                  'stock_counts', {'ws_stock_count_save'});
+              await DbService.I.replaceAll(
+                  'stock_counts', mergeLocalRows(rows, local));
             }));
         // Cuadre virtual + histórico POR UBICACIÓN: es lo que abre la pantalla
         // de Cuadre. Antes sólo se descargaban al entrar en ella, así que
@@ -1005,16 +1021,27 @@ class SyncService extends ChangeNotifier {
   /// una transferencia hacia una ubicación sin registro previo —o una
   /// entrada de un producto nuevo— se refleje al instante en Stock, en las
   /// demás ubicaciones y en el POS (que leen esta misma tabla).
+  ///
+  /// La fila SIEMPRE lleva la UBICACIÓN resuelta (`location_id` +
+  /// `location_name`): antes una entrada offline creaba el registro con la
+  /// cantidad pero sin decir en qué ubicación entró, y Stock/POS/Cuadre la
+  /// pintaban con «—».
   Future<void> adjustLocalStock(dynamic locationId, dynamic productId, num delta,
       {bool notify = true}) async {
     try {
       final rows = await DbService.I.all('stock');
+      final locName = await locationNameFor(locationId);
       var changed = false;
       for (final row in rows) {
         if ('${row['location_id']}' != '$locationId' ||
             '${row['product_id']}' != '$productId') continue;
         final q = ((row['qty'] as num?) ?? 0) + delta;
         row['qty'] = q < 0 ? 0 : q;
+        // Rellena la ubicación si la fila venía incompleta (p.ej. creada
+        // por versiones anteriores sin `location_name`).
+        if ('${row['location_name'] ?? ''}'.isEmpty && locName.isNotEmpty) {
+          row['location_name'] = locName;
+        }
         changed = true;
       }
       if (!changed) {
@@ -1029,6 +1056,8 @@ class SyncService extends ChangeNotifier {
         // esto una transferencia hacia una ubicación sin registro previo
         // aparecía en Stock como "solo el monto", sin nombre ni foto.
         created.addAll(await productInfoFor(productId, rows));
+        // La ubicación se guarda DESPUÉS de la ficha: así nunca se pisa.
+        if (locName.isNotEmpty) created['location_name'] = locName;
         rows.add(created);
       }
       await DbService.I.putAll('stock', rows);
@@ -1039,6 +1068,21 @@ class SyncService extends ChangeNotifier {
       // con lo que haya, no quedarse con datos viejos.
       if (notify) _emit();
     }
+  }
+
+  /// Nombre de una ubicación desde el catálogo local (funciona offline).
+  /// Vacío si no está cacheada (nunca inventa un nombre).
+  Future<String> locationNameFor(dynamic locationId) async {
+    final id = '$locationId';
+    if (id.isEmpty || id == 'null') return '';
+    try {
+      for (final l in await DbService.I.all('locations')) {
+        if ('${l['id']}' == id) return '${l['name'] ?? ''}';
+      }
+    } catch (e) {
+      wsLog('! locationNameFor($id): $e');
+    }
+    return '';
   }
 
   /// Reaplica sobre el stock local los deltas de las operaciones de stock
@@ -1123,12 +1167,28 @@ class SyncService extends ChangeNotifier {
               }
             }
             break;
+          case 'ws_stock_count_save':
+            // Cuadre con ajuste: el delta (físico − virtual) viaja en el
+            // payload como `diff` para poder restaurar el stock local si un
+            // pull llega ANTES de subir la cola. Sin esto el cuadre hecho
+            // offline se "deshacía" al refrescar.
+            if ((data['adjust'] as num?) == 0) break;
+            for (final it in items) {
+              final d = (it['diff'] as num?) ?? 0;
+              if (d != 0) add(data['location_id'], it['product_id'], d);
+            }
+            break;
           default:
             break;
         }
       }
       if (deltas.isEmpty) return;
       final rows = await DbService.I.all('stock');
+      // Nombres de las ubicaciones implicadas (cache local, offline-friendly):
+      // las filas creadas por el reaplicado guardan TAMBIÉN la ubicación.
+      final locNames = <String, String>{};
+      Future<String> nameOf(String loc) async =>
+          locNames[loc] ??= await locationNameFor(loc);
       for (final e in deltas.entries) {
         final parts = e.key.split('|');
         final loc = parts[0], pid = parts[1];
@@ -1139,15 +1199,23 @@ class SyncService extends ChangeNotifier {
           }
           final q = ((row['qty'] as num?) ?? 0) + e.value;
           row['qty'] = q < 0 ? 0 : q;
+          if ('${row['location_name'] ?? ''}'.isEmpty) {
+            final n = await nameOf(loc);
+            if (n.isNotEmpty) row['location_name'] = n;
+          }
           found = true;
         }
         if (!found) {
-          rows.add({
+          final created = <String, dynamic>{
             'id': 'p$pid:$loc',
             'product_id': int.tryParse(pid) ?? 0,
             'location_id': int.tryParse(loc) ?? 0,
             'qty': e.value < 0 ? 0 : e.value,
-          });
+          };
+          created.addAll(await productInfoFor(pid, rows));
+          final n = await nameOf(loc);
+          if (n.isNotEmpty) created['location_name'] = n;
+          rows.add(created);
         }
       }
       await DbService.I.putAll('stock', rows);
@@ -1163,5 +1231,100 @@ class SyncService extends ChangeNotifier {
     if (type == 'entrada') return qty;
     if (type == 'salida' || type == 'baja' || type == 'venta') return -qty;
     return 0;
+  }
+
+  // ------- Utilidades offline compartidas por las pantallas --------
+
+  /// Filas locales de [store] que deben sobrevivir a un pull: se conservan
+  /// las creadas sin conexión mientras exista alguna op EN COLA de
+  /// [queuedActions]; si la cola ya se vació, esas filas se retiran (el
+  /// servidor ya tiene su versión y mantenerlas duplicaría el registro).
+  Future<List<Map<String, dynamic>>> _localRowsToKeep(
+      String store, Set<String> queuedActions) async {
+    final ops = await DbService.I.pending();
+    final hasQueued =
+        ops.any((op) => queuedActions.contains('${op['action'] ?? ''}'));
+    final rows = await DbService.I.all(store);
+    if (hasQueued) return rows;
+    rows.removeWhere(isLocalRow);
+    return rows;
+  }
+
+  /// ¿Esta fila es LOCAL (creada sin conexión y aún no subida)?
+  /// Cubre los tres prefijos que usa la app: `local-…` (cuadres),
+  /// `local_…`/`pending_…` (movimientos y ventas) y ids negativos (turnos).
+  static bool isLocalRow(Map<String, dynamic> row) {
+    final id = '${row['id']}';
+    return id.startsWith('local') || id.startsWith('pending_') ||
+        (id.startsWith('-') && id.length > 1);
+  }
+
+  /// Fusiona las filas del servidor con las filas LOCALES que este todavía
+  /// no devuelve, para que un pull no borre lo registrado sin conexión.
+  /// Devuelve servidor primero y locales al final (el orden de pintado lo
+  /// decide cada pantalla).
+  static List<Map<String, dynamic>> mergeLocalRows(
+      List<Map<String, dynamic>> serverRows,
+      List<Map<String, dynamic>> localRows,
+      {bool Function(Map<String, dynamic> row)? isLocal}) {
+    final check = isLocal ?? isLocalRow;
+    final serverIds = serverRows.map((r) => '${r['id']}').toSet();
+    final merged = List<Map<String, dynamic>>.from(serverRows);
+    for (final r in localRows) {
+      if (!check(r)) continue;
+      if (serverIds.contains('${r['id']}')) continue;
+      merged.add(r);
+    }
+    return merged;
+  }
+
+  /// Cuadre virtual de una ubicación leído SIN conexión: parte de la lista
+  /// cacheada del servidor y la corrige con el stock LOCAL (que ya incluye
+  /// los movimientos en cola), además de añadir los productos que entraron
+  /// offline y el servidor aún no conoce.
+  static List<Map<String, dynamic>> virtualCountFromLocal(
+      List<Map<String, dynamic>> cachedRows,
+      List<Map<String, dynamic>> stockRows,
+      Object locationId) {
+    final loc = '$locationId';
+    final localByPid = <String, Map<String, dynamic>>{};
+    for (final r in stockRows) {
+      if ('${r['location_id']}' != loc) continue;
+      final pid = '${r['product_id']}';
+      if (pid.isEmpty || pid == 'null') continue;
+      localByPid[pid] = r;
+    }
+    int qtyOf(Map<String, dynamic> r) =>
+        ((num.tryParse('${r['qty'] ?? r['virtual_qty'] ?? 0}') ?? 0)).toInt();
+
+    final out = <Map<String, dynamic>>[];
+    final seen = <String>{};
+    for (final c in cachedRows) {
+      final pid = '${c['product_id']}';
+      final local = localByPid[pid];
+      final qty = local != null ? qtyOf(local) : qtyOf(c);
+      out.add({
+        ...c,
+        'product_id': c['product_id'],
+        'qty': qty,
+        'virtual_qty': qty,
+      });
+      if (pid.isNotEmpty && pid != 'null') seen.add(pid);
+    }
+    // Productos con stock en la ubicación que no están en la lista cacheada
+    // (p.ej. una entrada registrada offline de un producto nuevo).
+    for (final e in localByPid.entries) {
+      if (seen.contains(e.key)) continue;
+      final q = qtyOf(e.value);
+      if (q <= 0) continue;
+      out.add({
+        'product_id': e.value['product_id'],
+        'name': e.value['name'] ?? '',
+        'barcode': e.value['barcode'] ?? '',
+        'qty': q,
+        'virtual_qty': q,
+      });
+    }
+    return out;
   }
 }

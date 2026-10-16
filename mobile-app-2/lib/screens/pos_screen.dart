@@ -1039,6 +1039,11 @@ class _PosScreenState extends State<PosScreen> {
     final localSale = <String, dynamic>{
       'id': 'pending_${DateTime.now().millisecondsSinceEpoch}',
       'location_id': num.tryParse(_loc) ?? 0,
+      'location_name': _locations
+              .where((l) => '${l['id']}' == _loc)
+              .map((l) => '${l['name'] ?? ''}')
+              .firstOrNull ??
+          '',
       'seller_id': me.userId,
       'seller_name': '${me.me?['name'] ?? ''}',
       'currency': cur,
@@ -1060,7 +1065,11 @@ class _PosScreenState extends State<PosScreen> {
 dynamic res;
     bool pushOk = false;
     try {
-      res = await SyncService.I.push('ws_pos_sale_save', payload);
+      // `localId` enlaza la op en cola con la fila local (`pending_…`):
+      // así el pull sabe qué ventas conservar y cuáles retirar cuando el
+      // servidor ya las tiene (evita el duplicado tras subir la cola).
+      res = await SyncService.I.push('ws_pos_sale_save', payload,
+          localId: localSale['id']);
       pushOk = true;
     } catch (_) {
       if (context.mounted) {

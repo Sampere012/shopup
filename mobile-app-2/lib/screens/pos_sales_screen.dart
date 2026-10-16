@@ -5,6 +5,7 @@ import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/db_service.dart';
+import '../services/filter_prefs.dart';
 import '../services/sync_service.dart';
 import '../widgets/common.dart';
 
@@ -46,6 +47,11 @@ class _PosSalesScreenState extends State<PosSalesScreen> {
   @override
   void initState() {
     super.initState();
+    // Filtro de ubicación recordado en el dispositivo (offline-friendly).
+    FilterPrefs.loc(FilterPrefs.posLoc).then((v) {
+      if (!mounted || v.isEmpty) return;
+      setState(() => _locId = int.tryParse(v) ?? 0);
+    });
     _loadAll();
     SyncService.I.onChange(_onSync);
   }
@@ -58,7 +64,34 @@ class _PosSalesScreenState extends State<PosSalesScreen> {
     final salesCache = await DbService.I.cacheGet('ws_pos_sales_get_all');
     if (salesCache is List) {
       _allSales = salesCache.whereType<Map>().toList().cast<Map<String, dynamic>>();
+    } else {
+      // SIN CACHÉ (app recién instalada o nunca hubo red): las ventas viven
+      // en la tabla local `pos_sales`, incluidas las hechas offline.
+      final table = await DbService.I.all('pos_sales');
+      if (table.isNotEmpty) _allSales = table;
     }
+    // Re-inyectar ventas aún EN COLA que no estén en la lista: son las que
+    // el usuario registró sin conexión y deben verse como «Pendiente».
+    try {
+      final pending = await DbService.I.pending();
+      final queuedIds = <String>{};
+      for (final op in pending) {
+        if (op['action'] != 'ws_pos_sale_save') continue;
+        final lid = '${op['local_id'] ?? ''}';
+        if (lid.isNotEmpty) queuedIds.add(lid);
+      }
+      final known = _allSales.map((s) => '${s['id']}').toSet();
+      if (queuedIds.any((id) => !known.contains(id))) {
+        final table = await DbService.I.all('pos_sales');
+        for (final r in table) {
+          final id = '${r['id']}';
+          if (queuedIds.contains(id) && !known.contains(id)) {
+            _allSales = [r, ..._allSales];
+            known.add(id);
+          }
+        }
+      }
+    } catch (_) {}
     final statsCache = await DbService.I.cacheGet('ws_pos_stats');
     if (statsCache is Map) _stats = Map<String, dynamic>.from(statsCache);
     final locs = await DbService.I.all('locations');
@@ -90,31 +123,28 @@ class _PosSalesScreenState extends State<PosSalesScreen> {
         await DbService.I.cacheSet('ws_pos_sales_get_all', rows);
         await DbService.I.putAll('pos_sales', rows);
       }
-      // Re-inyectar ventas encoladas que el servidor aún no tiene
+      // Re-inyectar ventas encoladas que el servidor aún no tiene (misma
+      // clave local que usa el checkout: `local_id` de la op en cola).
       final pending = await DbService.I.pending();
-      final queuedSales = pending.where((op) => op['action'] == 'ws_pos_sale_save').toList();
-      if (queuedSales.isNotEmpty) {
-        final sales = _allSales.toList();
-        for (final op in queuedSales) {
-          final data = (op['data'] is Map) ? Map<String, dynamic>.from(op['data'] as Map) : <String, dynamic>{};
-          final localSale = <String, dynamic>{
-            'id': op['id'],
-            'location_id': data['location_id'],
-            'currency': data['currency'],
-            'subtotal': data['subtotal'],
-            'discount': data['discount'],
-            'total': data['total'],
-            'payment_method': data['payment_method'],
-            'customer_name': data['customer_name'],
-            'status': 'pending',
-            'created_at': data['created_at'] ?? DateTime.now().toIso8601String(),
-            'items': data['items'],
-          };
-          sales.insert(0, localSale);
+      final queuedIds = <String>{};
+      for (final op in pending) {
+        if (op['action'] != 'ws_pos_sale_save') continue;
+        final lid = '${op['local_id'] ?? ''}';
+        if (lid.isNotEmpty) queuedIds.add(lid);
+      }
+      if (queuedIds.isNotEmpty) {
+        final table = await DbService.I.all('pos_sales');
+        final known = _allSales.map((s) => '${s['id']}').toSet();
+        final add = <Map<String, dynamic>>[];
+        for (final r in table) {
+          final id = '${r['id']}';
+          if (queuedIds.contains(id) && known.add(id)) add.add(r);
         }
-        _allSales = sales;
-        await DbService.I.cacheSet('ws_pos_sales_get', sales);
-        await DbService.I.cacheSet('ws_pos_sales_get_all', sales);
+        if (add.isNotEmpty) {
+          _allSales = [...add, ..._allSales];
+          await DbService.I.cacheSet('ws_pos_sales_get', _allSales);
+          await DbService.I.cacheSet('ws_pos_sales_get_all', _allSales);
+        }
       }
       _stats = Map<String, dynamic>.from((statsData['data'] as Map?) ?? {});
       await DbService.I.cacheSet('ws_pos_stats', _stats);
@@ -265,7 +295,11 @@ class _PosSalesScreenState extends State<PosSalesScreen> {
               Expanded(
                 child: _filterDropdown(
                   'Ubicación',
-                  _locId,
+                  // Ignora la ubicación recordada si ya no existe.
+                  _locations.any((l) =>
+                          (int.tryParse('${l['id']}') ?? 0) == _locId)
+                      ? _locId
+                      : 0,
                   [
                     const DropdownMenuItem(
                         value: 0, child: Text('Todas', style: TextStyle(fontSize: 12))),
@@ -274,7 +308,11 @@ class _PosSalesScreenState extends State<PosSalesScreen> {
                         child: Text('${l['name'] ?? ''}',
                             style: const TextStyle(fontSize: 12)))),
                   ],
-                  (v) => setState(() => _locId = v ?? 0),
+                  (v) {
+                    setState(() => _locId = v ?? 0);
+                    FilterPrefs.setLoc(
+                        FilterPrefs.posLoc, '${v ?? 0}');
+                  },
                 ),
               ),
               const SizedBox(width: 6),

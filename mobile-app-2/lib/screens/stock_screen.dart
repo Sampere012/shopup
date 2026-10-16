@@ -7,6 +7,7 @@ import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/db_service.dart';
+import '../services/filter_prefs.dart';
 import '../services/local_movement.dart';
 import '../services/pdf_service.dart';
 import '../services/sync_service.dart';
@@ -93,6 +94,12 @@ class _StockScreenState extends State<StockScreen> {
     SharedPreferences.getInstance().then((sp) {
       if (!mounted) return;
       setState(() => _cols = sp.getInt('wsm_density_stock') ?? 0);
+    });
+    // Filtro de ubicación recordado en el dispositivo: sobrevive a
+    // recargas, reinicios y registros offline.
+    FilterPrefs.loc(FilterPrefs.stockLoc).then((v) {
+      if (!mounted || v.isEmpty) return;
+      setState(() => _locFilter = v);
     });
     _loadAll();
     SyncService.I.onChange(_onSync);
@@ -280,23 +287,32 @@ class _StockScreenState extends State<StockScreen> {
                             : Colors.black.withAlpha(20)),
                   ),
                   child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: _locFilter.isEmpty ? null : _locFilter,
-                      isExpanded: true,
-                      hint: Text('Todas',
-                          style: TextStyle(
-                              fontSize: 13,
-                              color: isDark
-                                  ? AppTheme.darkMuted
-                                  : AppTheme.lightMuted)),
-                      items: _locations
-                          .map((l) => DropdownMenuItem(
-                              value: '${l['id']}',
-                              child: Text('${l['name'] ?? ''}',
-                                  style: const TextStyle(fontSize: 13))))
-                          .toList(),
-                      onChanged: (v) => setState(() => _locFilter = v ?? ''),
-                    ),
+                  child: DropdownButton<String>(
+                    // Si la ubicación recordada ya no existe se ignora en vez
+                    // de dejar el dropdown con un valor huérfano.
+                    value: _locations.any((l) => '${l['id']}' == _locFilter)
+                        ? _locFilter
+                        : null,
+                    isExpanded: true,
+                    hint: Text('Todas',
+                        style: TextStyle(
+                            fontSize: 13,
+                            color: isDark
+                                ? AppTheme.darkMuted
+                                : AppTheme.lightMuted)),
+                    items: _locations
+                        .map((l) => DropdownMenuItem(
+                            value: '${l['id']}',
+                            child: Text('${l['name'] ?? ''}',
+                                style: const TextStyle(fontSize: 13))))
+                        .toList(),
+                    onChanged: (v) {
+                      setState(() => _locFilter = v ?? '');
+                      // Se guarda en el dispositivo: la próxima apertura (o
+                      // un registro offline) conserva la misma ubicación.
+                      FilterPrefs.setLoc(FilterPrefs.stockLoc, _locFilter);
+                    },
+                  ),
                   ),
                 ),
               ),
@@ -624,6 +640,26 @@ class _StockScreenState extends State<StockScreen> {
                         onOk: () async {
                           // El servidor ya lo registró: se refleja en local
                           // para que el Historial no espere al próximo pull.
+                          // El stock también se ajusta AL MOMENTO (el próximo
+                          // pull lo pisa con el estado real del servidor, así
+                          // que no hay doble descuento).
+                          if (type == 'transferencia') {
+                            await SyncService.I.adjustLocalStock(
+                                locId, row['product_id'], -qty, notify: false);
+                            await SyncService.I.adjustLocalStock(
+                                destId, row['product_id'], qty, notify: false);
+                          } else {
+                            final delta = type == 'entrada'
+                                ? qty
+                                : (type == 'salida' || type == 'baja'
+                                    ? -qty
+                                    : 0);
+                            if (delta != 0) {
+                              await SyncService.I.adjustLocalStock(
+                                  locId, row['product_id'], delta,
+                                  notify: false);
+                            }
+                          }
                           await saveLocalMovement(
                               type,
                               [
@@ -1119,7 +1155,21 @@ class _BatchMoveSheetState extends State<_BatchMoveSheet> {
       onOk: () async {
         // El servidor ya lo registró: se refleja en local para no esperar
         // al próximo pull (emitChange dentro de _saveLocalMovement refresca
-        // Stock, Historial y POS).
+        // Stock, Historial y POS). El stock se ajusta también al momento:
+        // el siguiente pull lo pisa con el valor real del servidor.
+        for (final it in items) {
+          final qty = ((it['qty'] as num?) ?? 1).toInt();
+          if (_type == 'transferencia') {
+            await SyncService.I.adjustLocalStock(
+                _locId, it['product_id'], -qty, notify: false);
+            await SyncService.I.adjustLocalStock(
+                _destId, it['product_id'], qty, notify: false);
+          } else {
+            final delta = _type == 'entrada' ? qty : -qty;
+            await SyncService.I.adjustLocalStock(
+                _locId, it['product_id'], delta, notify: false);
+          }
+        }
         await saveLocalMovement(_type, items, _locId, toLoc, note,
             id: localMid);
       },
